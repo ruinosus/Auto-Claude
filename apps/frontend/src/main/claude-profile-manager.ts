@@ -63,6 +63,10 @@ export class ClaudeProfileManager {
     const configDir = join(app.getPath('userData'), 'config');
     this.storePath = join(configDir, 'claude-profiles.json');
 
+    console.warn('[ClaudeProfileManager] userData path:', app.getPath('userData'));
+    console.warn('[ClaudeProfileManager] Config path:', this.storePath);
+    console.warn('[ClaudeProfileManager] Config exists:', existsSync(this.storePath));
+
     // Ensure directory exists
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true });
@@ -70,6 +74,8 @@ export class ClaudeProfileManager {
 
     // Load existing data or initialize with default profile
     this.data = this.load();
+    console.warn('[ClaudeProfileManager] Loaded profiles:', this.data.profiles.map(p => ({ id: p.id, name: p.name, proxyEnabled: p.proxyEnabled })));
+    console.warn('[ClaudeProfileManager] Active profile:', this.data.activeProfileId);
   }
 
   /**
@@ -339,12 +345,26 @@ export class ClaudeProfileManager {
 
   /**
    * Get environment variables for spawning processes with the active profile.
-   * Returns { CLAUDE_CODE_OAUTH_TOKEN: token } if token is available (decrypted).
+   * Priority:
+   * 1. Proxy mode: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
+   * 2. OAuth token: CLAUDE_CODE_OAUTH_TOKEN
+   * 3. Config dir: CLAUDE_CONFIG_DIR (deprecated)
    */
   getActiveProfileEnv(): Record<string, string> {
     const profile = this.getActiveProfile();
     const env: Record<string, string> = {};
 
+    // Priority 1: Proxy mode (LiteLLM/Azure OpenAI)
+    if (profile?.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
+      env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
+      env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;
+      console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name, {
+        baseUrl: profile.proxyBaseUrl
+      });
+      return env;
+    }
+
+    // Priority 2: OAuth token
     if (profile?.oauthToken) {
       // Decrypt the token before putting in environment
       const decryptedToken = decryptToken(profile.oauthToken);
@@ -355,7 +375,7 @@ export class ClaudeProfileManager {
         console.warn('[ClaudeProfileManager] Failed to decrypt token for profile:', profile.name);
       }
     } else if (profile?.configDir && !profile.isDefault) {
-      // Fallback to configDir for backward compatibility
+      // Priority 3: Fallback to configDir for backward compatibility
       env.CLAUDE_CONFIG_DIR = profile.configDir;
       console.warn('[ClaudeProfileManager] Using configDir for profile:', profile.name);
     }
@@ -454,8 +474,9 @@ export class ClaudeProfileManager {
   /**
    * Check if a profile has valid authentication for starting tasks.
    * A profile is considered authenticated if:
-   * 1) It has a valid OAuth token (not expired), OR
-   * 2) It has an authenticated configDir (credential files exist)
+   * 1) Proxy mode is enabled with valid proxy credentials, OR
+   * 2) It has a valid OAuth token (not expired), OR
+   * 3) It has an authenticated configDir (credential files exist)
    *
    * @param profileId - Optional profile ID to check. If not provided, checks active profile.
    * @returns true if the profile can authenticate, false otherwise
@@ -466,12 +487,18 @@ export class ClaudeProfileManager {
       return false;
     }
 
-    // Check 1: Profile has a valid OAuth token
+    // Check 1: Proxy mode is enabled with valid credentials
+    if (profile.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
+      console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name);
+      return true;
+    }
+
+    // Check 2: Profile has a valid OAuth token
     if (hasValidToken(profile)) {
       return true;
     }
 
-    // Check 2 & 3: Profile has authenticated configDir (works for both default and non-default)
+    // Check 3: Profile has authenticated configDir (works for both default and non-default)
     if (this.isProfileAuthenticated(profile)) {
       return true;
     }
