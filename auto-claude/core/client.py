@@ -360,5 +360,6 @@ def create_client(
             settings=str(settings_file.resolve()),
             env=sdk_env,  # Pass ANTHROPIC_BASE_URL etc. to subprocess
             max_thinking_tokens=max_thinking_tokens,  # Extended thinking budget
+            max_buffer_size=10 * 1024 * 1024,  # 10MB buffer (default is 1MB)
         )
     )

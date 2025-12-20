@@ -95,6 +95,23 @@ export interface ClaudeProfile {
   usage?: ClaudeUsageData;
   /** Recent rate limit events for this profile */
   rateLimitEvents?: ClaudeRateLimitEvent[];
+
+  // ======= Proxy Mode (LiteLLM/Azure OpenAI) =======
+  /**
+   * Enable proxy mode - bypasses Claude OAuth check and uses proxy credentials.
+   * When enabled, proxyBaseUrl and proxyApiKey are used instead of Claude auth.
+   */
+  proxyEnabled?: boolean;
+  /**
+   * Proxy base URL (e.g., http://127.0.0.1:3456)
+   * Sets ANTHROPIC_BASE_URL environment variable
+   */
+  proxyBaseUrl?: string;
+  /**
+   * Proxy API key (e.g., sk-litellm-master-key)
+   * Sets ANTHROPIC_AUTH_TOKEN environment variable
+   */
+  proxyApiKey?: string;
 }
 
 /**

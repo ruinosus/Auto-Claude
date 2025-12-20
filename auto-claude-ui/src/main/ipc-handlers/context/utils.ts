@@ -62,23 +62,39 @@ export function parseEnvFile(envContent: string): EnvironmentVars {
 
 /**
  * Load environment variables from project .env file
+ * Priority: project autoBuildPath/.env > global autoBuildSource/.env
  */
 export function loadProjectEnvVars(projectPath: string, autoBuildPath?: string): EnvironmentVars {
-  if (!autoBuildPath) {
-    return {};
+  let vars: EnvironmentVars = {};
+
+  // First, try to load from global auto-build source path
+  const globalAutoBuildPath = getAutoBuildSourcePath();
+  if (globalAutoBuildPath) {
+    const globalEnvPath = path.join(globalAutoBuildPath, '.env');
+    if (existsSync(globalEnvPath)) {
+      try {
+        const envContent = readFileSync(globalEnvPath, 'utf-8');
+        vars = { ...vars, ...parseEnvFile(envContent) };
+      } catch {
+        // Ignore errors
+      }
+    }
   }
 
-  const projectEnvPath = path.join(projectPath, autoBuildPath, '.env');
-  if (!existsSync(projectEnvPath)) {
-    return {};
+  // Then, override with project-specific .env if it exists
+  if (autoBuildPath) {
+    const projectEnvPath = path.join(projectPath, autoBuildPath, '.env');
+    if (existsSync(projectEnvPath)) {
+      try {
+        const envContent = readFileSync(projectEnvPath, 'utf-8');
+        vars = { ...vars, ...parseEnvFile(envContent) };
+      } catch {
+        // Ignore errors
+      }
+    }
   }
 
-  try {
-    const envContent = readFileSync(projectEnvPath, 'utf-8');
-    return parseEnvFile(envContent);
-  } catch {
-    return {};
-  }
+  return vars;
 }
 
 /**
@@ -108,15 +124,24 @@ export function isGraphitiEnabled(projectEnvVars: EnvironmentVars): boolean {
 }
 
 /**
- * Check if OpenAI API key is available
+ * Check if OpenAI API key is available (OpenAI or Azure OpenAI)
  * Priority: project .env > global settings > process.env
  */
 export function hasOpenAIKey(projectEnvVars: EnvironmentVars, globalSettings: GlobalSettings): boolean {
-  return !!(
+  // Check standard OpenAI
+  const hasStandardOpenAI = !!(
     projectEnvVars['OPENAI_API_KEY'] ||
     globalSettings.globalOpenAIApiKey ||
     process.env.OPENAI_API_KEY
   );
+
+  // Check Azure OpenAI
+  const hasAzureOpenAI = !!(
+    (projectEnvVars['AZURE_OPENAI_API_KEY'] || process.env.AZURE_OPENAI_API_KEY) &&
+    (projectEnvVars['AZURE_OPENAI_BASE_URL'] || process.env.AZURE_OPENAI_BASE_URL)
+  );
+
+  return hasStandardOpenAI || hasAzureOpenAI;
 }
 
 /**
