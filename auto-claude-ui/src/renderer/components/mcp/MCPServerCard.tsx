@@ -31,6 +31,11 @@ export function MCPServerCard({ server, onConfigure }: MCPServerCardProps) {
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="font-semibold text-base">{server.name}</h3>
                 <MCPStatusIndicator status={server.status} />
+                {server.type === 'custom' && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                    Custom
+                  </span>
+                )}
               </div>
 
               <p className="text-sm text-muted-foreground mb-2">
@@ -39,7 +44,12 @@ export function MCPServerCard({ server, onConfigure }: MCPServerCardProps) {
 
               {/* Status info */}
               <div className="text-xs text-muted-foreground">
-                {server.enabled ? (
+                {server.type === 'custom' && server.customConfig ? (
+                  <span>
+                    Connection: {server.customConfig.connectionType.toUpperCase()}
+                    {server.enabled && ` • ${server.toolCount} tools • ${server.promptCount} prompts • ${server.resourceCount} resources`}
+                  </span>
+                ) : server.enabled ? (
                   <span>
                     {server.toolCount} tools • {server.promptCount} prompts • {server.resourceCount} resources
                   </span>

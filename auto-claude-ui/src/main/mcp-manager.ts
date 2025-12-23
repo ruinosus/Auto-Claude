@@ -271,11 +271,31 @@ export function registerMCPHandlers() {
    */
   ipcMain.handle('mcp:list', async (event, projectPath?: string) => {
     try {
-      const servers = getBuiltInServers();
+      const builtInServers = getBuiltInServers();
+
+      // Load custom servers from global registry
+      const globalRegistry = await loadRegistry('global');
+
+      // Load custom servers from project registry if projectPath provided
+      let projectRegistry: MCPServersRegistry = { version: '1.0', servers: [], updatedAt: '' };
+      if (projectPath) {
+        try {
+          projectRegistry = await loadRegistry('project', projectPath);
+        } catch (error) {
+          // Ignore if project registry doesn't exist
+        }
+      }
+
+      // Merge all servers (built-in + global custom + project custom)
+      const allServers = [
+        ...builtInServers,
+        ...globalRegistry.servers,
+        ...projectRegistry.servers
+      ];
 
       // Check enabled status for each
       const serversWithStatus = await Promise.all(
-        servers.map(async (server) => ({
+        allServers.map(async (server) => ({
           ...server,
           enabled: await isServerEnabled(server.id, projectPath)
         }))

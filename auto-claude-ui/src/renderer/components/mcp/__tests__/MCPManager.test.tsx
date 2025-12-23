@@ -106,3 +106,165 @@ describe('MCPManager - Add Server Button', () => {
     }, { container });
   });
 });
+
+describe('MCPManager - Custom Server Display', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('displays custom servers alongside built-in servers', async () => {
+    // Mock data with both builtin and custom servers
+    mockElectronAPI.mcp.list.mockResolvedValue([
+      {
+        id: 'context7',
+        name: 'Context7',
+        description: 'Built-in documentation server',
+        type: 'builtin',
+        category: 'Documentation',
+        status: 'connected',
+        enabled: true,
+        requiredEnvVars: [],
+        capabilities: {},
+        toolCount: 2,
+        promptCount: 0,
+        resourceCount: 0,
+        connectionType: 'sdk'
+      },
+      {
+        id: 'custom-http-123',
+        name: 'My Custom HTTP Server',
+        description: 'Custom HTTP MCP server',
+        type: 'custom',
+        category: 'Custom',
+        status: 'disconnected',
+        enabled: false,
+        requiredEnvVars: [],
+        capabilities: {},
+        toolCount: 0,
+        promptCount: 0,
+        resourceCount: 0,
+        connectionType: 'http',
+        customConfig: {
+          connectionType: 'http',
+          baseUrl: 'http://localhost:8000',
+          authType: 'none'
+        }
+      }
+    ]);
+
+    render(<MCPManager />);
+
+    // Wait for servers to load
+    await screen.findByText('MCP Servers');
+
+    // Both servers should be visible
+    expect(screen.getByText('Context7')).toBeTruthy();
+    expect(screen.getByText('My Custom HTTP Server')).toBeTruthy();
+  });
+
+  it('shows "Custom" badge for custom servers', async () => {
+    mockElectronAPI.mcp.list.mockResolvedValue([
+      {
+        id: 'custom-stdio-456',
+        name: 'My Custom stdio Server',
+        description: 'Custom stdio MCP server',
+        type: 'custom',
+        category: 'Custom',
+        status: 'disconnected',
+        enabled: false,
+        requiredEnvVars: [],
+        capabilities: {},
+        toolCount: 0,
+        promptCount: 0,
+        resourceCount: 0,
+        connectionType: 'stdio',
+        customConfig: {
+          connectionType: 'stdio',
+          command: 'python',
+          args: ['server.py']
+        }
+      }
+    ]);
+
+    render(<MCPManager />);
+
+    // Wait for servers to load
+    await screen.findByText('MCP Servers');
+
+    // Custom badge should be visible
+    expect(screen.getByText('Custom')).toBeTruthy();
+  });
+
+  it('displays connection type for custom servers', async () => {
+    mockElectronAPI.mcp.list.mockResolvedValue([
+      {
+        id: 'custom-sse-789',
+        name: 'Custom Server',
+        description: 'Test server',
+        type: 'custom',
+        category: 'Custom',
+        status: 'disconnected',
+        enabled: false,
+        requiredEnvVars: [],
+        capabilities: {},
+        toolCount: 0,
+        promptCount: 0,
+        resourceCount: 0,
+        connectionType: 'http',
+        customConfig: {
+          connectionType: 'sse',
+          baseUrl: 'http://localhost:8000/events'
+        }
+      }
+    ]);
+
+    render(<MCPManager />);
+
+    // Wait for servers to load
+    await screen.findByText('MCP Servers');
+
+    // Connection type should be visible in the status info
+    expect(screen.getByText(/Connection: SSE/)).toBeTruthy();
+  });
+
+  it('custom servers display with correct status', async () => {
+    mockElectronAPI.mcp.list.mockResolvedValue([
+      {
+        id: 'custom-http-999',
+        name: 'Toggleable Custom Server',
+        description: 'Test toggle functionality',
+        type: 'custom',
+        category: 'Custom',
+        status: 'disconnected',
+        enabled: false,
+        requiredEnvVars: [],
+        capabilities: {},
+        toolCount: 1,
+        promptCount: 0,
+        resourceCount: 0,
+        connectionType: 'http',
+        customConfig: {
+          connectionType: 'http',
+          baseUrl: 'http://localhost:8000'
+        }
+      }
+    ]);
+
+    render(<MCPManager />);
+
+    // Wait for servers to load
+    await screen.findByText('MCP Servers');
+
+    // Server should be displayed
+    expect(screen.getByText('Toggleable Custom Server')).toBeTruthy();
+
+    // Should show custom badge
+    expect(screen.getByText('Custom')).toBeTruthy();
+
+    // Should show connection type
+    expect(screen.getByText(/Connection: HTTP/)).toBeTruthy();
+
+    // Should show disconnected status
+    expect(screen.getByText('Disconnected')).toBeTruthy();
+  });
+});
