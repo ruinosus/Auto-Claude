@@ -203,6 +203,36 @@ pip install real_ladybug graphiti-core
 
 Enable with: `GRAPHITI_ENABLED=true` + provider credentials. See `.env.example`.
 
+### MCP (Model Context Protocol)
+
+Auto-Claude supports MCP for extending Claude's capabilities with external tools and services.
+
+**Configure MCP Servers:**
+```bash
+# Open Settings → MCP Servers in the Electron UI
+# Or edit .env manually:
+
+# Linear integration
+LINEAR_API_KEY=your_api_key
+
+# Graphiti memory
+GRAPHITI_MCP_URL=http://localhost:8000/mcp/
+
+# Electron automation
+ELECTRON_MCP_ENABLED=true
+ELECTRON_DEBUG_PORT=9222
+```
+
+**Available Servers:**
+- Context7 - Documentation lookup (always active)
+- Linear - Project management
+- Graphiti - Knowledge graph memory
+- Electron - Desktop app testing
+- Puppeteer - Web browser automation
+- Auto-Claude Tools - Internal tools
+
+See [MCP_GUIDE.md](docs/MCP_GUIDE.md) for detailed setup instructions.
+
 ## Project Structure
 
 Auto Claude can be used in two ways:
