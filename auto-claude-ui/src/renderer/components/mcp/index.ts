@@ -2,3 +2,7 @@ export { MCPManager } from './MCPManager';
 export { MCPServerCard } from './MCPServerCard';
 export { MCPStatusIndicator } from './MCPStatusIndicator';
 export { MCPServerConfig } from './MCPServerConfig';
+export { MCPCapabilitiesView } from './MCPCapabilitiesView';
+export { MCPToolsList } from './MCPToolsList';
+export { MCPPromptsList } from './MCPPromptsList';
+export { MCPResourcesList } from './MCPResourcesList';
