@@ -153,3 +153,62 @@ export interface FastMCPWizardState {
     description: string;
   }>;
 }
+
+// Custom server configuration types
+export interface CustomServerConfig {
+  connectionType: 'http' | 'stdio' | 'sse';
+
+  // HTTP/SSE fields
+  baseUrl?: string;
+  authType?: 'none' | 'api-key' | 'bearer';
+  authValue?: string;
+  headers?: Record<string, string>;
+
+  // stdio fields
+  command?: string;
+  args?: string[];
+  workingDir?: string;
+  env?: Record<string, string>;
+
+  // SSE specific
+  reconnectOnDisconnect?: boolean;
+  reconnectDelay?: number;
+
+  // FastMCP specific (for Phase 3)
+  isFastMCP?: boolean;
+  generatedFrom?: 'wizard' | 'manual';
+  sourceFiles?: {
+    serverPy: string;
+    requirementsTxt: string;
+    readmeMd: string;
+  };
+}
+
+export interface ProcessInfo {
+  pid?: number;
+  port?: number;
+  status: 'running' | 'stopped' | 'starting' | 'crashed';
+  uptime?: number;
+  startedAt?: string;
+  lastError?: string;
+  logFile?: string;
+  restartCount?: number;
+}
+
+export interface MCPServerExport {
+  version: '1.0';
+  exportedAt: string;
+  server: {
+    name: string;
+    description: string;
+    type: MCPServerType;
+    customConfig: CustomServerConfig;
+    requiredEnvVars: string[];
+  };
+}
+
+export interface MCPServersExport {
+  version: '1.0';
+  exportedAt: string;
+  servers: MCPServerExport['server'][];
+}
