@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { Button } from '../ui/button';
 import { MCPStatusIndicator } from './MCPStatusIndicator';
+import { MCPCapabilitiesView } from './MCPCapabilitiesView';
 import type { MCPServer } from '../../../shared/types/mcp';
 
 interface MCPServerCardProps {
@@ -87,14 +88,11 @@ export function MCPServerCard({ server, onConfigure }: MCPServerCardProps) {
         </div>
       </div>
 
-      {/* Expanded capabilities - placeholder for now */}
-      {expanded && (
-        <div className="border-t p-4 bg-muted/50">
-          <p className="text-sm text-muted-foreground">
-            Capabilities view coming soon...
-          </p>
-        </div>
-      )}
+      <MCPCapabilitiesView
+        server={server}
+        expanded={expanded}
+        onToggle={() => setExpanded(false)}
+      />
     </div>
   );
 }
