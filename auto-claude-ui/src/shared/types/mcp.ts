@@ -60,6 +60,7 @@ export interface MCPServer {
   // Custom servers
   serverPath?: string;
   isRunning?: boolean;
+  customConfig?: CustomServerConfig;
 }
 
 export interface MCPTool {

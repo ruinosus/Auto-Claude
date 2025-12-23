@@ -439,7 +439,6 @@ export function registerMCPHandlers() {
         promptCount: 0,
         resourceCount: 0,
         connectionType: config.connectionType === 'http' || config.connectionType === 'sse' ? 'http' : 'stdio',
-        // @ts-ignore - customConfig is not in base MCPServer type yet
         customConfig: config
       };
 
