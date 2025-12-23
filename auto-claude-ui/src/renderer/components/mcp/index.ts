@@ -6,3 +6,5 @@ export { MCPCapabilitiesView } from './MCPCapabilitiesView';
 export { MCPToolsList } from './MCPToolsList';
 export { MCPPromptsList } from './MCPPromptsList';
 export { MCPResourcesList } from './MCPResourcesList';
+export { ConnectionTypeSelector } from './ConnectionTypeSelector';
+export { AddServerDialog } from './AddServerDialog';
