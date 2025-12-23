@@ -34,15 +34,15 @@ export function MCPCapabilitiesView({ server, expanded, onToggle }: MCPCapabilit
         </TabsList>
 
         <TabsContent value="tools">
-          <MCPToolsList tools={server.capabilities.tools || []} />
+          <MCPToolsList tools={server.capabilities?.tools || []} />
         </TabsContent>
 
         <TabsContent value="prompts">
-          <MCPPromptsList prompts={server.capabilities.prompts || []} />
+          <MCPPromptsList prompts={server.capabilities?.prompts || []} />
         </TabsContent>
 
         <TabsContent value="resources">
-          <MCPResourcesList resources={server.capabilities.resources || []} />
+          <MCPResourcesList resources={server.capabilities?.resources || []} />
         </TabsContent>
       </Tabs>
 

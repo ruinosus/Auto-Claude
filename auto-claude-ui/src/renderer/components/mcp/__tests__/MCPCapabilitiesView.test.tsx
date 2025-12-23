@@ -5,7 +5,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MCPCapabilitiesView } from '../MCPCapabilitiesView';
 import type { MCPServer } from '../../../../shared/types/mcp';
 
@@ -245,5 +245,32 @@ describe('MCPCapabilitiesView', () => {
 
     // Should show "No tools available" message (default view is tools)
     expect(screen.getByText('No tools available')).toBeTruthy();
+  });
+
+  it('renders all three capability tabs', () => {
+    render(
+      <MCPCapabilitiesView
+        server={mockServer}
+        expanded={true}
+        onToggle={() => {}}
+      />
+    );
+
+    // All three tabs should be present and clickable
+    const toolsTab = screen.getByRole('tab', { name: /Tools.*5/ });
+    const promptsTab = screen.getByRole('tab', { name: /Prompts.*2/ });
+    const resourcesTab = screen.getByRole('tab', { name: /Resources.*3/ });
+
+    expect(toolsTab).toBeTruthy();
+    expect(promptsTab).toBeTruthy();
+    expect(resourcesTab).toBeTruthy();
+
+    // Tools tab should be active by default
+    expect(toolsTab.getAttribute('data-state')).toBe('active');
+    expect(promptsTab.getAttribute('data-state')).toBe('inactive');
+    expect(resourcesTab.getAttribute('data-state')).toBe('inactive');
+
+    // Should show tools content by default
+    expect(screen.getByText('tool1')).toBeTruthy();
   });
 });
