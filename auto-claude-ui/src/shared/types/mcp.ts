@@ -156,6 +156,9 @@ export interface FastMCPWizardState {
 
 // Custom server configuration types
 export interface CustomServerConfig {
+  // Base fields
+  name?: string;
+  description?: string;
   connectionType: 'http' | 'stdio' | 'sse';
 
   // HTTP/SSE fields
@@ -211,4 +214,10 @@ export interface MCPServersExport {
   version: '1.0';
   exportedAt: string;
   servers: MCPServerExport['server'][];
+}
+
+export interface MCPServersRegistry {
+  version: '1.0';
+  servers: MCPServer[];
+  updatedAt: string;
 }

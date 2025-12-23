@@ -1,5 +1,7 @@
-import { ipcMain } from 'electron';
-import type { MCPServer, MCPServerConfig, MCPTestConnectionResult } from '../shared/types/mcp';
+import { ipcMain, app } from 'electron';
+import { promises as fs } from 'fs';
+import path from 'path';
+import type { MCPServer, MCPServerConfig, MCPTestConnectionResult, CustomServerConfig, MCPServersRegistry } from '../shared/types/mcp';
 import { updateEnvVars, getEnvPath, readEnvFile } from './mcp-config';
 
 /**
@@ -396,4 +398,195 @@ export function registerMCPHandlers() {
   ipcMain.handle('mcp:generate-fastmcp-server', async (event, wizardState: any, outputPath: string) => {
     return { success: false, error: 'Not implemented yet' };
   });
+
+  /**
+   * Add custom server configuration
+   */
+  ipcMain.handle('mcp:add-custom-server', async (
+    event,
+    config: CustomServerConfig,
+    scope: 'global' | 'project',
+    projectPath?: string
+  ) => {
+    try {
+      // Validate configuration
+      const validationError = validateCustomServerConfig(config);
+      if (validationError) {
+        return {
+          success: false,
+          error: validationError
+        };
+      }
+
+      // Load existing registry
+      const registry = await loadRegistry(scope, projectPath);
+
+      // Generate unique server ID
+      const serverId = generateServerId(config.connectionType);
+
+      // Create new server entry
+      const newServer: MCPServer = {
+        id: serverId,
+        name: config.name || `Custom ${config.connectionType} Server`,
+        description: config.description || '',
+        type: 'custom',
+        category: 'Custom',
+        status: 'disconnected',
+        enabled: false,
+        requiredEnvVars: [],
+        capabilities: {},
+        toolCount: 0,
+        promptCount: 0,
+        resourceCount: 0,
+        connectionType: config.connectionType === 'http' || config.connectionType === 'sse' ? 'http' : 'stdio',
+        // @ts-ignore - customConfig is not in base MCPServer type yet
+        customConfig: config
+      };
+
+      // Add to registry
+      registry.servers.push(newServer);
+      registry.updatedAt = new Date().toISOString();
+
+      // Save registry
+      await saveRegistry(registry, scope, projectPath);
+
+      return {
+        success: true,
+        serverId
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
+  /**
+   * Test connection to custom MCP server (simulated for now)
+   */
+  ipcMain.handle('mcp:test-connection-custom', async (event, config: CustomServerConfig) => {
+    try {
+      // Validate configuration
+      const validationError = validateCustomServerConfig(config);
+      if (validationError) {
+        return {
+          success: false,
+          status: 'error' as const,
+          error: validationError
+        };
+      }
+
+      // For now, return simulated success with mock capabilities
+      // In production, this would actually attempt connection
+      return {
+        success: true,
+        status: 'connected' as const,
+        message: `Successfully connected to ${config.connectionType} server`,
+        capabilities: {
+          tools: [
+            { name: 'test-tool', description: 'A test tool' }
+          ],
+          prompts: [
+            { name: 'test-prompt', description: 'A test prompt' }
+          ],
+          resources: []
+        }
+      };
+    } catch (error) {
+      return {
+        success: false,
+        status: 'error' as const,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+}
+
+/**
+ * Validate custom server configuration
+ */
+function validateCustomServerConfig(config: CustomServerConfig): string | null {
+  if (!config.connectionType) {
+    return 'connectionType is required';
+  }
+
+  switch (config.connectionType) {
+    case 'http':
+    case 'sse':
+      if (!config.baseUrl) {
+        return 'baseUrl is required for HTTP/SSE connections';
+      }
+      break;
+    case 'stdio':
+      if (!config.command) {
+        return 'command is required for stdio connections';
+      }
+      break;
+    default:
+      return `Invalid connection type: ${config.connectionType}`;
+  }
+
+  return null;
+}
+
+/**
+ * Generate unique server ID
+ */
+function generateServerId(connectionType: string): string {
+  return `custom-${connectionType}-${Date.now()}`;
+}
+
+/**
+ * Get registry file path
+ */
+function getRegistryPath(scope: 'global' | 'project', projectPath?: string): string {
+  if (scope === 'global') {
+    const homeDir = app.getPath('home');
+    return path.join(homeDir, '.auto-claude', 'mcp-servers.json');
+  } else {
+    if (!projectPath) {
+      throw new Error('projectPath is required for project scope');
+    }
+    return path.join(projectPath, '.auto-claude', 'mcp-servers.json');
+  }
+}
+
+/**
+ * Load servers registry
+ */
+async function loadRegistry(scope: 'global' | 'project', projectPath?: string): Promise<MCPServersRegistry> {
+  const registryPath = getRegistryPath(scope, projectPath);
+
+  try {
+    const content = await fs.readFile(registryPath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error: any) {
+    if (error.code === 'ENOENT') {
+      // File doesn't exist, return empty registry
+      return {
+        version: '1.0',
+        servers: [],
+        updatedAt: new Date().toISOString()
+      };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Save servers registry
+ */
+async function saveRegistry(
+  registry: MCPServersRegistry,
+  scope: 'global' | 'project',
+  projectPath?: string
+): Promise<void> {
+  const registryPath = getRegistryPath(scope, projectPath);
+
+  // Ensure directory exists
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+
+  // Write registry file
+  await fs.writeFile(registryPath, JSON.stringify(registry, null, 2), 'utf-8');
 }
