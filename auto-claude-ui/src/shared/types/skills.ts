@@ -26,7 +26,15 @@ export interface SkillContent {
 }
 
 /**
+ * Output data from skill installation operation
+ */
+export interface SkillInstallOutput {
+  output: string
+}
+
+/**
  * Result of skill installation operation
+ * @deprecated Use IPCResult<SkillInstallOutput> instead
  */
 export interface InstallSkillResult {
   success: boolean
