@@ -1008,6 +1008,142 @@
   --shadow-focus: 0 0 0 3px rgba(74, 222, 128, 0.3);
 }
 
+/* ============================================
+   AVANADE.AI THEME (Light)
+   Corporate theme inspired by Avanade/Cockpit Portal
+   Warm orange accents with professional clean design
+   ============================================ */
+[data-theme="avanade"] {
+  /* Backgrounds - Clean off-white */
+  --background: #FCFCFB;
+  --foreground: #1A0F0A;
+
+  /* Card surfaces */
+  --card: #FFFFFF;
+  --card-foreground: #1A0F0A;
+
+  /* Primary accent - Avanade Orange */
+  --primary: #DD1F66;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary - Neutral warm tones */
+  --secondary: #F5F5F4;
+  --secondary-foreground: #1A0F0A;
+
+  /* Muted */
+  --muted: #F5F5F4;
+  --muted-foreground: #716B66;
+
+  /* Accent */
+  --accent: #FFF5F0;
+  --accent-foreground: #DD1F66;
+
+  /* Destructive */
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+
+  /* Borders and inputs */
+  --border: #E7E5E4;
+  --input: #E7E5E4;
+  --ring: #DD1F66;
+
+  /* Sidebar - Distinct from main content */
+  --sidebar: #FAFAF9;
+  --sidebar-foreground: #3F3B37;
+
+  /* Popover */
+  --popover: #FFFFFF;
+  --popover-foreground: #1A0F0A;
+
+  /* Semantic colors */
+  --success: #16A34A;
+  --success-foreground: #FFFFFF;
+  --success-light: #DCFCE7;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+  --warning-light: #FEF3C7;
+  --info: #0284C7;
+  --info-foreground: #FFFFFF;
+  --info-light: #E0F2FE;
+  --error: #DC2626;
+  --error-light: #FEE2E2;
+
+  /* Shadows - Professional subtle */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --shadow-focus: 0 0 0 3px rgba(221, 31, 102, 0.2);
+}
+
+/* ============================================
+   AVANADE.AI THEME (Dark)
+   Corporate dark theme with warm brown tones
+   Orange accents for brand consistency
+   ============================================ */
+[data-theme="avanade"].dark {
+  /* Backgrounds - Warm dark brown (not pure black) */
+  --background: #1A0F0A;
+  --foreground: #FAF8F7;
+
+  /* Card surfaces - Elevated warm brown */
+  --card: #251912;
+  --card-foreground: #FAF8F7;
+
+  /* Primary accent - Avanade Orange (brighter for dark) */
+  --primary: #FF6B35;
+  --primary-foreground: #1A0F0A;
+
+  /* Secondary */
+  --secondary: #2D1F17;
+  --secondary-foreground: #FAF8F7;
+
+  /* Muted */
+  --muted: #2D1F17;
+  --muted-foreground: #A39A94;
+
+  /* Accent */
+  --accent: #3D2418;
+  --accent-foreground: #FF6B35;
+
+  /* Destructive */
+  --destructive: #EF4444;
+  --destructive-foreground: #1A0F0A;
+
+  /* Borders and inputs - Subtle warm */
+  --border: #3D2418;
+  --input: #3D2418;
+  --ring: #FF6B35;
+
+  /* Sidebar - Distinct darker brown */
+  --sidebar: #15100C;
+  --sidebar-foreground: #FAF8F7;
+
+  /* Popover */
+  --popover: #2D1F17;
+  --popover-foreground: #FAF8F7;
+
+  /* Semantic colors - Adjusted for dark mode */
+  --success: #22C55E;
+  --success-foreground: #1A0F0A;
+  --success-light: #14532D;
+  --warning: #F59E0B;
+  --warning-foreground: #1A0F0A;
+  --warning-light: #451A03;
+  --info: #38BDF8;
+  --info-foreground: #1A0F0A;
+  --info-light: #0C4A6E;
+  --error: #EF4444;
+  --error-light: #450A0A;
+
+  /* Shadows - Deeper for dark mode */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.9);
+  --shadow-focus: 0 0 0 3px rgba(255, 107, 53, 0.25);
+}
+
 /* Base styles */
 * {
   border-color: var(--border);
