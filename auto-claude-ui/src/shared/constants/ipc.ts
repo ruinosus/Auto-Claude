@@ -304,5 +304,6 @@ export const IPC_CHANNELS = {
   // Skills operations
   SKILLS_LIST: 'skills:list',
   SKILLS_INSTALL: 'skills:install',
-  SKILLS_REMOVE: 'skills:remove'
+  SKILLS_REMOVE: 'skills:remove',
+  SKILLS_GET_CONTENT: 'skills:getContent'
 } as const;

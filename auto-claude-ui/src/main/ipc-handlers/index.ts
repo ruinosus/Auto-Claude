@@ -31,6 +31,7 @@ import { registerAppUpdateHandlers } from './app-update-handlers';
 import { registerListSkillsHandler } from './skills/list-skills';
 import { registerInstallSkillHandler } from './skills/install-skill';
 import { registerRemoveSkillHandler } from './skills/remove-skill';
+import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { notificationService } from '../notification-service';
 
 /**
@@ -105,6 +106,7 @@ export function setupIpcHandlers(
   registerListSkillsHandler();
   registerInstallSkillHandler();
   registerRemoveSkillHandler();
+  registerGetSkillContentHandler();
 
   console.warn('[IPC] All handler modules registered successfully');
 }
@@ -130,5 +132,6 @@ export {
   registerAppUpdateHandlers,
   registerListSkillsHandler,
   registerInstallSkillHandler,
-  registerRemoveSkillHandler
+  registerRemoveSkillHandler,
+  registerGetSkillContentHandler
 };
