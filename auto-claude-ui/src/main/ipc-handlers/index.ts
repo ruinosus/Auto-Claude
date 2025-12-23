@@ -29,6 +29,7 @@ import { registerInsightsHandlers } from './insights-handlers';
 import { registerDockerHandlers } from './docker-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
 import { registerListSkillsHandler } from './skills/list-skills';
+import { registerInstallSkillHandler } from './skills/install-skill';
 import { notificationService } from '../notification-service';
 
 /**
@@ -101,6 +102,7 @@ export function setupIpcHandlers(
 
   // Skills management handlers
   registerListSkillsHandler();
+  registerInstallSkillHandler();
 
   console.warn('[IPC] All handler modules registered successfully');
 }
@@ -124,5 +126,6 @@ export {
   registerInsightsHandlers,
   registerDockerHandlers,
   registerAppUpdateHandlers,
-  registerListSkillsHandler
+  registerListSkillsHandler,
+  registerInstallSkillHandler
 };
