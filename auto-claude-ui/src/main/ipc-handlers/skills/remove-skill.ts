@@ -13,8 +13,8 @@ async function validateSkillPath(skillPath: string): Promise<void> {
   }
 
   // Check length limit
-  if (skillPath.length >= 2048) {
-    throw new Error('Skill path too long (max 2048 characters)')
+  if (skillPath.length >= 1024) {
+    throw new Error('Skill path too long (max 1024 characters)')
   }
 
   // Resolve to absolute path and normalize
@@ -40,24 +40,64 @@ async function validateSkillPath(skillPath: string): Promise<void> {
   }
 
   // Validate that the path is within allowed skill directories
-  const userSkillsPath = resolve(homedir(), '.claude', 'skills')
-  const relativePath = relative(userSkillsPath, absolutePath)
+  // Allowed locations:
+  // - ~/.claude/skills/ (user skills)
+  // - {project}/.claude/skills/ (project skills)
+  // - {project}/auto-claude/.claude/skills/ (auto-claude specific skills)
 
-  // Check if path starts with '..' which would mean it's outside the allowed directory
-  if (relativePath.startsWith('..')) {
-    // If not in user skills, check if in project skills
-    // We can't validate project paths here without knowing the project path
-    // So we'll allow it but log a warning
-    // In production, you might want to pass allowed paths as a parameter
-    console.warn('[remove-skill] Warning: Removing skill outside user skills directory:', absolutePath)
+  // Must contain the specific .claude/skills pattern
+  if (!absolutePath.includes('/.claude/skills')) {
+    throw new Error('Invalid skill path: must be within a .claude/skills directory')
   }
 
-  // Additional safety: ensure path contains 'skills' directory
-  if (!absolutePath.includes('skills')) {
-    throw new Error('Invalid skill path: must be within a skills directory')
+  // Additional validation: ensure not at root of .claude/skills
+  const userSkillsPath = resolve(homedir(), '.claude', 'skills')
+  const isInUserSkills = absolutePath.startsWith(userSkillsPath + '/')
+
+  // If in user skills, validate it's a subdirectory (not the skills root itself)
+  if (absolutePath === userSkillsPath) {
+    throw new Error('Cannot remove the entire skills directory')
+  }
+
+  // Validate this is a skill subdirectory, not just the .claude/skills root
+  const skillsPattern = /\/\.claude\/skills\/.+/
+  if (!skillsPattern.test(absolutePath)) {
+    throw new Error('Invalid skill path: must point to a skill subdirectory within .claude/skills')
   }
 }
 
+/**
+ * Registers the IPC handler for removing (deleting) skill directories.
+ *
+ * This handler provides secure removal of skill directories with strict path validation
+ * to prevent unauthorized file system access or deletion outside allowed directories.
+ *
+ * Security Model:
+ * - Only allows deletion within .claude/skills directories
+ * - Validates paths are in one of these allowed locations:
+ *   - ~/.claude/skills/{skill-name}/ (user skills)
+ *   - {project}/.claude/skills/{skill-name}/ (project skills)
+ *   - {project}/auto-claude/.claude/skills/{skill-name}/ (auto-claude specific)
+ * - Prevents path traversal attacks via normalization checks
+ * - Rejects paths outside .claude/skills pattern
+ * - Prevents removal of the skills directory root itself
+ * - Enforces maximum path length (1024 characters)
+ *
+ * @returns {void}
+ *
+ * @example
+ * Valid paths:
+ * - /Users/name/.claude/skills/my-skill
+ * - /project/.claude/skills/project-skill
+ * - /project/auto-claude/.claude/skills/auto-skill
+ *
+ * @example
+ * Invalid paths (will be rejected):
+ * - /Users/name/.claude/skills (root directory)
+ * - /Users/name/skills/my-skill (not in .claude/skills)
+ * - /etc/passwd (not a skills directory)
+ * - ~/.claude/skills/../../../etc (path traversal)
+ */
 export function registerRemoveSkillHandler(): void {
   ipcMain.handle(IPC_CHANNELS.SKILLS_REMOVE, async (_, skillPath: string): Promise<IPCResult<void>> => {
     try {
