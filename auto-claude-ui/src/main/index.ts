@@ -8,6 +8,7 @@ import { pythonEnvManager } from './python-env-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
 import { initializeUsageMonitorForwarding } from './ipc-handlers/terminal-handlers';
 import { initializeAppUpdater } from './app-updater';
+import { registerMCPHandlers } from './mcp-manager';
 
 // Get icon path based on platform
 function getIconPath(): string {
@@ -125,6 +126,9 @@ app.whenReady().then(() => {
 
   // Setup IPC handlers (pass pythonEnvManager for Python path management)
   setupIpcHandlers(agentManager, terminalManager, () => mainWindow, pythonEnvManager);
+
+  // Register MCP handlers
+  registerMCPHandlers();
 
   // Create window
   createWindow();
