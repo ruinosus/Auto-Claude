@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { readdir, readFile, stat } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
+import { IPC_CHANNELS } from '../../../shared/constants/ipc'
 
 export interface Skill {
   name: string
@@ -36,15 +37,17 @@ async function parseSkillMetadata(skillMdPath: string): Promise<SkillMetadata | 
     const lines = frontmatter.split('\n')
     for (const line of lines) {
       const [key, ...valueParts] = line.split(':')
+      const trimmedKey = key?.trim()
       const value = valueParts.join(':').trim()
 
-      if (key && value) {
-        if (key === 'name') metadata.name = value
-        else if (key === 'description') metadata.description = value
-        else if (key === 'category') metadata.category = value
-        else if (key === 'version') metadata.version = value
-        else if (key === 'license') metadata.license = value
-      }
+      // Skip empty keys or values
+      if (!trimmedKey || !value) continue
+
+      if (trimmedKey === 'name') metadata.name = value
+      else if (trimmedKey === 'description') metadata.description = value
+      else if (trimmedKey === 'category') metadata.category = value
+      else if (trimmedKey === 'version') metadata.version = value
+      else if (trimmedKey === 'license') metadata.license = value
     }
 
     return metadata.name && metadata.description
@@ -85,21 +88,35 @@ async function scanSkillsDirectory(
             version: metadata.version
           })
         }
-      } catch {
-        // SKILL.md doesn't exist or can't be read, skip this directory
-        continue
+      } catch (error: unknown) {
+        // Expected: SKILL.md doesn't exist (ENOENT) - skip silently
+        // Unexpected: Permission denied, corrupted file, etc. - log warning
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+          // Expected case: SKILL.md doesn't exist, skip silently
+          continue
+        } else {
+          console.warn(`Unexpected error reading skill at ${skillPath}:`, error)
+          continue
+        }
       }
     }
-  } catch (error) {
-    // Directory doesn't exist, return empty array
-    return []
+  } catch (error: unknown) {
+    // Expected: Directory doesn't exist (ENOENT) - return empty array silently
+    // Unexpected: Permission denied, etc. - log warning
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      // Expected case: skills directory doesn't exist yet
+      return []
+    } else {
+      console.warn(`Unexpected error scanning skills directory ${dirPath}:`, error)
+      return []
+    }
   }
 
   return skills
 }
 
 export function registerListSkillsHandler(): void {
-  ipcMain.handle('skills:list', async (_, projectPath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.SKILLS_LIST, async (_, projectPath?: string) => {
     const userSkillsPath = join(homedir(), '.claude', 'skills')
     const skills: Skill[] = []
 
