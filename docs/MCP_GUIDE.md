@@ -103,6 +103,51 @@ Use Linear MCP tools to create issues for testing tasks.
 
 Claude will automatically use available MCP tools when relevant to your task.
 
+## Viewing Server Capabilities
+
+Each MCP server provides three types of capabilities:
+
+### Tools
+Executable functions that agents can call. Examples:
+- `mcp__linear__create_issue` - Create a new Linear issue
+- `mcp__context7__resolve-library-id` - Find library documentation
+
+To view tools:
+1. Open Settings → MCP Servers
+2. Find the server you want to inspect
+3. Click "Show Details"
+4. Click the "🔧 Tools" tab
+
+Each tool shows:
+- **Name** - The full tool identifier
+- **Description** - What the tool does
+- **Parameters** - Required and optional inputs with types
+- **Copy button** - Click to copy tool name for use in prompts
+
+### Prompts
+Pre-defined workflow templates. Examples:
+- `code-review-prompt` - Generate code review instructions
+- `debug-with-context` - Debug with historical context
+
+Prompts require arguments that you fill in when using them.
+
+### Resources
+Data sources with URI templates. Examples:
+- `graphiti://episodes/{id}` - Get specific episode by ID
+- `graphiti://episodes/recent` - Get recent episodes
+
+Resources with `{param}` are templates - you provide the parameter value.
+
+## Using Capabilities in Tasks
+
+When creating tasks, you can reference specific tools:
+
+1. View the tool in MCP Manager
+2. Click copy button to get exact tool name
+3. In your task description, mention: "Use tool `mcp__linear__create_issue` to..."
+
+The planner agent will see available tools and use them appropriately.
+
 ## Creating Custom MCP Servers
 
 Coming in Phase 4: FastMCP wizard for creating custom servers.
