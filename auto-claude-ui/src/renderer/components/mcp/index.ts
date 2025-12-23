@@ -8,6 +8,7 @@ export { MCPPromptsList } from './MCPPromptsList';
 export { MCPResourcesList } from './MCPResourcesList';
 export { ConnectionTypeSelector } from './ConnectionTypeSelector';
 export { AddServerDialog } from './AddServerDialog';
+export { AddExistingServerForm } from './AddExistingServerForm';
 export { StdioServerForm } from './StdioServerForm';
 export { HttpServerForm } from './HttpServerForm';
 export { SseServerForm } from './SseServerForm';
