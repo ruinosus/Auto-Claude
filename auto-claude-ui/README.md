@@ -110,6 +110,7 @@ npm run typecheck
 - **Task Creation Wizard**: Form-based interface for creating new tasks
 - **Real-Time Progress**: Live updates during agent execution
 - **Human Review Workflow**: Review QA results and provide feedback
+- **Skills Manager**: Browse, install, preview, and manage 247+ Claude Skills through a visual interface
 - **Theme Support**: Light and dark mode
 - **Auto Updates**: Automatic update notifications
 
@@ -125,6 +126,11 @@ npm run typecheck
 
 - `CLAUDE_CODE_OAUTH_TOKEN`: OAuth token for Claude Code SDK (from auto-claude/.env)
 - `FALKORDB_URL`: FalkorDB connection URL (optional)
+
+## Documentation
+
+- **Skills Manager**: See [docs/SKILLS_MANAGER.md](docs/SKILLS_MANAGER.md) for technical documentation on the Skills Manager feature
+- **User Guide**: See [../docs/SKILLS_GUIDE.md](../docs/SKILLS_GUIDE.md) for end-user documentation on using Claude Skills
 
 ## License
 
