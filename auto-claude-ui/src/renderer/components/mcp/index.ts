@@ -11,3 +11,4 @@ export { AddServerDialog } from './AddServerDialog';
 export { StdioServerForm } from './StdioServerForm';
 export { HttpServerForm } from './HttpServerForm';
 export { SseServerForm } from './SseServerForm';
+export { TestConnectionStep } from './TestConnectionStep';
