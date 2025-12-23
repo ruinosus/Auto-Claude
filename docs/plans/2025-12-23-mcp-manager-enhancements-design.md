@@ -2938,6 +2938,95 @@ describe('MCP Manager Integration', () => {
 
 ---
 
+## Implementation Status
+
+### Phase 1: Capabilities View - COMPLETED (December 23, 2025)
+
+**Implementation Summary:**
+
+Phase 1 has been successfully completed, delivering all planned functionality for viewing MCP server capabilities.
+
+**Components Implemented:**
+
+1. **MCPToolsList** (`auto-claude-ui/src/renderer/components/mcp/MCPToolsList.tsx`)
+   - Displays tools with expandable details
+   - Shows full parameter information with types and descriptions
+   - Includes copy-to-clipboard functionality for tool names
+   - Smooth expand/collapse animations
+   - Comprehensive test coverage in `__tests__/MCPToolsList.test.tsx`
+
+2. **MCPPromptsList** (`auto-claude-ui/src/renderer/components/mcp/MCPPromptsList.tsx`)
+   - Lists available prompts with descriptions
+   - Shows prompt arguments with details
+   - Copy-to-clipboard for prompt names
+   - Test coverage in `__tests__/MCPPromptsList.test.tsx`
+
+3. **MCPResourcesList** (`auto-claude-ui/src/renderer/components/mcp/MCPResourcesList.tsx`)
+   - Displays available resources with URIs
+   - Shows MIME types and descriptions
+   - Copy functionality for URIs
+   - Test coverage in `__tests__/MCPResourcesList.test.tsx`
+
+4. **MCPCapabilitiesView** (`auto-claude-ui/src/renderer/components/mcp/MCPCapabilitiesView.tsx`)
+   - Parent component with tabbed interface (Tools/Prompts/Resources)
+   - Dynamic tab counts showing number of each capability type
+   - Smooth tab switching with proper state management
+   - Null safety for servers without capabilities
+   - Test coverage in `__tests__/MCPCapabilitiesView.test.tsx`
+
+5. **MCPServerCard** (updated)
+   - Replaced placeholder "View Capabilities" button with full MCPCapabilitiesView
+   - Integrated expand/collapse functionality
+   - Maintains clean server card layout
+
+**Testing & Quality Assurance:**
+
+- Unit tests added for all new components (5 test files)
+- Component export tests added to verify proper module exports
+- Manual testing guide created (`auto-claude-ui/TESTING_GUIDE.md`)
+- All components follow existing design patterns and TypeScript best practices
+
+**Git Commits:**
+- `7931f67` - feat(mcp): add MCPToolsList component with tests
+- `41b827c` - feat(mcp): add MCPPromptsList component with tests
+- `70537ab` - feat(mcp): add MCPResourcesList component with tests
+- `cb7abc5` - feat: Add MCPCapabilitiesView parent component with tabs
+- `67a2589` - fix(mcp): add null safety and tab test to MCPCapabilitiesView
+- `4e14b16` - feat(mcp): replace placeholder with MCPCapabilitiesView
+- `c4faf1b` - test: Add exports test and update MCP component exports
+- `fd72257` - Add comprehensive manual testing guide for MCP Capabilities View
+
+**Deliverables Verified:**
+- Users can view detailed tools/prompts/resources for any server
+- Full parameter information with types
+- Smooth expand/collapse animations
+- Copy buttons for easy usage
+- All Phase 1 tasks from implementation plan completed
+
+**Next Phase:** Phase 2 (Add Existing Server) ready to begin
+
+### Phase 2: Add Existing Server - NOT STARTED
+
+Status: Waiting to begin
+
+### Phase 3: FastMCP Wizard - NOT STARTED
+
+Status: Waiting to begin
+
+### Phase 4: Process Management - NOT STARTED
+
+Status: Waiting to begin
+
+### Phase 5: Server CRUD - NOT STARTED
+
+Status: Waiting to begin
+
+### Phase 6: UI Polish & Testing - NOT STARTED
+
+Status: Waiting to begin
+
+---
+
 ## Conclusion
 
 This comprehensive design extends the MCP Manager with essential features for discoverability, extensibility, and management:
@@ -2961,6 +3050,6 @@ This comprehensive design extends the MCP Manager with essential features for di
 
 ---
 
-**Document Version:** 1.0
+**Document Version:** 1.1
 **Last Updated:** December 23, 2025
-**Status:** Ready for Implementation
+**Status:** Phase 1 Complete - In Progress (Phase 2 Ready)
