@@ -1,4 +1,5 @@
 import { useSettingsStore } from '../stores/settings-store';
+import avanadeLogoBrandWave from '../../../public/images/avanade-logo-brand-wave.png';
 
 interface LogoProps {
   className?: string;
@@ -7,15 +8,13 @@ interface LogoProps {
 export function Logo({ className = '' }: LogoProps) {
   const settings = useSettingsStore((state) => state.settings);
   const colorTheme = settings.colorTheme || 'default';
-  const isDark = settings.theme === 'dark' ||
-    (settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   // Show Avanade logo when Avanade theme is active
   if (colorTheme === 'avanade') {
     return (
       <div className={`flex items-center gap-2 ${className}`}>
         <img
-          src="/images/avanade-logo-brand-wave.png"
+          src={avanadeLogoBrandWave}
           alt="Avanade Logo"
           className="h-8 w-auto"
         />
