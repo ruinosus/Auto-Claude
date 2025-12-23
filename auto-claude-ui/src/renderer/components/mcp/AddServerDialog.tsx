@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Globe, Zap } from 'lucide-react';
+import { AddExistingServerForm } from './AddExistingServerForm';
+import type { CustomServerConfig } from '../../../shared/types/mcp';
 
 interface AddServerDialogProps {
   open: boolean;
@@ -12,6 +14,22 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
   const [mode, setMode] = useState<'choose' | 'existing' | 'fastmcp'>('choose');
 
   const handleBack = () => {
+    setMode('choose');
+  };
+
+  const handleComplete = async (config: CustomServerConfig) => {
+    try {
+      // Save the server config via IPC
+      await window.electron.addCustomMCPServer(config);
+      // Close the dialog after successful save
+      onClose();
+    } catch (error) {
+      console.error('Failed to save custom MCP server:', error);
+      // TODO: Show error message to user
+    }
+  };
+
+  const handleCancel = () => {
     setMode('choose');
   };
 
@@ -62,12 +80,10 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
         )}
 
         {mode === 'existing' && (
-          <div>
-            <p>Select connection type</p>
-            <Button variant="ghost" onClick={handleBack}>
-              ← Back
-            </Button>
-          </div>
+          <AddExistingServerForm
+            onComplete={handleComplete}
+            onCancel={handleCancel}
+          />
         )}
 
         {mode === 'fastmcp' && (

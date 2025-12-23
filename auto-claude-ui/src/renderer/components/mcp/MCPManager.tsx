@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plug, Search, RefreshCw } from 'lucide-react';
+import { Plug, Search, RefreshCw, Plus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { MCPServerCard } from './MCPServerCard';
 import { MCPServerConfig } from './MCPServerConfig';
+import { AddServerDialog } from './AddServerDialog';
 import { useProjectStore } from '../../stores/project-store';
 import type { MCPServer, MCPServerConfig as MCPServerConfigType } from '../../../shared/types/mcp';
 
@@ -14,6 +15,7 @@ export function MCPManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
   const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [isAddServerOpen, setIsAddServerOpen] = useState(false);
 
   const selectedProject = useProjectStore((state) => state.getSelectedProject());
 
@@ -98,6 +100,10 @@ export function MCPManager() {
             <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
         </div>
+        <Button onClick={() => setIsAddServerOpen(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Server
+        </Button>
       </div>
 
       {/* Search */}
@@ -158,6 +164,12 @@ export function MCPManager() {
           onSave={handleSaveConfig}
         />
       )}
+
+      {/* Add Server Dialog */}
+      <AddServerDialog
+        open={isAddServerOpen}
+        onClose={() => setIsAddServerOpen(false)}
+      />
     </div>
   );
 }
