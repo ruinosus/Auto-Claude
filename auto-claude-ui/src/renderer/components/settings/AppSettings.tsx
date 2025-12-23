@@ -36,6 +36,7 @@ import { ProjectSelector } from './ProjectSelector';
 import { ProjectSettingsContent, ProjectSettingsSection } from './ProjectSettingsContent';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
+import { SkillsManager } from '../skills';
 
 interface AppSettingsDialogProps {
   open: boolean;
@@ -46,7 +47,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings sections
-export type AppSection = 'appearance' | 'agent' | 'paths' | 'integrations' | 'updates' | 'notifications';
+export type AppSection = 'appearance' | 'agent' | 'paths' | 'integrations' | 'skills' | 'updates' | 'notifications';
 
 interface NavItem<T extends string> {
   id: T;
@@ -60,6 +61,7 @@ const appNavItems: NavItem<AppSection>[] = [
   { id: 'agent', label: 'Agent Settings', icon: Bot, description: 'Default model and framework' },
   { id: 'paths', label: 'Paths', icon: FolderOpen, description: 'Python and framework paths' },
   { id: 'integrations', label: 'Integrations', icon: Key, description: 'API keys & Claude accounts' },
+  { id: 'skills', label: 'Skills', icon: Package, description: 'Browse and manage Claude Skills' },
   { id: 'updates', label: 'Updates', icon: Package, description: 'Auto Claude updates' },
   { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alert preferences' }
 ];
@@ -163,6 +165,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <GeneralSettings settings={settings} onSettingsChange={setSettings} section="paths" />;
       case 'integrations':
         return <IntegrationSettings settings={settings} onSettingsChange={setSettings} isOpen={open} />;
+      case 'skills':
+        return <SkillsManager />;
       case 'updates':
         return <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="updates" version={version} />;
       case 'notifications':
