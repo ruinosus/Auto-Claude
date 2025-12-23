@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Package, Loader2, AlertCircle } from 'lucide-react'
 import {
   Dialog,
@@ -17,18 +17,16 @@ interface SkillPreviewProps {
   onOpenChange: (open: boolean) => void
 }
 
+/**
+ * SkillPreview component displays a dialog with the full content of a skill.
+ * Loads skill content from the file system when the dialog is opened.
+ */
 export function SkillPreview({ skill, open, onOpenChange }: SkillPreviewProps) {
   const [content, setContent] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (open) {
-      loadContent()
-    }
-  }, [skill.path, open])
-
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -40,11 +38,18 @@ export function SkillPreview({ skill, open, onOpenChange }: SkillPreviewProps) {
         setError(result.error || 'Failed to load skill content')
       }
     } catch (err) {
-      setError(`Error loading skill content: ${err}`)
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      setError(`Error loading skill content: ${errorMessage}`)
     } finally {
       setLoading(false)
     }
-  }
+  }, [skill.path])
+
+  useEffect(() => {
+    if (open) {
+      loadContent()
+    }
+  }, [open, loadContent])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
