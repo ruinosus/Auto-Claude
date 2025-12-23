@@ -13,7 +13,8 @@ import {
   Zap,
   Github,
   Database,
-  Sparkles
+  Sparkles,
+  Plug
 } from 'lucide-react';
 import {
   FullScreenDialog,
@@ -37,6 +38,7 @@ import { ProjectSettingsContent, ProjectSettingsSection } from './ProjectSetting
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
 import { SkillsManager } from '../skills';
+import { MCPManager } from '../mcp';
 
 interface AppSettingsDialogProps {
   open: boolean;
@@ -47,7 +49,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings sections
-export type AppSection = 'appearance' | 'agent' | 'paths' | 'integrations' | 'skills' | 'updates' | 'notifications';
+export type AppSection = 'appearance' | 'agent' | 'paths' | 'integrations' | 'skills' | 'mcp' | 'updates' | 'notifications';
 
 interface NavItem<T extends string> {
   id: T;
@@ -62,6 +64,7 @@ const appNavItems: NavItem<AppSection>[] = [
   { id: 'paths', label: 'Paths', icon: FolderOpen, description: 'Python and framework paths' },
   { id: 'integrations', label: 'Integrations', icon: Key, description: 'API keys & Claude accounts' },
   { id: 'skills', label: 'Skills', icon: Package, description: 'Browse and manage Claude Skills' },
+  { id: 'mcp', label: 'MCP Servers', icon: Plug, description: 'Configure Model Context Protocol integrations' },
   { id: 'updates', label: 'Updates', icon: Package, description: 'Auto Claude updates' },
   { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alert preferences' }
 ];
@@ -167,6 +170,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <IntegrationSettings settings={settings} onSettingsChange={setSettings} isOpen={open} />;
       case 'skills':
         return <SkillsManager />;
+      case 'mcp':
+        return <MCPManager />;
       case 'updates':
         return <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="updates" version={version} />;
       case 'notifications':
