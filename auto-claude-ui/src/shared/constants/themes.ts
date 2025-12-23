@@ -55,5 +55,11 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
     name: 'Forest',
     description: 'Natural, earthy green tones',
     previewColors: { bg: '#DCFCE7', accent: '#16A34A', darkBg: '#052E16' }
+  },
+  {
+    id: 'avanade',
+    name: 'Avanade.AI',
+    description: 'Corporate theme with warm orange/brown tones',
+    previewColors: { bg: '#FCFCFB', accent: '#DD1F66', darkBg: '#1A0F0A', darkAccent: '#FF6B35' }
   }
 ];
