@@ -3,8 +3,9 @@ import { Plug, Search, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { MCPServerCard } from './MCPServerCard';
+import { MCPServerConfig } from './MCPServerConfig';
 import { useProjectStore } from '../../stores/project-store';
-import type { MCPServer } from '../../../shared/types/mcp';
+import type { MCPServer, MCPServerConfig as MCPServerConfigType } from '../../../shared/types/mcp';
 
 export function MCPManager() {
   const [servers, setServers] = useState<MCPServer[]>([]);
@@ -12,6 +13,7 @@ export function MCPManager() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
 
   const selectedProject = useProjectStore((state) => state.getSelectedProject());
 
@@ -44,7 +46,28 @@ export function MCPManager() {
 
   const handleConfigure = (server: MCPServer) => {
     setSelectedServer(server);
-    // Modal will be opened once Task 9 is implemented
+    setConfigModalOpen(true);
+  };
+
+  const handleSaveConfig = async (config: MCPServerConfigType) => {
+    if (!selectedServer) return;
+
+    try {
+      const result = await window.electronAPI.mcp.saveConfig(
+        selectedServer.id,
+        config,
+        selectedProject?.path
+      );
+
+      if (result.success) {
+        await loadServers(); // Reload to show updated status
+      } else {
+        throw new Error(result.error || 'Failed to save');
+      }
+    } catch (error) {
+      console.error('Failed to save config:', error);
+      throw error;
+    }
   };
 
   // Filter servers by search query
@@ -122,6 +145,19 @@ export function MCPManager() {
           </div>
         )}
       </div>
+
+      {/* Config Modal */}
+      {selectedServer && (
+        <MCPServerConfig
+          server={selectedServer}
+          open={configModalOpen}
+          onClose={() => {
+            setConfigModalOpen(false);
+            setSelectedServer(null);
+          }}
+          onSave={handleSaveConfig}
+        />
+      )}
     </div>
   );
 }
