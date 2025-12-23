@@ -44,8 +44,7 @@ export function MCPManager() {
 
   const handleConfigure = (server: MCPServer) => {
     setSelectedServer(server);
-    // TODO: Open config modal
-    console.log('Configure server:', server.id);
+    // Modal will be opened once Task 9 is implemented
   };
 
   // Filter servers by search query
