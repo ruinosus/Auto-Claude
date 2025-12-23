@@ -28,6 +28,13 @@ Object.defineProperty(global, 'localStorage', {
   value: localStorageMock
 });
 
+// Mock ResizeObserver for Radix UI components
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 // Test data directory for isolated file operations
 export const TEST_DATA_DIR = '/tmp/auto-claude-ui-tests';
 
