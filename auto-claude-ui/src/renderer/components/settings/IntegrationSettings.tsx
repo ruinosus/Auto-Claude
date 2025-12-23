@@ -292,19 +292,51 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
   return (
     <SettingsSection
       title="Integrations"
-      description="Manage Claude accounts and API keys"
+      description="Manage Azure Foundry, Claude accounts, and API keys"
     >
       <div className="space-y-6">
+        {/* Azure Foundry Info Section */}
+        <div className="rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/30 p-4">
+          <div className="flex items-start gap-3">
+            <div className="h-8 w-8 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+              <Activity className="h-4 w-4 text-blue-500" />
+            </div>
+            <div className="flex-1 space-y-2">
+              <div>
+                <h4 className="text-sm font-semibold text-foreground">Azure AI Foundry Integration</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Enterprise Claude deployment via Microsoft Azure
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className="bg-background/50 rounded p-2">
+                  <div className="text-muted-foreground mb-1">Endpoint</div>
+                  <div className="font-mono text-[10px] text-foreground">aif-cockpit-br-prd01</div>
+                </div>
+                <div className="bg-background/50 rounded p-2">
+                  <div className="text-muted-foreground mb-1">Models Available</div>
+                  <div className="text-foreground">Haiku 4.5 • Sonnet 4.5 • Opus 4.5</div>
+                </div>
+                <div className="bg-background/50 rounded p-2">
+                  <div className="text-muted-foreground mb-1">Region</div>
+                  <div className="text-foreground">East US 2 (Brazil)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Claude Accounts Section */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-muted-foreground" />
-            <h4 className="text-sm font-semibold text-foreground">Claude Accounts</h4>
+            <h4 className="text-sm font-semibold text-foreground">Claude Profiles</h4>
           </div>
 
           <div className="rounded-lg bg-muted/30 border border-border p-4">
             <p className="text-sm text-muted-foreground mb-4">
-              Add multiple Claude subscriptions to automatically switch between them when you hit rate limits.
+              Manage Claude API profiles including Azure Foundry, direct API access, and proxy configurations.
+              Switch between profiles automatically when you hit rate limits.
             </p>
 
             {/* Accounts list */}

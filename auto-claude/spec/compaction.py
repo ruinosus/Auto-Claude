@@ -16,7 +16,7 @@ from core.auth import get_sdk_env_vars, require_auth_token
 async def summarize_phase_output(
     phase_name: str,
     phase_output: str,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str | None = None,
     target_words: int = 500,
 ) -> str:
     """
@@ -58,9 +58,13 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
 ## Summary:
 """
 
+    # Use environment variable for model name (Azure Foundry support)
+    import os
+    effective_model = model or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-5-20250929")
+
     client = ClaudeSDKClient(
         options=ClaudeAgentOptions(
-            model=model,
+            model=effective_model,
             system_prompt=(
                 "You are a concise technical summarizer. Extract only the most "
                 "critical information from phase outputs. Use bullet points. "

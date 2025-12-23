@@ -94,7 +94,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="claude-opus-4-5-20251101",
+        default=None,
         help="Model to use (default: claude-opus-4-5-20251101)",
     )
     parser.add_argument(

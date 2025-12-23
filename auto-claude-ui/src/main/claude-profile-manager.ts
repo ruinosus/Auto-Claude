@@ -354,13 +354,32 @@ export class ClaudeProfileManager {
     const profile = this.getActiveProfile();
     const env: Record<string, string> = {};
 
-    // Priority 1: Proxy mode (LiteLLM/Azure OpenAI)
+    // Priority 1: Proxy mode (LiteLLM/Azure OpenAI/Azure Foundry)
     if (profile?.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
-      env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
-      env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;
-      console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name, {
-        baseUrl: profile.proxyBaseUrl
-      });
+      // Check if this is Azure Foundry
+      if (profile.proxyBaseUrl.includes('services.ai.azure.com') && profile.proxyBaseUrl.includes('/anthropic')) {
+        // Azure AI Foundry Anthropic endpoint - use AUTH_TOKEN instead of API_KEY for Claude CLI
+        env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
+        env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;  // Claude CLI may prefer AUTH_TOKEN
+        env.ANTHROPIC_API_KEY = profile.proxyApiKey;      // Also set API_KEY for compatibility
+        // Model deployments - 3 models now available in Azure Foundry
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5';
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5';
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-5';
+        console.warn('[ClaudeProfileManager] Using Azure AI Foundry Anthropic endpoint for profile:', profile.name, {
+          baseUrl: profile.proxyBaseUrl,
+          apiKeyPrefix: profile.proxyApiKey?.substring(0, 20) + '...',
+          envKeys: Object.keys(env)
+        });
+        console.warn('[ClaudeProfileManager] ENV VARS:', JSON.stringify(env, null, 2));
+      } else {
+        // Standard proxy mode (LiteLLM, etc.)
+        env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
+        env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;
+        console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name, {
+          baseUrl: profile.proxyBaseUrl
+        });
+      }
       return env;
     }
 

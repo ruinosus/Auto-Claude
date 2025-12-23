@@ -60,6 +60,6 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
     id: 'avanade',
     name: 'Avanade.AI',
     description: 'Corporate theme with warm orange/brown tones',
-    previewColors: { bg: '#FCFCFB', accent: '#DD1F66', darkBg: '#1A0F0A', darkAccent: '#FF6B35' }
+    previewColors: { bg: '#FCFCFC', accent: '#DB5B0A', darkBg: '#0A0807', darkAccent: '#DB5B0A' }
   }
 ];

@@ -1014,46 +1014,46 @@
    Warm orange accents with professional clean design
    ============================================ */
 [data-theme="avanade"] {
-  /* Backgrounds - Clean off-white */
-  --background: #FCFCFB;
-  --foreground: #1A0F0A;
+  /* Backgrounds - Clean off-white (HSL 0 0% 99%) */
+  --background: #FCFCFC;
+  --foreground: #0A0807;
 
   /* Card surfaces */
   --card: #FFFFFF;
-  --card-foreground: #1A0F0A;
+  --card-foreground: #0A0807;
 
-  /* Primary accent - Avanade Orange */
-  --primary: #DD1F66;
+  /* Primary accent - Avanade Orange (HSL 16 100% 43.1%) */
+  --primary: #DB5B0A;
   --primary-foreground: #FFFFFF;
 
-  /* Secondary - Neutral warm tones */
-  --secondary: #F5F5F4;
-  --secondary-foreground: #1A0F0A;
+  /* Secondary - Neutral warm tones (HSL 60 4.8% 95.9%) */
+  --secondary: #F6F6F4;
+  --secondary-foreground: #18100C;
 
-  /* Muted */
-  --muted: #F5F5F4;
-  --muted-foreground: #716B66;
+  /* Muted (HSL 60 4.8% 95.9%) */
+  --muted: #F6F6F4;
+  --muted-foreground: #737172;
 
   /* Accent */
-  --accent: #FFF5F0;
-  --accent-foreground: #DD1F66;
+  --accent: #F6F6F4;
+  --accent-foreground: #18100C;
 
-  /* Destructive */
-  --destructive: #DC2626;
-  --destructive-foreground: #FFFFFF;
+  /* Destructive (HSL 0 84.2% 60.2%) */
+  --destructive: #EA4335;
+  --destructive-foreground: #FAF9F9;
 
-  /* Borders and inputs */
-  --border: #E7E5E4;
-  --input: #E7E5E4;
-  --ring: #DD1F66;
+  /* Borders and inputs (HSL 20 5.9% 90%) */
+  --border: #E8E6E5;
+  --input: #E8E6E5;
+  --ring: #DB5B0A;
 
-  /* Sidebar - Distinct from main content */
-  --sidebar: #FAFAF9;
-  --sidebar-foreground: #3F3B37;
+  /* Sidebar (HSL 0 0% 98%) */
+  --sidebar: #FAFAFA;
+  --sidebar-foreground: #424242;
 
   /* Popover */
   --popover: #FFFFFF;
-  --popover-foreground: #1A0F0A;
+  --popover-foreground: #0A0807;
 
   /* Semantic colors */
   --success: #16A34A;
@@ -1065,7 +1065,7 @@
   --info: #0284C7;
   --info-foreground: #FFFFFF;
   --info-light: #E0F2FE;
-  --error: #DC2626;
+  --error: #EA4335;
   --error-light: #FEE2E2;
 
   /* Shadows - Professional subtle */
@@ -1073,7 +1073,7 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-  --shadow-focus: 0 0 0 3px rgba(221, 31, 102, 0.2);
+  --shadow-focus: 0 0 0 3px rgba(219, 91, 10, 0.2);
 }
 
 /* ============================================
@@ -1082,58 +1082,58 @@
    Orange accents for brand consistency
    ============================================ */
 [data-theme="avanade"].dark {
-  /* Backgrounds - Warm dark brown (not pure black) */
-  --background: #1A0F0A;
-  --foreground: #FAF8F7;
+  /* Backgrounds - Warm dark brown (HSL 20 14.3% 4.1%) */
+  --background: #0A0807;
+  --foreground: #FAF9F9;
 
-  /* Card surfaces - Elevated warm brown */
-  --card: #251912;
-  --card-foreground: #FAF8F7;
+  /* Card surfaces - Same as background in cockpit */
+  --card: #0A0807;
+  --card-foreground: #FAF9F9;
 
-  /* Primary accent - Avanade Orange (brighter for dark) */
-  --primary: #FF6B35;
-  --primary-foreground: #1A0F0A;
+  /* Primary accent - Avanade Orange (HSL 16 100% 43.1%) - same in dark */
+  --primary: #DB5B0A;
+  --primary-foreground: #FFFFFF;
 
-  /* Secondary */
-  --secondary: #2D1F17;
-  --secondary-foreground: #FAF8F7;
+  /* Secondary (HSL 12 6.5% 15.1%) */
+  --secondary: #282422;
+  --secondary-foreground: #FAF9F9;
 
-  /* Muted */
-  --muted: #2D1F17;
-  --muted-foreground: #A39A94;
+  /* Muted (HSL 12 6.5% 15.1%) */
+  --muted: #282422;
+  --muted-foreground: #A8A19D;
 
   /* Accent */
-  --accent: #3D2418;
-  --accent-foreground: #FF6B35;
+  --accent: #282422;
+  --accent-foreground: #FAF9F9;
 
-  /* Destructive */
-  --destructive: #EF4444;
-  --destructive-foreground: #1A0F0A;
+  /* Destructive (HSL 0 72.2% 50.6%) */
+  --destructive: #DD2C1C;
+  --destructive-foreground: #FAF9F9;
 
-  /* Borders and inputs - Subtle warm */
-  --border: #3D2418;
-  --input: #3D2418;
-  --ring: #FF6B35;
+  /* Borders and inputs (HSL 12 6.5% 15.1%) */
+  --border: #282422;
+  --input: #282422;
+  --ring: #DB5B0A;
 
-  /* Sidebar - Distinct darker brown */
-  --sidebar: #15100C;
-  --sidebar-foreground: #FAF8F7;
+  /* Sidebar (HSL 240 5.9% 10%) */
+  --sidebar: #181819;
+  --sidebar-foreground: #F6F6F4;
 
   /* Popover */
-  --popover: #2D1F17;
-  --popover-foreground: #FAF8F7;
+  --popover: #0A0807;
+  --popover-foreground: #FAF9F9;
 
   /* Semantic colors - Adjusted for dark mode */
   --success: #22C55E;
-  --success-foreground: #1A0F0A;
+  --success-foreground: #0A0807;
   --success-light: #14532D;
   --warning: #F59E0B;
-  --warning-foreground: #1A0F0A;
+  --warning-foreground: #0A0807;
   --warning-light: #451A03;
   --info: #38BDF8;
-  --info-foreground: #1A0F0A;
+  --info-foreground: #0A0807;
   --info-light: #0C4A6E;
-  --error: #EF4444;
+  --error: #DD2C1C;
   --error-light: #450A0A;
 
   /* Shadows - Deeper for dark mode */
@@ -1141,7 +1141,7 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.7);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.9);
-  --shadow-focus: 0 0 0 3px rgba(255, 107, 53, 0.25);
+  --shadow-focus: 0 0 0 3px rgba(219, 91, 10, 0.25);
 }
 
 /* Base styles */

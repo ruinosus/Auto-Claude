@@ -17,7 +17,8 @@ except ImportError:
 class ClaudeAnalysisClient:
     """Wrapper for Claude SDK client with analysis-specific configuration."""
 
-    DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+    import os
+    DEFAULT_MODEL = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-5-20250929")
     ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
     MAX_TURNS = 50
 

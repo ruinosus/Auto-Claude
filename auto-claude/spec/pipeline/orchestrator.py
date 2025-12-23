@@ -56,7 +56,7 @@ class SpecOrchestrator:
         spec_name: str | None = None,
         spec_dir: Path
         | None = None,  # Use existing spec directory (for UI integration)
-        model: str = "claude-sonnet-4-5-20250929",
+        model: str | None = None,
         thinking_level: str = "medium",  # Thinking level for extended thinking
         complexity_override: str | None = None,  # Force a specific complexity
         use_ai_assessment: bool = True,  # Use AI for complexity assessment (vs heuristics)
@@ -77,7 +77,9 @@ class SpecOrchestrator:
         """
         self.project_dir = Path(project_dir)
         self.task_description = task_description
-        self.model = model
+        # Use environment variable for model name (Azure Foundry support)
+        import os
+        self.model = model or os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-5-20250929")
         self.thinking_level = thinking_level
         self.complexity_override = complexity_override
         self.use_ai_assessment = use_ai_assessment

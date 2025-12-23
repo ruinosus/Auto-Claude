@@ -173,8 +173,10 @@ class GraphitiConfig:
 
         # Anthropic settings
         anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        # Support both GRAPHITI_ANTHROPIC_MODEL and ANTHROPIC_DEFAULT_SONNET_MODEL (Azure Foundry)
         anthropic_model = os.environ.get(
-            "GRAPHITI_ANTHROPIC_MODEL", "claude-sonnet-4-5"
+            "GRAPHITI_ANTHROPIC_MODEL",
+            os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-5")
         )
 
         # Azure OpenAI settings

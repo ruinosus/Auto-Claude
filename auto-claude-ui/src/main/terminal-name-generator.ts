@@ -247,6 +247,7 @@ Output ONLY the name (2-3 words), nothing else. Examples: "npm build", "git logs
 
     return `
 import asyncio
+import os
 import sys
 
 async def generate_name():
@@ -255,10 +256,14 @@ async def generate_name():
 
         prompt = ${escapedPrompt}
 
+        # Use environment variable for model name (Azure Foundry support)
+        # Falls back to claude-haiku-4-5 if not set
+        model = os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5")
+
         # Create a minimal client for simple text generation (no tools needed)
         client = ClaudeSDKClient(
             options=ClaudeAgentOptions(
-                model="claude-haiku-4-5",
+                model=model,
                 system_prompt="You generate very short, concise terminal names (2-3 words MAX). Output ONLY the name, nothing else. No quotes, no explanation, no preamble. Keep it as short as possible while being descriptive.",
                 max_turns=1,
             )

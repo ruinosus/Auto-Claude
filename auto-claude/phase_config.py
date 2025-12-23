@@ -7,15 +7,21 @@ Reads configuration from task_metadata.json and provides resolved model IDs.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Literal, TypedDict
 
 # Model shorthand to full model ID mapping
-MODEL_ID_MAP: dict[str, str] = {
-    "opus": "claude-opus-4-5-20251101",
-    "sonnet": "claude-sonnet-4-5-20250929",
-    "haiku": "claude-haiku-4-5-20251001",
-}
+# These can be overridden by environment variables for Azure Foundry deployments
+def _get_model_id_map() -> dict[str, str]:
+    """Get model ID map with environment variable overrides for Azure Foundry."""
+    return {
+        "opus": os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-5-20251101"),
+        "sonnet": os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-5-20250929"),
+        "haiku": os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5-20251001"),
+    }
+
+MODEL_ID_MAP: dict[str, str] = _get_model_id_map()
 
 # Thinking level to budget tokens mapping (None = no extended thinking)
 # Values must match auto-claude-ui/src/shared/constants/models.ts THINKING_BUDGET_MAP

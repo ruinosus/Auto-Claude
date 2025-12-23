@@ -25,7 +25,7 @@ class IdeationConfigManager:
         include_roadmap_context: bool = True,
         include_kanban_context: bool = True,
         max_ideas_per_type: int = 5,
-        model: str = "claude-opus-4-5-20251101",
+        model: str | None = None,
         thinking_level: str = "medium",
         refresh: bool = False,
         append: bool = False,
@@ -39,13 +39,15 @@ class IdeationConfigManager:
             include_roadmap_context: Include roadmap files in analysis
             include_kanban_context: Include kanban board in analysis
             max_ideas_per_type: Maximum ideas to generate per type
-            model: Claude model to use
+            model: Claude model to use (defaults to ANTHROPIC_DEFAULT_OPUS_MODEL env var)
             thinking_level: Thinking level for extended reasoning
             refresh: Force regeneration of existing files
             append: Preserve existing ideas when merging
         """
         self.project_dir = Path(project_dir)
-        self.model = model
+        # Use environment variable for model name (Azure Foundry support)
+        import os
+        self.model = model or os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-5-20251101")
         self.thinking_level = thinking_level
         self.refresh = refresh
         self.append = append

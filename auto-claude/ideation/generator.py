@@ -56,13 +56,15 @@ class IdeationGenerator:
         self,
         project_dir: Path,
         output_dir: Path,
-        model: str = "claude-opus-4-5-20251101",
+        model: str | None = None,
         thinking_level: str = "medium",
         max_ideas_per_type: int = 5,
     ):
         self.project_dir = Path(project_dir)
         self.output_dir = Path(output_dir)
-        self.model = model
+        # Use environment variable for model name (Azure Foundry support)
+        import os
+        self.model = model or os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-5-20251101")
         self.thinking_level = thinking_level
         self.thinking_budget = get_thinking_budget(thinking_level)
         self.max_ideas_per_type = max_ideas_per_type

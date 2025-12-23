@@ -132,7 +132,7 @@ async def run_with_sdk(
     project_dir: str,
     message: str,
     history: list,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str | None = None,
     thinking_level: str = "medium",
 ) -> None:
     """Run the chat using Claude SDK with streaming."""
@@ -168,6 +168,11 @@ async def run_with_sdk(
 {conversation_context}
 
 Current question: {message}"""
+
+    # Use environment variable for model name (Azure Foundry support)
+    import os
+    if model is None:
+        model = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-5-20250929")
 
     debug(
         "insights_runner",
@@ -336,8 +341,8 @@ def main():
     )
     parser.add_argument(
         "--model",
-        default="claude-sonnet-4-5-20250929",
-        help="Claude model ID (default: claude-sonnet-4-5-20250929)",
+        default=None,
+        help="Claude model ID (default: uses ANTHROPIC_DEFAULT_SONNET_MODEL env var or claude-sonnet-4-5-20250929)",
     )
     parser.add_argument(
         "--thinking-level",

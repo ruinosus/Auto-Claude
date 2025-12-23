@@ -271,8 +271,24 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     return {};
   }
 
-  // Priority 1: Proxy mode (LiteLLM/Azure OpenAI)
+  // Priority 1: Proxy mode (LiteLLM/Azure OpenAI/Azure Foundry)
   if (profile.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
+    // Check if this is Azure AI Foundry with Anthropic endpoint
+    if (profile.proxyBaseUrl.includes('services.ai.azure.com') && profile.proxyBaseUrl.includes('/anthropic')) {
+      console.warn('[getProfileEnv] Using Azure AI Foundry Anthropic endpoint for profile:', profile.name, {
+        baseUrl: profile.proxyBaseUrl
+      });
+      return {
+        ANTHROPIC_BASE_URL: profile.proxyBaseUrl,
+        ANTHROPIC_AUTH_TOKEN: profile.proxyApiKey,  // Claude CLI may prefer AUTH_TOKEN
+        ANTHROPIC_API_KEY: profile.proxyApiKey,      // Also set API_KEY for compatibility
+        // Model deployments - 3 models now available in Azure Foundry
+        ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-4-5',
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+        ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-4-5'
+      };
+    }
+    // Standard proxy mode
     console.warn('[getProfileEnv] Using proxy mode for profile:', profile.name, {
       baseUrl: profile.proxyBaseUrl
     });

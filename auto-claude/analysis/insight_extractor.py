@@ -31,7 +31,9 @@ except ImportError:
 from core.auth import ensure_claude_code_oauth_token, get_auth_token
 
 # Default model for insight extraction (fast and cheap)
-DEFAULT_EXTRACTION_MODEL = "claude-3-5-haiku-latest"
+# Use environment variable for Azure Foundry support
+import os
+DEFAULT_EXTRACTION_MODEL = os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-3-5-haiku-latest")
 
 # Maximum diff size to send to the LLM (avoid context limits)
 MAX_DIFF_CHARS = 15000

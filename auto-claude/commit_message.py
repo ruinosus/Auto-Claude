@@ -202,9 +202,13 @@ async def _call_claude_haiku(prompt: str) -> str:
         logger.warning("claude_agent_sdk not installed")
         return ""
 
+    # Use environment variable for model name (Azure Foundry support)
+    import os
+    model = os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "claude-haiku-4-5-20251001")
+
     client = ClaudeSDKClient(
         options=ClaudeAgentOptions(
-            model="claude-haiku-4-5-20251001",
+            model=model,
             system_prompt=SYSTEM_PROMPT,
             allowed_tools=[],
             max_turns=1,
