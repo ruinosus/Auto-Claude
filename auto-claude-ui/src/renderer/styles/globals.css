@@ -1144,6 +1144,140 @@
   --shadow-focus: 0 0 0 3px rgba(219, 91, 10, 0.25);
 }
 
+/* ============================================
+   INTRAAI THEME (Light)
+   Purple and green theme from Innove-C
+   ============================================ */
+[data-theme="intraai"] {
+  /* Backgrounds - Clean white */
+  --background: #FFFFFF;
+  --foreground: #1A1A1A;
+
+  /* Card surfaces */
+  --card: #FAFAFA;
+  --card-foreground: #1A1A1A;
+
+  /* Primary accent - IntraAI Purple */
+  --primary: #9F509F;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary - IntraAI Green */
+  --secondary: #7CB420;
+  --secondary-foreground: #FFFFFF;
+
+  /* Muted */
+  --muted: #F5F5F5;
+  --muted-foreground: #737373;
+
+  /* Accent */
+  --accent: #F5F5F5;
+  --accent-foreground: #1A1A1A;
+
+  /* Destructive */
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+
+  /* Borders and inputs */
+  --border: #E5E5E5;
+  --input: #E5E5E5;
+  --ring: #9F509F;
+
+  /* Sidebar */
+  --sidebar: #FAFAFA;
+  --sidebar-foreground: #1A1A1A;
+
+  /* Popover */
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1A1A;
+
+  /* Semantic colors */
+  --success: #7CB420;
+  --success-foreground: #FFFFFF;
+  --success-light: #E8F5D7;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+  --warning-light: #FEF3C7;
+  --info: #0284C7;
+  --info-foreground: #FFFFFF;
+  --info-light: #E0F2FE;
+  --error: #DC2626;
+  --error-light: #FEE2E2;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  --shadow-focus: 0 0 0 3px rgba(159, 80, 159, 0.2);
+}
+
+/* ============================================
+   INTRAAI THEME (Dark)
+   Purple and green dark theme
+   ============================================ */
+[data-theme="intraai"].dark {
+  /* Backgrounds - Dark with slight purple tint */
+  --background: #1A1A1A;
+  --foreground: #F5F5F5;
+
+  /* Card surfaces */
+  --card: #262626;
+  --card-foreground: #F5F5F5;
+
+  /* Primary accent - Brighter purple for dark mode */
+  --primary: #B366B3;
+  --primary-foreground: #FFFFFF;
+
+  /* Secondary - Brighter green for dark mode */
+  --secondary: #8FCC2C;
+  --secondary-foreground: #1A1A1A;
+
+  /* Muted */
+  --muted: #262626;
+  --muted-foreground: #A3A3A3;
+
+  /* Accent */
+  --accent: #262626;
+  --accent-foreground: #F5F5F5;
+
+  /* Destructive */
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  /* Borders and inputs */
+  --border: #404040;
+  --input: #404040;
+  --ring: #B366B3;
+
+  /* Sidebar */
+  --sidebar: #0F0F0F;
+  --sidebar-foreground: #F5F5F5;
+
+  /* Popover */
+  --popover: #262626;
+  --popover-foreground: #F5F5F5;
+
+  /* Semantic colors */
+  --success: #8FCC2C;
+  --success-foreground: #1A1A1A;
+  --success-light: #2D3F1A;
+  --warning: #F59E0B;
+  --warning-foreground: #1A1A1A;
+  --warning-light: #451A03;
+  --info: #38BDF8;
+  --info-foreground: #1A1A1A;
+  --info-light: #0C4A6E;
+  --error: #EF4444;
+  --error-light: #450A0A;
+
+  /* Shadows - Deeper for dark mode */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.9);
+  --shadow-focus: 0 0 0 3px rgba(179, 102, 179, 0.25);
+}
+
 /* Base styles */
 * {
   border-color: var(--border);
