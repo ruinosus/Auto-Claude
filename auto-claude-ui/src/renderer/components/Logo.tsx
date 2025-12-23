@@ -9,18 +9,15 @@ export function Logo({ className = '' }: LogoProps) {
   const settings = useSettingsStore((state) => state.settings);
   const colorTheme = settings.colorTheme || 'default';
 
-  // Show Avanade logo when Avanade theme is active
+  // Show Avanade logo when Avanade theme is active (logo only, no text)
   if (colorTheme === 'avanade') {
     return (
-      <div className={`flex items-center gap-2 ${className}`}>
+      <div className={`flex items-center ${className}`}>
         <img
           src={avanadeLogoBrandWave}
           alt="Avanade Logo"
           className="h-8 w-auto"
         />
-        <span className="text-base font-semibold tracking-tight">
-          Auto Claude
-        </span>
       </div>
     );
   }
