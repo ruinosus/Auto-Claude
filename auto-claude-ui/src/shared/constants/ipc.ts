@@ -305,5 +305,16 @@ export const IPC_CHANNELS = {
   SKILLS_LIST: 'skills:list',
   SKILLS_INSTALL: 'skills:install',
   SKILLS_REMOVE: 'skills:remove',
-  SKILLS_GET_CONTENT: 'skills:getContent'
+  SKILLS_GET_CONTENT: 'skills:getContent',
+
+  // MCP operations
+  MCP_LIST: 'mcp:list',
+  MCP_TEST_CONNECTION: 'mcp:test-connection',
+  MCP_SAVE_CONFIG: 'mcp:save-config',
+  MCP_GET_CAPABILITIES: 'mcp:get-capabilities',
+  MCP_LIST_PROMPTS: 'mcp:list-prompts',
+  MCP_LIST_RESOURCES: 'mcp:list-resources',
+  MCP_START_FASTMCP_SERVER: 'mcp:start-fastmcp-server',
+  MCP_STOP_FASTMCP_SERVER: 'mcp:stop-fastmcp-server',
+  MCP_GENERATE_FASTMCP_SERVER: 'mcp:generate-fastmcp-server'
 } as const;

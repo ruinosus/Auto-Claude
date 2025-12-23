@@ -8,6 +8,7 @@ import type {
   MCPInstallResult,
   FastMCPWizardState
 } from '../../../shared/types/mcp';
+import { IPC_CHANNELS } from '../../../shared/constants';
 import { invokeIpc } from './ipc-utils';
 
 /**
@@ -33,30 +34,30 @@ export interface MCPAPI {
 export const createMCPAPI = (): MCPAPI => ({
   mcp: {
     list: (projectPath?: string): Promise<MCPServer[]> =>
-      invokeIpc('mcp:list', projectPath),
+      invokeIpc(IPC_CHANNELS.MCP_LIST, projectPath),
 
     testConnection: (serverId: string, config: MCPServerConfig): Promise<MCPTestConnectionResult> =>
-      invokeIpc('mcp:test-connection', serverId, config),
+      invokeIpc(IPC_CHANNELS.MCP_TEST_CONNECTION, serverId, config),
 
     saveConfig: (serverId: string, config: MCPServerConfig, projectPath?: string): Promise<{ success: boolean; error?: string }> =>
-      invokeIpc('mcp:save-config', serverId, config, projectPath),
+      invokeIpc(IPC_CHANNELS.MCP_SAVE_CONFIG, serverId, config, projectPath),
 
     getCapabilities: (serverId: string): Promise<{ tools: MCPTool[]; prompts: MCPPrompt[]; resources: MCPResource[] }> =>
-      invokeIpc('mcp:get-capabilities', serverId),
+      invokeIpc(IPC_CHANNELS.MCP_GET_CAPABILITIES, serverId),
 
     listPrompts: (serverId: string): Promise<MCPPrompt[]> =>
-      invokeIpc('mcp:list-prompts', serverId),
+      invokeIpc(IPC_CHANNELS.MCP_LIST_PROMPTS, serverId),
 
     listResources: (serverId: string): Promise<MCPResource[]> =>
-      invokeIpc('mcp:list-resources', serverId),
+      invokeIpc(IPC_CHANNELS.MCP_LIST_RESOURCES, serverId),
 
     startFastMCPServer: (serverPath: string): Promise<{ success: boolean; port?: number; error?: string }> =>
-      invokeIpc('mcp:start-fastmcp-server', serverPath),
+      invokeIpc(IPC_CHANNELS.MCP_START_FASTMCP_SERVER, serverPath),
 
     stopFastMCPServer: (serverPath: string): Promise<{ success: boolean; error?: string }> =>
-      invokeIpc('mcp:stop-fastmcp-server', serverPath),
+      invokeIpc(IPC_CHANNELS.MCP_STOP_FASTMCP_SERVER, serverPath),
 
     generateFastMCPServer: (wizardState: FastMCPWizardState, outputPath: string): Promise<MCPInstallResult> =>
-      invokeIpc('mcp:generate-fastmcp-server', wizardState, outputPath)
+      invokeIpc(IPC_CHANNELS.MCP_GENERATE_FASTMCP_SERVER, wizardState, outputPath)
   }
 });
