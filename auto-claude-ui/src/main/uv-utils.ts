@@ -1,3 +1,13 @@
+/**
+ * uv Command Execution Utilities
+ *
+ * Provides utilities for executing uv (Astral's Python package manager) commands
+ * in the Electron main process. All functions use child_process.spawn for reliable
+ * command execution with proper error handling.
+ *
+ * @module uv-utils
+ */
+
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -7,7 +17,7 @@ import { promisify } from 'util';
 export interface UvExecutionResult {
   stdout: string;
   stderr: string;
-  exitCode: number;
+  exitCode: number | null;
 }
 
 /**
@@ -61,11 +71,11 @@ export async function executeUv(
       stderr += data.toString();
     });
 
-    child.on('close', (exitCode: number) => {
+    child.on('close', (exitCode: number | null) => {
       resolve({
         stdout,
         stderr,
-        exitCode
+        exitCode: exitCode ?? 1 // Treat null as error (exit code 1)
       });
     });
 
