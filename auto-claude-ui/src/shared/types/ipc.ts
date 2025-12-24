@@ -598,6 +598,7 @@ export interface ElectronAPI {
     saveConfig: (serverId: string, config: import('./mcp').MCPServerConfig, projectPath?: string) => Promise<IPCResult>;
     testConnection: (config: import('./mcp').CustomServerConfig) => Promise<import('./mcp').MCPTestConnectionResult & { capabilities?: { tools?: unknown[]; prompts?: unknown[]; resources?: unknown[] } }>;
     addCustomServer: (config: import('./mcp').CustomServerConfig, scope: 'global' | 'project', projectPath?: string) => Promise<IPCResult<{ serverId: string }>>;
+    generateFastMCPServer: (config: import('./mcp').FastMCPServerConfig) => Promise<import('./mcp').MCPInstallResult>;
   };
 }
 
