@@ -178,13 +178,16 @@ export interface CustomServerConfig {
   reconnectOnDisconnect?: boolean;
   reconnectDelay?: number;
 
-  // FastMCP specific (for Phase 3)
+  // FastMCP specific (Updated for Phase 3A with uv)
   isFastMCP?: boolean;
   generatedFrom?: 'wizard' | 'manual';
+  template?: string;
+  pythonVersion?: '3.10' | '3.11' | '3.12' | '3.13';
   sourceFiles?: {
+    pyprojectToml: string;  // Changed from requirementsTxt
     serverPy: string;
-    requirementsTxt: string;
     readmeMd: string;
+    pythonVersion?: string;  // .python-version file path
   };
 }
 
@@ -221,4 +224,74 @@ export interface MCPServersRegistry {
   version: '1.0';
   servers: MCPServer[];
   updatedAt: string;
+}
+
+// ===== FastMCP Types (Phase 3A) =====
+
+export interface FastMCPTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;  // Lucide icon name
+  tools: FastMCPTool[];
+  dependencies: string[];  // Package specs like "httpx>=0.25.0"
+}
+
+export interface FastMCPTool {
+  name: string;
+  description: string;
+  parameters: FastMCPToolParameter[];
+}
+
+export interface FastMCPToolParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  required: boolean;
+  default?: any;
+  description?: string;
+}
+
+export interface FastMCPServerConfig {
+  // Wizard inputs
+  templateId: string;
+  serverName: string;
+  description: string;
+  pythonVersion: '3.10' | '3.11' | '3.12' | '3.13';
+  workingDir: string;
+  tools: FastMCPTool[];
+  dependencies: string[];
+}
+
+// ===== Process Management Types (Phase 3A) =====
+
+export type ProcessStatusType = 'stopped' | 'starting' | 'running' | 'stopping' | 'crashed';
+
+export interface ProcessState {
+  serverId: string;
+  pid: number;
+  startTime: Date;
+  logBuffer: string[];  // Last 1000 lines
+  restartCount: number;
+  autoRestart: boolean;
+  status: ProcessStatusType;
+  exitCode?: number;
+  signal?: string;
+}
+
+export interface ProcessStatus {
+  serverId: string;
+  status: ProcessStatusType;
+  pid?: number;
+  uptime?: number;  // milliseconds
+  memory?: number;  // bytes
+  restartCount: number;
+  lastStarted?: Date;
+  exitCode?: number;
+}
+
+export interface LogEntry {
+  serverId: string;
+  timestamp: Date;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  message: string;
 }
