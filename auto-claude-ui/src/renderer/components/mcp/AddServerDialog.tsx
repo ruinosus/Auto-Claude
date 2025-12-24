@@ -21,7 +21,7 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
   const handleComplete = async (config: CustomServerConfig) => {
     try {
       // Save the server config via IPC
-      await window.electron.addCustomMCPServer(config);
+      await window.electron.mcp.addCustomServer(config, 'global');
       // Close the dialog after successful save
       onClose();
     } catch (error) {
@@ -37,7 +37,7 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
   const handleFastMCPComplete = async (config: FastMCPServerConfig) => {
     try {
       // Call IPC to generate and save FastMCP server
-      await window.electron.generateFastMCPServer(config);
+      await window.electron.mcp.generateFastMCPServer(config);
       // Close dialog on success
       onClose();
     } catch (error) {
