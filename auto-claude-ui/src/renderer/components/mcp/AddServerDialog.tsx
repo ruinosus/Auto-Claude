@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Globe, Zap } from 'lucide-react';
 import { AddExistingServerForm } from './AddExistingServerForm';
-import type { CustomServerConfig } from '../../../shared/types/mcp';
+import { FastMCPWizard } from './wizard/FastMCPWizard';
+import type { CustomServerConfig, FastMCPServerConfig } from '../../../shared/types/mcp';
 
 interface AddServerDialogProps {
   open: boolean;
@@ -33,9 +34,21 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
     setMode('choose');
   };
 
+  const handleFastMCPComplete = async (config: FastMCPServerConfig) => {
+    try {
+      // Call IPC to generate and save FastMCP server
+      await window.electron.generateFastMCPServer(config);
+      // Close dialog on success
+      onClose();
+    } catch (error) {
+      console.error('Failed to generate FastMCP server:', error);
+      // TODO: Show error message to user
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         {mode === 'choose' && (
           <div className="space-y-4">
             <DialogHeader>
@@ -87,12 +100,10 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
         )}
 
         {mode === 'fastmcp' && (
-          <div>
-            <p>FastMCP Wizard (Phase 3)</p>
-            <Button variant="ghost" onClick={handleBack}>
-              ← Back
-            </Button>
-          </div>
+          <FastMCPWizard
+            onComplete={handleFastMCPComplete}
+            onCancel={handleCancel}
+          />
         )}
       </DialogContent>
     </Dialog>

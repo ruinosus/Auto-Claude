@@ -1,9 +1,23 @@
 /**
  * Test setup file for Vitest
  */
-import { vi, beforeEach, afterEach } from 'vitest';
+import { vi, beforeEach, afterEach, expect } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import path from 'path';
+
+// Add custom matchers for testing-library
+expect.extend({
+  toBeInTheDocument(received: HTMLElement | null) {
+    const pass = received !== null && document.body.contains(received);
+    return {
+      pass,
+      message: () =>
+        pass
+          ? `expected element not to be in the document`
+          : `expected element to be in the document`,
+    };
+  },
+});
 
 // Mock localStorage for tests that need it
 const localStorageMock = (() => {
