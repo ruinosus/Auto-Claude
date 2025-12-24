@@ -416,75 +416,20 @@ export function registerMCPHandlers() {
    * Generate FastMCP server with uv
    */
   ipcMain.handle('mcp:generate-fastmcp-server', async (event, config: FastMCPServerConfig) => {
-    const { ProgressReporter, GenerationStep } = await import('./progress-reporter');
-    const reporter = new ProgressReporter(event);
-    let currentStep: GenerationStep = GenerationStep.CREATING_DIRECTORY;
-
     try {
-      const {
-        generateServerPy,
-        generatePyprojectToml,
-        generateReadmeMd,
-        generatePythonVersion
-      } = await import('./fastmcp-generator');
+      const { generateAndRegisterServer } = await import('./registry-integration');
+      const registryPath = path.join(app.getPath('home'), '.mcp-servers.json');
 
-      const { ensureDirectory, writeAllServerFiles } = await import('./fs-utils');
-      const { uvInit, uvAdd, uvSync } = await import('./uv-utils');
-
-      // Generate file contents
-      const files = [
-        { filename: 'server.py', content: generateServerPy(config) },
-        { filename: 'pyproject.toml', content: generatePyprojectToml(config) },
-        { filename: 'README.md', content: generateReadmeMd(config) },
-        { filename: '.python-version', content: generatePythonVersion(config.pythonVersion) }
-      ];
-
-      // Create server directory
-      currentStep = GenerationStep.CREATING_DIRECTORY;
-      reporter.reportStep(currentStep, { path: config.workingDir });
-      await ensureDirectory(config.workingDir);
-
-      // Write all files
-      currentStep = GenerationStep.WRITING_FILES;
-      reporter.reportStep(currentStep, { fileCount: files.length });
-      await writeAllServerFiles(config.workingDir, files);
-
-      // Initialize uv project
-      currentStep = GenerationStep.UV_INIT;
-      reporter.reportStep(currentStep, { serverName: config.serverName });
-      await uvInit(config.serverName, config.workingDir);
-
-      // Add dependencies
-      if (config.dependencies && config.dependencies.length > 0) {
-        currentStep = GenerationStep.UV_ADD;
-        reporter.reportStep(currentStep, {
-          dependencies: config.dependencies,
-          count: config.dependencies.length
-        });
-        await uvAdd(config.dependencies, config.workingDir);
-      }
-
-      // Sync dependencies
-      currentStep = GenerationStep.UV_SYNC;
-      reporter.reportStep(currentStep);
-      await uvSync(config.workingDir);
-
-      // Report completion
-      currentStep = GenerationStep.COMPLETE;
-      reporter.reportStep(currentStep, { serverPath: config.workingDir });
+      const result = await generateAndRegisterServer(config, registryPath, event);
 
       return {
-        success: true,
-        serverPath: config.workingDir
+        success: result.success,
+        serverPath: result.serverPath,
+        serverId: result.serverId,
+        error: result.error
       };
     } catch (error) {
       console.error('Failed to generate FastMCP server:', error);
-
-      // Report error with accurate step context
-      if (error instanceof Error) {
-        reporter.reportError(currentStep, error);
-      }
-
       return {
         success: false,
         error: (error as Error).message
