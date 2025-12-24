@@ -11,6 +11,7 @@ import {
   writeServerFile,
   writeAllServerFiles,
   directoryExists,
+  cleanupDirectory,
   ServerFile
 } from '../fs-utils';
 
@@ -181,6 +182,58 @@ describe('fs-utils', () => {
 
       expect(file1Exists).toBe(true);
       expect(file2Exists).toBe(true);
+    });
+  });
+
+  describe('cleanupDirectory', () => {
+    it('should remove directory and all contents', async () => {
+      const dirToCleanup = path.join(testDir, 'cleanup-test');
+      await fs.mkdir(dirToCleanup);
+      await fs.writeFile(path.join(dirToCleanup, 'file1.txt'), 'content1');
+      await fs.writeFile(path.join(dirToCleanup, 'file2.txt'), 'content2');
+
+      await cleanupDirectory(dirToCleanup);
+
+      const exists = await fs.access(dirToCleanup)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
+    });
+
+    it('should remove nested directories', async () => {
+      const nestedDir = path.join(testDir, 'parent', 'child', 'grandchild');
+      await fs.mkdir(nestedDir, { recursive: true });
+      await fs.writeFile(path.join(nestedDir, 'file.txt'), 'content');
+
+      await cleanupDirectory(path.join(testDir, 'parent'));
+
+      const exists = await fs.access(path.join(testDir, 'parent'))
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
+    });
+
+    it('should not throw if directory does not exist', async () => {
+      const nonExistent = path.join(testDir, 'does-not-exist');
+
+      await expect(cleanupDirectory(nonExistent)).resolves.not.toThrow();
+    });
+
+    it('should handle directory with many files', async () => {
+      const manyFilesDir = path.join(testDir, 'many-files');
+      await fs.mkdir(manyFilesDir);
+
+      // Create 100 files
+      for (let i = 0; i < 100; i++) {
+        await fs.writeFile(path.join(manyFilesDir, `file${i}.txt`), `content ${i}`);
+      }
+
+      await cleanupDirectory(manyFilesDir);
+
+      const exists = await fs.access(manyFilesDir)
+        .then(() => true)
+        .catch(() => false);
+      expect(exists).toBe(false);
     });
   });
 });

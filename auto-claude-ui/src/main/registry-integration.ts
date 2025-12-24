@@ -14,7 +14,7 @@ import type { IpcMainInvokeEvent } from 'electron';
 import type { FastMCPServerConfig, MCPServersRegistry, MCPServer } from '../shared/types/mcp';
 import { ProgressReporter, GenerationStep } from './progress-reporter';
 import { generateServerPy, generatePyprojectToml, generateReadmeMd, generatePythonVersion } from './fastmcp-generator';
-import { ensureDirectory, writeAllServerFiles } from './fs-utils';
+import { ensureDirectory, writeAllServerFiles, cleanupDirectory } from './fs-utils';
 import { uvInit, uvAdd, uvSync, checkUvInstalled } from './uv-utils';
 import { validateServerConfig } from './server-validator';
 
@@ -233,8 +233,17 @@ export async function generateAndRegisterServer(
       serverId
     };
   } catch (error) {
-    // Rollback registry on failure
+    // Rollback: Clean up filesystem and registry
     try {
+      // 1. Clean up generated directory
+      await cleanupDirectory(config.workingDir);
+    } catch (cleanupError) {
+      // Log cleanup failure but don't mask original error
+      console.error('Failed to cleanup directory:', cleanupError);
+    }
+
+    try {
+      // 2. Rollback registry changes
       await writeRegistry(registryPath, registryBackup);
     } catch (rollbackError) {
       // Log rollback failure but don't mask original error

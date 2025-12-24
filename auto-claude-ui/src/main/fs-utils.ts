@@ -82,3 +82,17 @@ export async function writeAllServerFiles(
     throw error; // Re-throw to maintain error context
   }
 }
+
+/**
+ * Clean up a directory and all its contents
+ * Used for rollback when server generation fails
+ * @param dirPath - Directory to remove
+ * @throws Error if directory cannot be removed
+ */
+export async function cleanupDirectory(dirPath: string): Promise<void> {
+  try {
+    await fs.rm(dirPath, { recursive: true, force: true });
+  } catch (error) {
+    throw new Error(`Failed to cleanup directory ${dirPath}: ${(error as Error).message}`);
+  }
+}
