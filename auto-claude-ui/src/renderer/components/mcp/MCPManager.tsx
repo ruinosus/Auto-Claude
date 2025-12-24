@@ -169,6 +169,7 @@ export function MCPManager() {
       <AddServerDialog
         open={isAddServerOpen}
         onClose={() => setIsAddServerOpen(false)}
+        onServerAdded={loadServers}
       />
     </div>
   );

@@ -9,9 +9,10 @@ import type { CustomServerConfig, FastMCPServerConfig } from '../../../shared/ty
 interface AddServerDialogProps {
   open: boolean;
   onClose: () => void;
+  onServerAdded?: () => void;
 }
 
-export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
+export function AddServerDialog({ open, onClose, onServerAdded }: AddServerDialogProps) {
   const [mode, setMode] = useState<'choose' | 'existing' | 'fastmcp'>('choose');
 
   const handleBack = () => {
@@ -22,6 +23,8 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
     try {
       // Save the server config via IPC
       await window.electronAPI.mcp.addCustomServer(config, 'global');
+      // Reload the servers list
+      onServerAdded?.();
       // Close the dialog after successful save
       onClose();
     } catch (error) {
@@ -38,6 +41,8 @@ export function AddServerDialog({ open, onClose }: AddServerDialogProps) {
     try {
       // Call IPC to generate and save FastMCP server
       await window.electronAPI.mcp.generateFastMCPServer(config);
+      // Reload the servers list
+      onServerAdded?.();
       // Close dialog on success
       onClose();
     } catch (error) {
