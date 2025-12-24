@@ -17,7 +17,8 @@ export enum GenerationStep {
   UV_INIT = 'uv-init',
   UV_ADD = 'uv-add',
   UV_SYNC = 'uv-sync',
-  COMPLETE = 'complete'
+  COMPLETE = 'complete',
+  ERROR = 'error'
 }
 
 /**
@@ -40,7 +41,8 @@ const STEP_PROGRESS: Record<GenerationStep, number> = {
   [GenerationStep.UV_INIT]: 50,
   [GenerationStep.UV_ADD]: 66.67,
   [GenerationStep.UV_SYNC]: 83.33,
-  [GenerationStep.COMPLETE]: 100
+  [GenerationStep.COMPLETE]: 100,
+  [GenerationStep.ERROR]: 0
 };
 
 /**
@@ -52,7 +54,8 @@ const STEP_MESSAGES: Record<GenerationStep, string> = {
   [GenerationStep.UV_INIT]: 'Initializing uv project...',
   [GenerationStep.UV_ADD]: 'Adding dependencies...',
   [GenerationStep.UV_SYNC]: 'Syncing dependencies...',
-  [GenerationStep.COMPLETE]: 'Generation complete!'
+  [GenerationStep.COMPLETE]: 'Generation complete!',
+  [GenerationStep.ERROR]: 'Generation failed'
 };
 
 /**

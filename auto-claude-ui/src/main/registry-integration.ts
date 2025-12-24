@@ -15,7 +15,7 @@ import type { FastMCPServerConfig, MCPServersRegistry, MCPServer } from '../shar
 import { ProgressReporter, GenerationStep } from './progress-reporter';
 import { generateServerPy, generatePyprojectToml, generateReadmeMd, generatePythonVersion } from './fastmcp-generator';
 import { ensureDirectory, writeAllServerFiles } from './fs-utils';
-import { uvInit, uvAdd, uvSync } from './uv-utils';
+import { uvInit, uvAdd, uvSync, checkUvInstalled } from './uv-utils';
 import { validateServerConfig } from './server-validator';
 
 /**
@@ -154,9 +154,21 @@ export async function generateAndRegisterServer(
   try {
     validateServerConfig(config);
   } catch (error) {
+    reporter.reportError(GenerationStep.ERROR, error as Error);
     return {
       success: false,
       error: (error as Error).message
+    };
+  }
+
+  // Check if uv is installed BEFORE any file system operations
+  const uvInstalled = await checkUvInstalled();
+  if (!uvInstalled) {
+    const error = new Error('uv is not installed. Please install uv to generate FastMCP servers. Visit https://github.com/astral-sh/uv for installation instructions.');
+    reporter.reportError(GenerationStep.ERROR, error);
+    return {
+      success: false,
+      error: error.message
     };
   }
 
@@ -231,7 +243,7 @@ export async function generateAndRegisterServer(
 
     // Report error
     const errorMessage = (error as Error).message;
-    reporter.reportError(GenerationStep.COMPLETE, error as Error);
+    reporter.reportError(GenerationStep.ERROR, error as Error);
 
     return {
       success: false,
