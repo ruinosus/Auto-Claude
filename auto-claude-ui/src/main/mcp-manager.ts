@@ -416,6 +416,9 @@ export function registerMCPHandlers() {
    * Generate FastMCP server with uv
    */
   ipcMain.handle('mcp:generate-fastmcp-server', async (event, config: FastMCPServerConfig) => {
+    const { ProgressReporter, GenerationStep } = await import('./progress-reporter');
+    const reporter = new ProgressReporter(event);
+
     try {
       const {
         generateServerPy,
@@ -436,21 +439,32 @@ export function registerMCPHandlers() {
       ];
 
       // Create server directory
+      reporter.reportStep(GenerationStep.CREATING_DIRECTORY, { path: config.workingDir });
       await ensureDirectory(config.workingDir);
 
       // Write all files
+      reporter.reportStep(GenerationStep.WRITING_FILES, { fileCount: files.length });
       await writeAllServerFiles(config.workingDir, files);
 
       // Initialize uv project
+      reporter.reportStep(GenerationStep.UV_INIT, { serverName: config.serverName });
       await uvInit(config.serverName, config.workingDir);
 
       // Add dependencies
       if (config.dependencies && config.dependencies.length > 0) {
+        reporter.reportStep(GenerationStep.UV_ADD, {
+          dependencies: config.dependencies,
+          count: config.dependencies.length
+        });
         await uvAdd(config.dependencies, config.workingDir);
       }
 
       // Sync dependencies
+      reporter.reportStep(GenerationStep.UV_SYNC);
       await uvSync(config.workingDir);
+
+      // Report completion
+      reporter.reportStep(GenerationStep.COMPLETE, { serverPath: config.workingDir });
 
       return {
         success: true,
@@ -458,6 +472,12 @@ export function registerMCPHandlers() {
       };
     } catch (error) {
       console.error('Failed to generate FastMCP server:', error);
+
+      // Report error if we have a current step context
+      if (error instanceof Error) {
+        reporter.reportError(GenerationStep.CREATING_DIRECTORY, error);
+      }
+
       return {
         success: false,
         error: (error as Error).message

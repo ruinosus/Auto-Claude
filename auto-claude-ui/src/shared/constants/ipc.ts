@@ -317,6 +317,7 @@ export const IPC_CHANNELS = {
   MCP_START_FASTMCP_SERVER: 'mcp:start-fastmcp-server',
   MCP_STOP_FASTMCP_SERVER: 'mcp:stop-fastmcp-server',
   MCP_GENERATE_FASTMCP_SERVER: 'mcp:generate-fastmcp-server',
+  MCP_GENERATION_PROGRESS: 'mcp:generation-progress',
   MCP_ADD_CUSTOM_SERVER: 'mcp:add-custom-server',
   MCP_TEST_CONNECTION_CUSTOM: 'mcp:test-connection-custom'
 } as const;
