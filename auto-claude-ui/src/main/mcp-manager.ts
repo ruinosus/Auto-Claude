@@ -418,6 +418,7 @@ export function registerMCPHandlers() {
   ipcMain.handle('mcp:generate-fastmcp-server', async (event, config: FastMCPServerConfig) => {
     const { ProgressReporter, GenerationStep } = await import('./progress-reporter');
     const reporter = new ProgressReporter(event);
+    let currentStep: GenerationStep = GenerationStep.CREATING_DIRECTORY;
 
     try {
       const {
@@ -439,20 +440,24 @@ export function registerMCPHandlers() {
       ];
 
       // Create server directory
-      reporter.reportStep(GenerationStep.CREATING_DIRECTORY, { path: config.workingDir });
+      currentStep = GenerationStep.CREATING_DIRECTORY;
+      reporter.reportStep(currentStep, { path: config.workingDir });
       await ensureDirectory(config.workingDir);
 
       // Write all files
-      reporter.reportStep(GenerationStep.WRITING_FILES, { fileCount: files.length });
+      currentStep = GenerationStep.WRITING_FILES;
+      reporter.reportStep(currentStep, { fileCount: files.length });
       await writeAllServerFiles(config.workingDir, files);
 
       // Initialize uv project
-      reporter.reportStep(GenerationStep.UV_INIT, { serverName: config.serverName });
+      currentStep = GenerationStep.UV_INIT;
+      reporter.reportStep(currentStep, { serverName: config.serverName });
       await uvInit(config.serverName, config.workingDir);
 
       // Add dependencies
       if (config.dependencies && config.dependencies.length > 0) {
-        reporter.reportStep(GenerationStep.UV_ADD, {
+        currentStep = GenerationStep.UV_ADD;
+        reporter.reportStep(currentStep, {
           dependencies: config.dependencies,
           count: config.dependencies.length
         });
@@ -460,11 +465,13 @@ export function registerMCPHandlers() {
       }
 
       // Sync dependencies
-      reporter.reportStep(GenerationStep.UV_SYNC);
+      currentStep = GenerationStep.UV_SYNC;
+      reporter.reportStep(currentStep);
       await uvSync(config.workingDir);
 
       // Report completion
-      reporter.reportStep(GenerationStep.COMPLETE, { serverPath: config.workingDir });
+      currentStep = GenerationStep.COMPLETE;
+      reporter.reportStep(currentStep, { serverPath: config.workingDir });
 
       return {
         success: true,
@@ -473,9 +480,9 @@ export function registerMCPHandlers() {
     } catch (error) {
       console.error('Failed to generate FastMCP server:', error);
 
-      // Report error if we have a current step context
+      // Report error with accurate step context
       if (error instanceof Error) {
-        reporter.reportError(GenerationStep.CREATING_DIRECTORY, error);
+        reporter.reportError(currentStep, error);
       }
 
       return {
