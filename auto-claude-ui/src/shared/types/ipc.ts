@@ -591,6 +591,14 @@ export interface ElectronAPI {
     remove: (skillPath: string) => Promise<IPCResult<void>>;
     getContent: (skillPath: string) => Promise<IPCResult<SkillContent>>;
   };
+
+  // MCP operations
+  mcp: {
+    list: (projectPath?: string) => Promise<import('./mcp').MCPServer[]>;
+    saveConfig: (serverId: string, config: import('./mcp').MCPServerConfig, projectPath?: string) => Promise<IPCResult>;
+    testConnection: (config: import('./mcp').CustomServerConfig) => Promise<import('./mcp').MCPTestConnectionResult & { capabilities?: { tools?: unknown[]; prompts?: unknown[]; resources?: unknown[] } }>;
+    addCustomServer: (config: import('./mcp').CustomServerConfig, scope: 'global' | 'project', projectPath?: string) => Promise<IPCResult<{ serverId: string }>>;
+  };
 }
 
 declare global {
