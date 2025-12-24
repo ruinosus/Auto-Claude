@@ -150,4 +150,60 @@ describe('ReviewPreview', () => {
     const backButton = screen.getByRole('button', { name: /back/i });
     expect(backButton.hasAttribute('disabled')).toBe(true);
   });
+
+  it('should toggle file content when clicking header', () => {
+    render(
+      <ReviewPreview
+        config={mockConfig}
+        onGenerate={mockOnGenerate}
+        onBack={mockOnBack}
+      />
+    );
+
+    // Find the pyproject.toml header
+    const pyprojectHeader = screen.getByText('pyproject.toml');
+
+    // Initially collapsed - content should not be visible
+    const initialContent = screen.queryByText(/name = "test-server"/);
+    expect(initialContent).toBeFalsy();
+
+    // Click to expand
+    fireEvent.click(pyprojectHeader);
+
+    // Content should now be visible
+    const expandedContent = screen.getByText(/name = "test-server"/);
+    expect(expandedContent).toBeTruthy();
+
+    // Click again to collapse
+    fireEvent.click(pyprojectHeader);
+
+    // Content should be hidden again
+    const collapsedContent = screen.queryByText(/name = "test-server"/);
+    expect(collapsedContent).toBeFalsy();
+  });
+
+  it('should have server.py expanded by default and others collapsed', () => {
+    const { container } = render(
+      <ReviewPreview
+        config={mockConfig}
+        onGenerate={mockOnGenerate}
+        onBack={mockOnBack}
+      />
+    );
+
+    // server.py content should be visible (expanded by default)
+    const serverPyContent = screen.getByText(/from fastmcp import FastMCP/);
+    expect(serverPyContent).toBeTruthy();
+
+    // pyproject.toml content should not be visible (collapsed by default)
+    const pyprojectContent = screen.queryByText(/name = "test-server"/);
+    expect(pyprojectContent).toBeFalsy();
+
+    // Count code blocks - only server.py should show content, so only 1 code block
+    const codeBlocks = container.querySelectorAll('pre > code');
+    expect(codeBlocks.length).toBe(1);
+
+    // The visible code block should contain server.py content
+    expect(codeBlocks[0].textContent).toContain('from fastmcp import FastMCP');
+  });
 });
