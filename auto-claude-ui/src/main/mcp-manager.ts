@@ -1,7 +1,7 @@
 import { ipcMain, app } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
-import type { MCPServer, MCPServerConfig, MCPTestConnectionResult, CustomServerConfig, MCPServersRegistry } from '../shared/types/mcp';
+import type { MCPServer, MCPServerConfig, MCPTestConnectionResult, CustomServerConfig, MCPServersRegistry, FastMCPServerConfig } from '../shared/types/mcp';
 import { updateEnvVars, getEnvPath, readEnvFile } from './mcp-config';
 
 /**
@@ -413,10 +413,56 @@ export function registerMCPHandlers() {
   });
 
   /**
-   * Generate FastMCP server (stub)
+   * Generate FastMCP server with uv
    */
-  ipcMain.handle('mcp:generate-fastmcp-server', async (event, wizardState: any, outputPath: string) => {
-    return { success: false, error: 'Not implemented yet' };
+  ipcMain.handle('mcp:generate-fastmcp-server', async (event, config: FastMCPServerConfig) => {
+    try {
+      const {
+        generateServerPy,
+        generatePyprojectToml,
+        generateReadmeMd,
+        generatePythonVersion
+      } = await import('./fastmcp-generator');
+
+      const { ensureDirectory, writeAllServerFiles } = await import('./fs-utils');
+      const { uvInit, uvAdd, uvSync } = await import('./uv-utils');
+
+      // Generate file contents
+      const files = [
+        { filename: 'server.py', content: generateServerPy(config) },
+        { filename: 'pyproject.toml', content: generatePyprojectToml(config) },
+        { filename: 'README.md', content: generateReadmeMd(config) },
+        { filename: '.python-version', content: generatePythonVersion(config.pythonVersion) }
+      ];
+
+      // Create server directory
+      await ensureDirectory(config.workingDir);
+
+      // Write all files
+      await writeAllServerFiles(config.workingDir, files);
+
+      // Initialize uv project
+      await uvInit(config.serverName, config.workingDir);
+
+      // Add dependencies
+      if (config.dependencies && config.dependencies.length > 0) {
+        await uvAdd(config.dependencies, config.workingDir);
+      }
+
+      // Sync dependencies
+      await uvSync(config.workingDir);
+
+      return {
+        success: true,
+        serverPath: config.workingDir
+      };
+    } catch (error) {
+      console.error('Failed to generate FastMCP server:', error);
+      return {
+        success: false,
+        error: (error as Error).message
+      };
+    }
   });
 
   /**

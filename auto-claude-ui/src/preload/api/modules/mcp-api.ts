@@ -7,6 +7,7 @@ import type {
   MCPResource,
   MCPInstallResult,
   FastMCPWizardState,
+  FastMCPServerConfig,
   CustomServerConfig
 } from '../../../shared/types/mcp';
 import { IPC_CHANNELS } from '../../../shared/constants';
@@ -25,7 +26,7 @@ export interface MCPAPI {
     listResources: (serverId: string) => Promise<MCPResource[]>;
     startFastMCPServer: (serverPath: string) => Promise<{ success: boolean; port?: number; error?: string }>;
     stopFastMCPServer: (serverPath: string) => Promise<{ success: boolean; error?: string }>;
-    generateFastMCPServer: (wizardState: FastMCPWizardState, outputPath: string) => Promise<MCPInstallResult>;
+    generateFastMCPServer: (config: FastMCPServerConfig) => Promise<MCPInstallResult>;
     addCustomServer: (config: CustomServerConfig, scope: 'global' | 'project', projectPath?: string) => Promise<{ success: boolean; serverId?: string; error?: string }>;
     testConnectionCustom: (config: CustomServerConfig) => Promise<MCPTestConnectionResult & { capabilities?: { tools?: unknown[]; prompts?: unknown[]; resources?: unknown[] } }>;
   };
@@ -60,8 +61,8 @@ export const createMCPAPI = (): MCPAPI => ({
     stopFastMCPServer: (serverPath: string): Promise<{ success: boolean; error?: string }> =>
       invokeIpc(IPC_CHANNELS.MCP_STOP_FASTMCP_SERVER, serverPath),
 
-    generateFastMCPServer: (wizardState: FastMCPWizardState, outputPath: string): Promise<MCPInstallResult> =>
-      invokeIpc(IPC_CHANNELS.MCP_GENERATE_FASTMCP_SERVER, wizardState, outputPath),
+    generateFastMCPServer: (config: FastMCPServerConfig): Promise<MCPInstallResult> =>
+      invokeIpc(IPC_CHANNELS.MCP_GENERATE_FASTMCP_SERVER, config),
 
     addCustomServer: (config: CustomServerConfig, scope: 'global' | 'project', projectPath?: string): Promise<{ success: boolean; serverId?: string; error?: string }> =>
       invokeIpc(IPC_CHANNELS.MCP_ADD_CUSTOM_SERVER, config, scope, projectPath),
