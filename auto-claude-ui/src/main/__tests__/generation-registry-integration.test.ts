@@ -130,15 +130,22 @@ describe('Integration: Registry Update After Generation', () => {
     // Create initial registry with one server
     const initialRegistry: MCPServersRegistry = {
       version: '1.0',
+      updatedAt: new Date().toISOString(),
       servers: [
         {
           id: 'existing-server',
           name: 'Existing Server',
           description: 'Pre-existing server',
           type: 'custom',
-          category: 'Other',
+          category: 'Custom',
           status: 'disabled',
           enabled: false,
+          requiredEnvVars: [],
+          capabilities: {},
+          toolCount: 0,
+          promptCount: 0,
+          resourceCount: 0,
+          connectionType: 'stdio',
           config: {
             command: 'node',
             args: ['server.js']

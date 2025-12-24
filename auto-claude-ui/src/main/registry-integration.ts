@@ -39,7 +39,8 @@ async function readRegistry(registryPath: string): Promise<MCPServersRegistry> {
     // If file doesn't exist, return empty registry
     return {
       version: '1.0',
-      servers: []
+      servers: [],
+      updatedAt: new Date().toISOString()
     };
   }
 }
@@ -53,6 +54,9 @@ async function writeRegistry(registryPath: string, registry: MCPServersRegistry)
   // Ensure directory exists
   const registryDir = path.dirname(registryPath);
   await ensureDirectory(registryDir);
+
+  // Update timestamp
+  registry.updatedAt = new Date().toISOString();
 
   // Write with pretty formatting
   await fs.writeFile(registryPath, JSON.stringify(registry, null, 2), 'utf-8');
@@ -73,6 +77,33 @@ function createRegistryEntry(config: FastMCPServerConfig, serverId: string): MCP
     category: 'FastMCP',
     status: 'disabled',
     enabled: true,
+
+    // Required fields
+    requiredEnvVars: [],
+    optionalEnvVars: [],
+    capabilities: {
+      tools: config.tools.map(tool => ({
+        name: tool.name,
+        displayName: tool.name,
+        description: tool.description,
+        parameters: tool.parameters.map(param => ({
+          name: param.name,
+          type: param.type,
+          required: param.required,
+          description: param.description || '',
+          default: param.default
+        }))
+      }))
+    },
+    toolCount: config.tools.length,
+    promptCount: 0,
+    resourceCount: 0,
+    connectionType: 'stdio',
+
+    // Python version
+    pythonVersion: config.pythonVersion,
+
+    // Custom configuration
     config: {
       command: 'uv',
       args: ['run', 'server.py'],
