@@ -38,15 +38,17 @@ export function AddServerDialog({ open, onClose, onServerAdded }: AddServerDialo
   };
 
   const handleFastMCPComplete = async (config: FastMCPServerConfig) => {
+    console.log('[Renderer] handleFastMCPComplete called with config:', config);
     try {
-      // Call IPC to generate and save FastMCP server
-      await window.electronAPI.mcp.generateFastMCPServer(config);
+      console.log('[Renderer] Calling window.electronAPI.mcp.generateFastMCPServer...');
+      const result = await window.electronAPI.mcp.generateFastMCPServer(config);
+      console.log('[Renderer] Result from IPC:', result);
       // Reload the servers list
       onServerAdded?.();
       // Close dialog on success
       onClose();
     } catch (error) {
-      console.error('Failed to generate FastMCP server:', error);
+      console.error('[Renderer] Failed to generate FastMCP server:', error);
       // TODO: Show error message to user
     }
   };

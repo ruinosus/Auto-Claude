@@ -266,6 +266,8 @@ async function testElectronConnection(port: number): Promise<MCPTestConnectionRe
  * Register MCP IPC handlers
  */
 export function registerMCPHandlers() {
+  console.log('[MCP] Registering MCP IPC handlers...');
+
   /**
    * List all available MCP servers
    */
