@@ -416,11 +416,16 @@ export function registerMCPHandlers() {
    * Generate FastMCP server with uv
    */
   ipcMain.handle('mcp:generate-fastmcp-server', async (event, config: FastMCPServerConfig) => {
+    console.log('[FastMCP] Starting server generation:', config.serverName);
     try {
+      console.log('[FastMCP] Importing registry-integration module...');
       const { generateAndRegisterServer } = await import('./registry-integration');
       const registryPath = path.join(app.getPath('home'), '.mcp-servers.json');
+      console.log('[FastMCP] Registry path:', registryPath);
 
+      console.log('[FastMCP] Calling generateAndRegisterServer...');
       const result = await generateAndRegisterServer(config, registryPath, event);
+      console.log('[FastMCP] Result:', result);
 
       return {
         success: result.success,
@@ -429,7 +434,8 @@ export function registerMCPHandlers() {
         error: result.error
       };
     } catch (error) {
-      console.error('Failed to generate FastMCP server:', error);
+      console.error('[FastMCP] ERROR in handler:', error);
+      console.error('[FastMCP] Error stack:', (error as Error).stack);
       return {
         success: false,
         error: (error as Error).message
