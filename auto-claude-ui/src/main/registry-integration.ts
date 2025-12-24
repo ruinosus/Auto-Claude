@@ -16,6 +16,7 @@ import { ProgressReporter, GenerationStep } from './progress-reporter';
 import { generateServerPy, generatePyprojectToml, generateReadmeMd, generatePythonVersion } from './fastmcp-generator';
 import { ensureDirectory, writeAllServerFiles } from './fs-utils';
 import { uvInit, uvAdd, uvSync } from './uv-utils';
+import { validateServerConfig } from './server-validator';
 
 /**
  * Result of generation and registration
@@ -148,6 +149,16 @@ export async function generateAndRegisterServer(
 ): Promise<GenerationResult> {
   const reporter = new ProgressReporter(event);
   const serverId = randomUUID();
+
+  // Validate configuration BEFORE any file system or registry operations
+  try {
+    validateServerConfig(config);
+  } catch (error) {
+    return {
+      success: false,
+      error: (error as Error).message
+    };
+  }
 
   // Read current registry
   let originalRegistry: MCPServersRegistry;
