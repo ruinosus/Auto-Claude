@@ -96,7 +96,7 @@ CONTEXT7_TOOLS = [
 ]
 
 # Graphiti MCP tools for knowledge graph memory (when GRAPHITI_MCP_ENABLED is set)
-# See: https://github.com/getzep/graphiti
+# See: https://docs.falkordb.com/agentic-memory/graphiti-mcp-server.html
 GRAPHITI_MCP_TOOLS = [
     "mcp__graphiti-memory__search_nodes",  # Search entity summaries
     "mcp__graphiti-memory__search_facts",  # Search relationships between entities
@@ -321,7 +321,7 @@ def create_client(
         }
 
     # Add Graphiti MCP server if enabled
-    # Graphiti MCP server for knowledge graph memory (uses embedded LadybugDB)
+    # Requires running: docker run -d -p 8000:8000 falkordb/graphiti-knowledge-graph-mcp
     if graphiti_mcp_enabled:
         mcp_servers["graphiti-memory"] = {
             "type": "http",
