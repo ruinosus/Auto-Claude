@@ -10,6 +10,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { ipcMain } from 'electron';
 
 const PORT = 9823; // Fixed port for auto-claude-tools MCP server
@@ -60,14 +61,7 @@ export function createAutoClaudeToolsServer(): McpServer {
       title: 'Get Build Progress',
       description: 'Get current build progress and status for a spec',
       inputSchema: {
-        type: 'object',
-        properties: {
-          specId: {
-            type: 'string',
-            description: 'Spec ID to check progress for (e.g., "001", "spec-001")'
-          }
-        },
-        required: ['specId']
+        specId: z.string().describe('Spec ID to check progress for (e.g., "001", "spec-001")')
       }
     },
     async ({ specId }) => {
@@ -110,18 +104,8 @@ export function createAutoClaudeToolsServer(): McpServer {
       title: 'Get Project Context',
       description: 'Get project context and codebase information',
       inputSchema: {
-        type: 'object',
-        properties: {
-          projectPath: {
-            type: 'string',
-            description: 'Path to project directory'
-          },
-          includeMemory: {
-            type: 'boolean',
-            description: 'Include memory/insights from previous builds',
-            default: false
-          }
-        }
+        projectPath: z.string().describe('Path to project directory').optional(),
+        includeMemory: z.boolean().describe('Include memory/insights from previous builds').default(false)
       }
     },
     async ({ projectPath, includeMemory }) => {
@@ -173,30 +157,10 @@ export function createAutoClaudeToolsServer(): McpServer {
       title: 'Search Code',
       description: 'Search for code patterns in the project codebase',
       inputSchema: {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description: 'Search query (supports regex)'
-          },
-          filePattern: {
-            type: 'string',
-            description: 'File pattern to search in (e.g., "*.ts", "src/**/*.py")'
-          },
-          caseSensitive: {
-            type: 'boolean',
-            description: 'Case sensitive search',
-            default: false
-          },
-          maxResults: {
-            type: 'number',
-            description: 'Maximum number of results',
-            minimum: 1,
-            maximum: 100,
-            default: 20
-          }
-        },
-        required: ['query']
+        query: z.string().describe('Search query (supports regex)'),
+        filePattern: z.string().describe('File pattern to search in (e.g., "*.ts", "src/**/*.py")').optional(),
+        caseSensitive: z.boolean().describe('Case sensitive search').default(false),
+        maxResults: z.number().min(1).max(100).describe('Maximum number of results').default(20)
       }
     },
     async ({ query, filePattern, caseSensitive, maxResults }) => {
