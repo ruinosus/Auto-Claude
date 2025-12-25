@@ -295,12 +295,58 @@ export function registerMCPHandlers() {
         ...projectRegistry.servers
       ];
 
-      // Check enabled status for each
+      // Check enabled status and load real capabilities for enabled servers
       const serversWithStatus = await Promise.all(
-        allServers.map(async (server) => ({
-          ...server,
-          enabled: await isServerEnabled(server.id, projectPath)
-        }))
+        allServers.map(async (server) => {
+          const enabled = await isServerEnabled(server.id, projectPath);
+
+          // For enabled servers, try to load real capabilities from MCP server
+          if (enabled && server.id === 'context7') {
+            try {
+              const { listTools } = await import('./mcp-client');
+              const tools = await listTools(server.id);
+
+              console.log(`[MCP Manager] Loaded ${tools.length} tools for ${server.id}`);
+              if (tools.length > 0) {
+                console.log(`[MCP Manager] First tool:`, JSON.stringify(tools[0], null, 2));
+              }
+
+              // Transform MCP SDK tool format to our format
+              const transformedTools = tools.map((tool: any) => ({
+                name: tool.name,
+                displayName: tool.name,
+                description: tool.description || '',
+                inputSchema: tool.inputSchema,
+                parameters: [] // Will be derived from inputSchema if needed
+              }));
+
+              return {
+                ...server,
+                enabled,
+                capabilities: {
+                  tools: transformedTools,
+                  prompts: server.capabilities?.prompts || [],
+                  resources: server.capabilities?.resources || []
+                },
+                toolCount: transformedTools.length,
+                status: 'connected' as const
+              };
+            } catch (error) {
+              console.error(`[MCP Manager] Failed to load tools for ${server.id}:`, error);
+              return {
+                ...server,
+                enabled,
+                status: 'error' as const,
+                statusMessage: error instanceof Error ? error.message : String(error)
+              };
+            }
+          }
+
+          return {
+            ...server,
+            enabled
+          };
+        })
       );
 
       return serversWithStatus;
