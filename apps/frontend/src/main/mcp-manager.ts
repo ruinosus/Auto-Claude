@@ -480,9 +480,43 @@ export function registerMCPHandlers() {
    */
   ipcMain.handle('mcp:call-tool', async (event, serverId: string, toolName: string, args: any) => {
     try {
-      const { callTool } = await import('./mcp-client');
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
+      // Get server config from built-in servers or registry
+      const builtInServers = getBuiltInServers();
+      const server = builtInServers.find(s => s.id === serverId);
+
+      if (!server) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      // Convert to MCPServerConfig
+      const serverConfig = {
+        id: server.id,
+        name: server.name,
+        description: server.description,
+        transport: server.connectionType === 'sdk' ? 'stdio' as const :
+                   server.connectionType === 'http' ? 'http' as const :
+                   server.connectionType === 'stdio' ? 'stdio' as const :
+                   'stdio' as const,
+        command: server.customConfig?.command,
+        args: server.customConfig?.args,
+        url: server.customConfig?.baseUrl || server.endpoint,
+        headers: server.customConfig?.headers,
+        cwd: server.customConfig?.workingDir,
+        env: server.customConfig?.env,
+        enabled: true,
+        category: server.category,
+        icon: server.icon
+      };
+
       console.log(`[MCP Manager] Calling tool ${toolName} on server ${serverId} with args:`, args);
-      const result = await callTool(serverId, toolName, args);
+
+      // Connect and call tool
+      await mcpManager.connect(serverConfig);
+      const result = await mcpManager.callTool(serverId, toolName, args);
+
       console.log(`[MCP Manager] Tool ${toolName} result:`, result);
       return result;
     } catch (error) {
