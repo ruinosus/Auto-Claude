@@ -26,8 +26,12 @@ import { registerAutobuildSourceHandlers } from './autobuild-source-handlers';
 import { registerIdeationHandlers } from './ideation-handlers';
 import { registerChangelogHandlers } from './changelog-handlers';
 import { registerInsightsHandlers } from './insights-handlers';
-import { registerMemoryHandlers } from './memory-handlers';
+import { registerDockerHandlers } from './docker-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
+import { registerListSkillsHandler } from './skills/list-skills';
+import { registerInstallSkillHandler } from './skills/install-skill';
+import { registerRemoveSkillHandler } from './skills/remove-skill';
+import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { notificationService } from '../notification-service';
 
 /**
@@ -93,10 +97,16 @@ export function setupIpcHandlers(
   registerInsightsHandlers(getMainWindow);
 
   // Memory & infrastructure handlers (for Graphiti/LadybugDB)
-  registerMemoryHandlers();
+  registerDockerHandlers();
 
   // App auto-update handlers
   registerAppUpdateHandlers();
+
+  // Skills management handlers
+  registerListSkillsHandler();
+  registerInstallSkillHandler();
+  registerRemoveSkillHandler();
+  registerGetSkillContentHandler();
 
   console.warn('[IPC] All handler modules registered successfully');
 }
@@ -118,6 +128,10 @@ export {
   registerIdeationHandlers,
   registerChangelogHandlers,
   registerInsightsHandlers,
-  registerMemoryHandlers,
-  registerAppUpdateHandlers
+  registerDockerHandlers,
+  registerAppUpdateHandlers,
+  registerListSkillsHandler,
+  registerInstallSkillHandler,
+  registerRemoveSkillHandler,
+  registerGetSkillContentHandler
 };

@@ -107,6 +107,11 @@ import type {
   GitHubInvestigationResult,
   GitHubInvestigationStatus
 } from './integrations';
+import type {
+  Skill,
+  SkillInstallOutput,
+  SkillContent
+} from './skills';
 
 // Electron API exposed via contextBridge
 // Tab state interface (persisted in main process)
@@ -579,16 +584,22 @@ export interface ElectronAPI {
     output: string[];
   }>>;
 
-  // Ollama download progress listener
-  onDownloadProgress: (
-    callback: (data: {
-      modelName: string;
-      status: string;
-      completed: number;
-      total: number;
-      percentage: number;
-    }) => void
-  ) => () => void;
+  // Skills operations
+  skills: {
+    list: (projectPath?: string) => Promise<Skill[]>;
+    install: (skillPath: string) => Promise<IPCResult<SkillInstallOutput>>;
+    remove: (skillPath: string) => Promise<IPCResult<void>>;
+    getContent: (skillPath: string) => Promise<IPCResult<SkillContent>>;
+  };
+
+  // MCP operations
+  mcp: {
+    list: (projectPath?: string) => Promise<import('./mcp').MCPServer[]>;
+    saveConfig: (serverId: string, config: import('./mcp').MCPServerConfig, projectPath?: string) => Promise<IPCResult>;
+    testConnection: (config: import('./mcp').CustomServerConfig) => Promise<import('./mcp').MCPTestConnectionResult & { capabilities?: { tools?: unknown[]; prompts?: unknown[]; resources?: unknown[] } }>;
+    addCustomServer: (config: import('./mcp').CustomServerConfig, scope: 'global' | 'project', projectPath?: string) => Promise<IPCResult<{ serverId: string }>>;
+    generateFastMCPServer: (config: import('./mcp').FastMCPServerConfig) => Promise<import('./mcp').MCPInstallResult>;
+  };
 }
 
 declare global {
