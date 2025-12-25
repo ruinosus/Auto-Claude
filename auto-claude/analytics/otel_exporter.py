@@ -108,6 +108,69 @@ class OTelExporter:
             unit="sessions"
         )
 
+    def record_message(
+        self,
+        spec_id: str,
+        session_num: int,
+        phase: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cost_usd: float
+    ):
+        """Record message-level metrics."""
+        if not self.enabled:
+            return
+
+        attributes = {
+            "spec_id": spec_id,
+            "session_number": str(session_num),
+            "phase": phase,
+            "model": model
+        }
+
+        total_tokens = input_tokens + output_tokens
+
+        # Update counters
+        self.token_counter.add(total_tokens, attributes)
+        self.cost_counter.add(cost_usd, attributes)
+
+        # Update histograms
+        self.tokens_per_message.record(total_tokens, attributes)
+
+    def record_session(
+        self,
+        spec_id: str,
+        session_num: int,
+        phase: str,
+        total_cost_usd: float,
+        duration_seconds: float
+    ):
+        """Record session-level metrics."""
+        if not self.enabled:
+            return
+
+        attributes = {
+            "spec_id": spec_id,
+            "phase": phase
+        }
+
+        self.session_counter.add(1, attributes)
+        self.cost_per_session.record(total_cost_usd, attributes)
+        self.session_duration.record(duration_seconds, attributes)
+
+    def start_session(self):
+        """Increment active session counter."""
+        if not self.enabled:
+            return
+        self.active_sessions.add(1)
+
+    def end_session(self):
+        """Decrement active session counter."""
+        if not self.enabled:
+            return
+        self.active_sessions.add(-1)
+
 
 # Singleton instance
 _otel_exporter: Optional[OTelExporter] = None
