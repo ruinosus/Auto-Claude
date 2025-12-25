@@ -33,6 +33,7 @@ import { registerInstallSkillHandler } from './skills/install-skill';
 import { registerRemoveSkillHandler } from './skills/remove-skill';
 import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { notificationService } from '../notification-service';
+import { registerMCPHandlers } from '../mcp-manager';
 
 /**
  * Setup all IPC handlers across all domains
@@ -107,6 +108,9 @@ export function setupIpcHandlers(
   registerInstallSkillHandler();
   registerRemoveSkillHandler();
   registerGetSkillContentHandler();
+
+  // MCP server management handlers
+  registerMCPHandlers();
 
   console.warn('[IPC] All handler modules registered successfully');
 }
