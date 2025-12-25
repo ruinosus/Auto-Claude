@@ -86,12 +86,11 @@ describe('Integration: Registry Update After Generation', () => {
     expect(server.name).toBe('test-fs-server');
     expect(server.description).toBe('Test file system server');
     expect(server.type).toBe('custom');
-    expect(server.category).toBe('FastMCP');
+    expect(server.category).toBe('Custom');
     expect(server.enabled).toBe(true);
-    expect(server.config?.command).toBe('uv');
-    expect(server.config?.args).toContain('run');
-    expect(server.config?.args).toContain('server.py');
-    expect(server.config?.env?.PYTHONPATH).toBeDefined();
+    expect(server.customConfig?.command).toBe('uv');
+    expect(server.customConfig?.args).toContain('run');
+    expect(server.customConfig?.env?.PYTHONPATH).toBeDefined();
   });
 
   it('should include FastMCP-specific metadata in registry entry', async () => {
@@ -114,14 +113,14 @@ describe('Integration: Registry Update After Generation', () => {
     const server = registry.servers[0];
 
     // Check FastMCP-specific fields
-    expect(server.config?.isFastMCP).toBe(true);
-    expect(server.config?.generatedFrom).toBe('wizard');
-    expect(server.config?.template).toBe('api-wrapper');
-    expect(server.config?.pythonVersion).toBe('3.12');
-    expect(server.config?.sourceFiles).toBeDefined();
-    expect(server.config?.sourceFiles?.serverPy).toContain('server.py');
-    expect(server.config?.sourceFiles?.pyprojectToml).toContain('pyproject.toml');
-    expect(server.config?.sourceFiles?.readmeMd).toContain('README.md');
+    expect(server.customConfig?.isFastMCP).toBe(true);
+    expect(server.customConfig?.generatedFrom).toBe('wizard');
+    expect(server.customConfig?.template).toBe('api-wrapper');
+    expect(server.customConfig?.pythonVersion).toBe('3.12');
+    expect(server.customConfig?.sourceFiles).toBeDefined();
+    expect(server.customConfig?.sourceFiles?.serverPy).toContain('server.py');
+    expect(server.customConfig?.sourceFiles?.pyprojectToml).toContain('pyproject.toml');
+    expect(server.customConfig?.sourceFiles?.readmeMd).toContain('README.md');
   });
 
   it('should update existing registry without overwriting other servers', async () => {
@@ -146,7 +145,8 @@ describe('Integration: Registry Update After Generation', () => {
           promptCount: 0,
           resourceCount: 0,
           connectionType: 'stdio',
-          config: {
+          customConfig: {
+            connectionType: 'stdio',
             command: 'node',
             args: ['server.js']
           }

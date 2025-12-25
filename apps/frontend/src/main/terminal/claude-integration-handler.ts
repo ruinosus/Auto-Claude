@@ -249,46 +249,64 @@ function findBackendDir(): string | undefined {
 }
 
 /**
- * Load model overrides from backend .env file
- * @returns Object with model override environment variables
+ * Load Azure Foundry configuration from backend .env file
+ * @returns Object with all Azure Foundry environment variables
  */
-function loadBackendModelOverrides(): Record<string, string> {
+function loadBackendAzureFoundryConfig(): Record<string, string> {
   const backendDir = findBackendDir();
   if (!backendDir) {
-    debugLog('[ClaudeIntegration:loadBackendModelOverrides] Backend directory not found');
+    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend directory not found');
     return {};
   }
 
   const backendEnvPath = path.join(backendDir, '.env');
 
   if (!fs.existsSync(backendEnvPath)) {
-    debugLog('[ClaudeIntegration:loadBackendModelOverrides] Backend .env not found at:', backendEnvPath);
+    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend .env not found at:', backendEnvPath);
     return {};
   }
 
   try {
     const envContent = fs.readFileSync(backendEnvPath, 'utf-8');
     const vars = parseEnvFile(envContent);
-    const overrides: Record<string, string> = {};
+    const config: Record<string, string> = {};
 
-    // Extract model overrides
-    if (vars['ANTHROPIC_DEFAULT_SONNET_MODEL']) {
-      overrides['ANTHROPIC_DEFAULT_SONNET_MODEL'] = vars['ANTHROPIC_DEFAULT_SONNET_MODEL'];
-    }
-    if (vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']) {
-      overrides['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = vars['ANTHROPIC_DEFAULT_HAIKU_MODEL'];
-    }
-    if (vars['ANTHROPIC_DEFAULT_OPUS_MODEL']) {
-      overrides['ANTHROPIC_DEFAULT_OPUS_MODEL'] = vars['ANTHROPIC_DEFAULT_OPUS_MODEL'];
+    // Extract all Azure Foundry related variables
+    const azureFoundryVars = [
+      'CLAUDE_CODE_USE_FOUNDRY',
+      'ANTHROPIC_FOUNDRY_API_KEY',
+      'ANTHROPIC_FOUNDRY_BASE_URL',
+      'ANTHROPIC_FOUNDRY_RESOURCE',
+      'ANTHROPIC_BASE_URL',
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_AUTH_TOKEN',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL'
+    ];
+
+    for (const varName of azureFoundryVars) {
+      if (vars[varName]) {
+        config[varName] = vars[varName];
+      }
     }
 
-    if (Object.keys(overrides).length > 0) {
-      debugLog('[ClaudeIntegration:loadBackendModelOverrides] Loaded model overrides:', overrides);
+    if (Object.keys(config).length > 0) {
+      debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Loaded Azure Foundry config:', {
+        hasFoundryFlag: !!config['CLAUDE_CODE_USE_FOUNDRY'],
+        hasApiKey: !!config['ANTHROPIC_FOUNDRY_API_KEY'],
+        hasBaseUrl: !!config['ANTHROPIC_BASE_URL'],
+        modelOverrides: {
+          sonnet: !!config['ANTHROPIC_DEFAULT_SONNET_MODEL'],
+          haiku: !!config['ANTHROPIC_DEFAULT_HAIKU_MODEL'],
+          opus: !!config['ANTHROPIC_DEFAULT_OPUS_MODEL']
+        }
+      });
     }
 
-    return overrides;
+    return config;
   } catch (error) {
-    debugError('[ClaudeIntegration:loadBackendModelOverrides] Failed to load backend .env:', error);
+    debugError('[ClaudeIntegration:loadBackendAzureFoundryConfig] Failed to load backend .env:', error);
     return {};
   }
 }
@@ -333,9 +351,13 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     envVars.push(`export ANTHROPIC_BASE_URL="${baseUrl}"`);
     envVars.push(`export ANTHROPIC_AUTH_TOKEN="${apiKey}"`);
 
-    // Load and export model overrides from backend .env
-    const modelOverrides = loadBackendModelOverrides();
-    for (const [key, value] of Object.entries(modelOverrides)) {
+    // Load and export ALL Azure Foundry config from backend .env
+    const backendConfig = loadBackendAzureFoundryConfig();
+    for (const [key, value] of Object.entries(backendConfig)) {
+      // Skip if already exported from profile
+      if (key === 'ANTHROPIC_BASE_URL' || key === 'ANTHROPIC_AUTH_TOKEN') {
+        continue;
+      }
       envVars.push(`export ${key}="${value}"`);
     }
 
@@ -343,7 +365,7 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
       hasApiKey: !!apiKey,
       hasBaseUrl: !!baseUrl,
       hasResource: !!resourceName,
-      modelOverrides: Object.keys(modelOverrides)
+      backendConfigVars: Object.keys(backendConfig)
     });
 
     return envVars.join('\n') + '\n';
@@ -481,17 +503,24 @@ export function invokeClaude(
   // Use safe shell escaping to prevent command injection
   const cwdCommand = buildCdCommand(cwd);
 
-  // ALWAYS export environment variables for non-default profiles (not just on profile switch)
-  if (activeProfile && !activeProfile.isDefault) {
+  // Export environment variables for:
+  // 1. Proxy mode profiles (Azure Foundry) - ALWAYS, even if default
+  // 2. Non-default profiles with OAuth tokens or configDir
+  const isProxyMode = activeProfile?.proxyEnabled && activeProfile?.proxyBaseUrl;
+  const needsEnvExport = isProxyMode || (activeProfile && !activeProfile.isDefault);
+
+  if (needsEnvExport && activeProfile) {
     const token = profileManager.getProfileToken(activeProfile.id);
-    debugLog('[ClaudeIntegration:invokeClaude] Non-default profile detected, exporting env vars:', {
+    debugLog('[ClaudeIntegration:invokeClaude] Profile needs env export:', {
       profileName: activeProfile.name,
+      isDefault: activeProfile.isDefault,
+      isProxyMode,
       hasToken: !!token,
       hasConfigDir: !!activeProfile.configDir,
       tokenLength: token?.length
     });
 
-    if (token || activeProfile.configDir) {
+    if (token || activeProfile.configDir || isProxyMode) {
       const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}`);
       debugLog('[ClaudeIntegration:invokeClaude] Writing environment variables to temp file:', tempFile);
 
@@ -511,13 +540,13 @@ export function invokeClaude(
       debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (with env vars) ==========');
       return;
     } else {
-      debugLog('[ClaudeIntegration:invokeClaude] WARNING: No token or configDir available for non-default profile');
+      debugLog('[ClaudeIntegration:invokeClaude] WARNING: No token, configDir, or proxy config available');
     }
   }
 
-  // Default behavior for default profile (no env vars needed)
+  // Default behavior (no env vars needed)
   const command = `${cwdCommand}claude\r`;
-  debugLog('[ClaudeIntegration:invokeClaude] Executing command (default profile, no env vars):', command);
+  debugLog('[ClaudeIntegration:invokeClaude] Executing command (default, no env vars):', command);
   terminal.pty.write(command);
 
   if (activeProfile) {

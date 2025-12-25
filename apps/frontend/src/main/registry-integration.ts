@@ -84,15 +84,6 @@ function createRegistryEntry(config: FastMCPServerConfig, serverId: string): any
     description: config.description,
     type: 'custom',  // ← CRITICAL: Type field required for isServerEnabled
 
-    // Transport configuration (MCPServerConfig format)
-    transport: 'stdio',
-    command: 'uv',
-    args: ['run', packageName],  // Use package name, not server.py
-    cwd: config.workingDir,
-    env: {
-      PYTHONPATH: config.workingDir
-    },
-
     // Status
     enabled: true,
 
@@ -104,7 +95,31 @@ function createRegistryEntry(config: FastMCPServerConfig, serverId: string): any
 
     // Metadata
     category: 'Custom',
-    icon: 'Package'
+    icon: 'Package',
+
+    // Connection configuration
+    connectionType: 'stdio',
+
+    // Custom server configuration
+    customConfig: {
+      connectionType: 'stdio',
+      command: 'uv',
+      args: ['run', packageName],  // Use package name, not server.py
+      workingDir: config.workingDir,
+      env: {
+        PYTHONPATH: config.workingDir
+      },
+      isFastMCP: true,
+      generatedFrom: 'wizard',
+      template: config.templateId,
+      pythonVersion: config.pythonVersion,
+      sourceFiles: {
+        pyprojectToml: path.join(config.workingDir, 'pyproject.toml'),
+        serverPy: path.join(config.workingDir, isCompleteShowcase ? `src/${packageName}/server.py` : 'server.py'),
+        readmeMd: path.join(config.workingDir, 'README.md'),
+        pythonVersion: path.join(config.workingDir, '.python-version')
+      }
+    }
   };
 }
 

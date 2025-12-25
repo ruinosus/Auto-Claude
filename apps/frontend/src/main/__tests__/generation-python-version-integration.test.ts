@@ -163,7 +163,7 @@ describe('Integration: Python Version Management', () => {
     expect(server.pythonVersion).toBe('3.12');
 
     // Check config.pythonVersion field
-    expect(server.config?.pythonVersion).toBe('3.12');
+    expect(server.customConfig?.pythonVersion).toBe('3.12');
   });
 
   it('should include .python-version path in registry sourceFiles', async () => {
@@ -188,7 +188,7 @@ describe('Integration: Python Version Management', () => {
     const registry: MCPServersRegistry = JSON.parse(registryContent);
 
     const server = registry.servers[0];
-    expect(server.config?.sourceFiles?.pythonVersion).toBe(
+    expect(server.customConfig?.sourceFiles?.pythonVersion).toBe(
       path.join(config.workingDir, '.python-version')
     );
   });

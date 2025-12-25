@@ -121,6 +121,68 @@ export const FASTMCP_TEMPLATES: FastMCPTemplate[] = [
   },
 
   {
+    id: 'complete-showcase',
+    name: 'Complete MCP Showcase',
+    description: 'Comprehensive template demonstrating ALL FastMCP capabilities: tools, resources, prompts, middleware, and server composition',
+    icon: 'Sparkles',
+    tools: [
+      {
+        name: 'analyze_text',
+        description: 'Analyze text with various operations (count_words, sentiment, summary)',
+        parameters: [
+          { name: 'text', type: 'string', required: true, description: 'Input text to analyze' },
+          { name: 'operation', type: 'string', required: true, description: 'Type of analysis: count_words, sentiment, or summary' }
+        ]
+      },
+      {
+        name: 'fetch_data',
+        description: 'Make HTTP requests to external APIs (async)',
+        parameters: [
+          { name: 'url', type: 'string', required: true, description: 'Full URL to request' },
+          { name: 'method', type: 'string', required: false, default: 'GET', description: 'HTTP method (GET or POST)' },
+          { name: 'headers', type: 'object', required: false, description: 'Optional HTTP headers' },
+          { name: 'body', type: 'object', required: false, description: 'Optional request body for POST' },
+          { name: 'timeout', type: 'number', required: false, default: 30, description: 'Request timeout in seconds' }
+        ]
+      },
+      {
+        name: 'process_image',
+        description: 'Process images with various operations',
+        parameters: [
+          { name: 'image_path', type: 'string', required: true, description: 'Path to image file' },
+          { name: 'operation', type: 'string', required: true, description: 'Image operation: resize, rotate, grayscale, or blur' }
+        ]
+      },
+      {
+        name: 'read_pdf',
+        description: 'Extract text from PDF files',
+        parameters: [
+          { name: 'file_path', type: 'string', required: true, description: 'Path to PDF file' },
+          { name: 'page_range', type: 'string', required: false, default: 'all', description: 'Page range (e.g., "1-3" or "all")' }
+        ]
+      },
+      {
+        name: 'search_with_cursor',
+        description: 'Search with cursor-based pagination (modern best practice)',
+        parameters: [
+          { name: 'query', type: 'string', required: true, description: 'Search query string' },
+          { name: 'cursor', type: 'string', required: false, description: 'Continuation token from previous response' },
+          { name: 'limit', type: 'number', required: false, default: 10, description: 'Maximum results per page' }
+        ]
+      }
+    ],
+    dependencies: [
+      'fastmcp>=2.14.0',
+      'httpx>=0.25.0',
+      'pillow>=10.0.0',
+      'pypdf>=5.1.0',
+      'pydantic>=2.0.0',
+      'pydantic-settings>=2.0.0',
+      'psutil>=6.0.0'
+    ]
+  },
+
+  {
     id: 'blank',
     name: 'Blank Template',
     description: 'Start from scratch with basic FastMCP structure',
