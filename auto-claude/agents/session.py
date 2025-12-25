@@ -6,6 +6,7 @@ Handles running agent sessions and post-session processing including
 memory updates, recovery tracking, and Linear integration.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -41,6 +42,14 @@ from .utils import (
     load_implementation_plan,
     sync_plan_to_source,
 )
+
+# Analytics and token tracking
+try:
+    from analytics import UsageTracker, get_analytics_storage, is_tracking_enabled
+    ANALYTICS_AVAILABLE = True
+except ImportError:
+    ANALYTICS_AVAILABLE = False
+    debug("session", "Analytics module not available, token tracking disabled")
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +319,20 @@ async def post_session_processing(
         return False
 
 
+def _map_phase_to_analytics(phase: LogPhase) -> str:
+    """Map LogPhase to analytics phase string."""
+    phase_map = {
+        LogPhase.PLANNING: "planning",
+        LogPhase.CODING: "coding",
+        LogPhase.VALIDATION: "validation",
+        LogPhase.QA_REVIEW: "validation",
+        LogPhase.QA_FIX: "coding",
+        LogPhase.SPEC_GATHERING: "planning",
+        LogPhase.SPEC_WRITING: "planning",
+    }
+    return phase_map.get(phase, "coding")
+
+
 async def run_agent_session(
     client: ClaudeSDKClient,
     message: str,
@@ -350,6 +373,39 @@ async def run_agent_session(
     message_count = 0
     tool_count = 0
 
+    # Initialize token usage tracker
+    tracker = None
+    if ANALYTICS_AVAILABLE and is_tracking_enabled():
+        try:
+            spec_id = spec_dir.name  # e.g., "001-feature-name"
+            analytics_phase = _map_phase_to_analytics(phase)
+            storage = get_analytics_storage()
+
+            # Get next session number for this spec
+            # Query how many conversations exist for this spec already
+            import sqlite3
+            db_path = storage.db_path
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) FROM conversations WHERE spec_id = ?",
+                (spec_id,)
+            )
+            session_num = cursor.fetchone()[0] + 1  # Increment for new session
+            conn.close()
+
+            tracker = UsageTracker(
+                spec_id=spec_id,
+                session_num=session_num,
+                phase=analytics_phase,
+                storage=storage
+            )
+            await tracker.start_conversation()
+            debug("session", f"Token tracking enabled", session_num=session_num, phase=analytics_phase)
+        except Exception as e:
+            debug("session", f"Failed to initialize token tracker: {e}")
+            tracker = None
+
     try:
         # Send the query
         debug("session", "Sending query to Claude SDK...")
@@ -367,6 +423,10 @@ async def run_agent_session(
                 f"Received message #{message_count}",
                 msg_type=msg_type,
             )
+
+            # Track token usage (non-blocking)
+            if tracker:
+                asyncio.create_task(tracker.track_message(msg))
 
             # Handle AssistantMessage (text and tool use)
             if msg_type == "AssistantMessage" and hasattr(msg, "content"):
@@ -516,6 +576,14 @@ async def run_agent_session(
 
         print("\n" + "-" * 70 + "\n")
 
+        # Finalize token tracking
+        if tracker:
+            try:
+                await tracker.finalize()
+                debug("session", "Token tracking finalized successfully")
+            except Exception as e:
+                debug("session", f"Failed to finalize token tracker: {e}")
+
         # Check if build is complete
         if is_build_complete(spec_dir):
             debug_success(
@@ -547,4 +615,13 @@ async def run_agent_session(
         print(f"Error during agent session: {e}")
         if task_logger:
             task_logger.log_error(f"Session error: {e}", phase)
+
+        # Finalize token tracking even on error
+        if tracker:
+            try:
+                await tracker.finalize()
+                debug("session", "Token tracking finalized after error")
+            except Exception as tracker_error:
+                debug("session", f"Failed to finalize token tracker after error: {tracker_error}")
+
         return "error", str(e)
