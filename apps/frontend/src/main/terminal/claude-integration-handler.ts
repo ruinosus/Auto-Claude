@@ -6,6 +6,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import { app } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import * as OutputParser from './output-parser';
@@ -13,6 +14,7 @@ import * as SessionHandler from './session-handler';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, buildCdCommand } from '../../shared/utils/shell-escape';
 import { parseEnvFile } from '../ipc-handlers/utils';
+import { getProfileEnv } from '../rate-limit-detector';
 import type {
   TerminalProcess,
   WindowGetter,
@@ -197,11 +199,107 @@ export function handleClaudeSessionId(
 }
 
 /**
+ * Extract Azure resource name from Foundry URL
+ * @param url - Azure Foundry base URL (e.g., https://aif-cockpit-br-prd01.services.ai.azure.com/anthropic)
+ * @returns Resource name (e.g., aif-cockpit-br-prd01) or undefined
+ */
+function extractAzureResourceFromUrl(url: string): string | undefined {
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+
+    // Extract resource name from hostname patterns:
+    // Pattern 1: resource-name.openai.azure.com
+    // Pattern 2: resource-name.services.ai.azure.com
+    const match = hostname.match(/^([^.]+)\.(openai\.azure\.com|services\.ai\.azure\.com)$/);
+
+    if (match) {
+      return match[1];
+    }
+  } catch (error) {
+    debugError('[ClaudeIntegration:extractAzureResourceFromUrl] Invalid URL:', error);
+  }
+
+  return undefined;
+}
+
+/**
+ * Find the backend directory by trying multiple possible paths
+ * @returns Path to backend directory or undefined if not found
+ */
+function findBackendDir(): string | undefined {
+  const possiblePaths = [
+    // New apps structure: from out/main -> apps/backend
+    path.resolve(__dirname, '..', '..', '..', 'backend'),
+    path.resolve(app.getAppPath(), '..', 'backend'),
+    path.resolve(process.cwd(), 'apps', 'backend'),
+    // Legacy paths for backwards compatibility
+    path.resolve(__dirname, '..', '..', '..', 'auto-claude'),
+    path.resolve(app.getAppPath(), '..', 'auto-claude'),
+    path.resolve(process.cwd(), 'auto-claude')
+  ];
+
+  for (const backendPath of possiblePaths) {
+    if (fs.existsSync(backendPath)) {
+      return backendPath;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Load model overrides from backend .env file
+ * @returns Object with model override environment variables
+ */
+function loadBackendModelOverrides(): Record<string, string> {
+  const backendDir = findBackendDir();
+  if (!backendDir) {
+    debugLog('[ClaudeIntegration:loadBackendModelOverrides] Backend directory not found');
+    return {};
+  }
+
+  const backendEnvPath = path.join(backendDir, '.env');
+
+  if (!fs.existsSync(backendEnvPath)) {
+    debugLog('[ClaudeIntegration:loadBackendModelOverrides] Backend .env not found at:', backendEnvPath);
+    return {};
+  }
+
+  try {
+    const envContent = fs.readFileSync(backendEnvPath, 'utf-8');
+    const vars = parseEnvFile(envContent);
+    const overrides: Record<string, string> = {};
+
+    // Extract model overrides
+    if (vars['ANTHROPIC_DEFAULT_SONNET_MODEL']) {
+      overrides['ANTHROPIC_DEFAULT_SONNET_MODEL'] = vars['ANTHROPIC_DEFAULT_SONNET_MODEL'];
+    }
+    if (vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']) {
+      overrides['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = vars['ANTHROPIC_DEFAULT_HAIKU_MODEL'];
+    }
+    if (vars['ANTHROPIC_DEFAULT_OPUS_MODEL']) {
+      overrides['ANTHROPIC_DEFAULT_OPUS_MODEL'] = vars['ANTHROPIC_DEFAULT_OPUS_MODEL'];
+    }
+
+    if (Object.keys(overrides).length > 0) {
+      debugLog('[ClaudeIntegration:loadBackendModelOverrides] Loaded model overrides:', overrides);
+    }
+
+    return overrides;
+  } catch (error) {
+    debugError('[ClaudeIntegration:loadBackendModelOverrides] Failed to load backend .env:', error);
+    return {};
+  }
+}
+
+/**
  * Build environment variables for terminal session.
  *
  * Priority:
- * 1. Azure Foundry (if configured in project .env)
- * 2. OAuth token (fallback)
+ * 1. Active profile configuration (global)
+ * 2. Project .env (legacy/per-project config)
+ * 3. OAuth token (fallback)
  *
  * @param projectPath - Path to the project (to locate .env file)
  * @param oauthToken - OAuth token from Claude profile (fallback)
@@ -210,7 +308,62 @@ export function handleClaudeSessionId(
 function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: string | undefined): string {
   const envVars: string[] = [];
 
-  // Try to load Azure Foundry configuration from project .env
+  // PRIORITY 1: Use active profile configuration (global)
+  const profileEnv = getProfileEnv();
+
+  if (profileEnv.ANTHROPIC_BASE_URL && profileEnv.ANTHROPIC_AUTH_TOKEN) {
+    // Profile is in proxy mode (Azure Foundry)
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using Azure Foundry profile configuration');
+
+    const baseUrl = profileEnv.ANTHROPIC_BASE_URL;
+    const apiKey = profileEnv.ANTHROPIC_AUTH_TOKEN;
+
+    // Export Azure Foundry variables
+    envVars.push('export CLAUDE_CODE_USE_FOUNDRY=1');
+    envVars.push(`export ANTHROPIC_FOUNDRY_API_KEY="${apiKey}"`);
+    envVars.push(`export ANTHROPIC_FOUNDRY_BASE_URL="${baseUrl}"`);
+
+    // Extract and export resource name from URL
+    const resourceName = extractAzureResourceFromUrl(baseUrl);
+    if (resourceName) {
+      envVars.push(`export ANTHROPIC_FOUNDRY_RESOURCE="${resourceName}"`);
+    }
+
+    // Also export proxy mode variables for SDK compatibility
+    envVars.push(`export ANTHROPIC_BASE_URL="${baseUrl}"`);
+    envVars.push(`export ANTHROPIC_AUTH_TOKEN="${apiKey}"`);
+
+    // Load and export model overrides from backend .env
+    const modelOverrides = loadBackendModelOverrides();
+    for (const [key, value] of Object.entries(modelOverrides)) {
+      envVars.push(`export ${key}="${value}"`);
+    }
+
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry profile env vars:', {
+      hasApiKey: !!apiKey,
+      hasBaseUrl: !!baseUrl,
+      hasResource: !!resourceName,
+      modelOverrides: Object.keys(modelOverrides)
+    });
+
+    return envVars.join('\n') + '\n';
+  }
+
+  if (profileEnv.CLAUDE_CODE_OAUTH_TOKEN) {
+    // Profile has OAuth token
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using OAuth token from profile');
+    envVars.push(`export CLAUDE_CODE_OAUTH_TOKEN="${profileEnv.CLAUDE_CODE_OAUTH_TOKEN}"`);
+    return envVars.join('\n') + '\n';
+  }
+
+  if (profileEnv.CLAUDE_CONFIG_DIR) {
+    // Profile uses config dir (legacy)
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using config dir from profile');
+    envVars.push(`export CLAUDE_CONFIG_DIR="${profileEnv.CLAUDE_CONFIG_DIR}"`);
+    return envVars.join('\n') + '\n';
+  }
+
+  // PRIORITY 2: Try to load Azure Foundry configuration from project .env (legacy)
   if (projectPath) {
     const projectEnvPath = path.join(projectPath, '.auto-claude', '.env');
 
@@ -224,7 +377,7 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
                                   vars['CLAUDE_CODE_USE_FOUNDRY'] === 'true';
 
         if (isFoundryEnabled) {
-          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry detected in project .env');
+          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry detected in project .env (legacy)');
 
           // Export Azure Foundry flag
           envVars.push('export CLAUDE_CODE_USE_FOUNDRY=1');
@@ -260,7 +413,7 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
             envVars.push(`export ANTHROPIC_BASE_URL="${vars['ANTHROPIC_BASE_URL']}"`);
           }
 
-          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry env vars:', {
+          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry env vars (project):', {
             hasApiKey: !!vars['ANTHROPIC_FOUNDRY_API_KEY'],
             hasBaseUrl: !!vars['ANTHROPIC_FOUNDRY_BASE_URL'],
             hasResource: !!vars['ANTHROPIC_FOUNDRY_RESOURCE'],
@@ -279,7 +432,7 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     }
   }
 
-  // Fallback to OAuth token (original behavior)
+  // PRIORITY 3: Fallback to OAuth token (original behavior)
   if (oauthToken) {
     debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using OAuth token (fallback)');
     envVars.push(`export CLAUDE_CODE_OAUTH_TOKEN="${oauthToken}"`);
