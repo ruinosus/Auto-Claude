@@ -389,9 +389,6 @@ export function registerMCPHandlers() {
    */
   ipcMain.handle('mcp:get-capabilities', async (event, serverId: string) => {
     try {
-      const { MCPManager } = await import('./mcp-manager-v2');
-      const mcpManager = new MCPManager();
-
       // Get server config from built-in servers or registry
       const builtInServers = getBuiltInServers();
       const server = builtInServers.find(s => s.id === serverId);
@@ -399,6 +396,60 @@ export function registerMCPHandlers() {
       if (!server) {
         throw new Error(`Server ${serverId} not found`);
       }
+
+      // Special handling for internal servers (auto-claude-tools)
+      if (serverId === 'auto-claude-tools') {
+        console.log('[MCP Manager] Returning hardcoded capabilities for auto-claude-tools');
+        return {
+          tools: [
+            {
+              name: 'get_build_progress',
+              displayName: 'Get Build Progress',
+              description: 'Get current build progress for a spec',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  specId: { type: 'string', description: 'Spec ID to check progress for' }
+                },
+                required: ['specId']
+              },
+              parameters: []
+            },
+            {
+              name: 'get_context',
+              displayName: 'Get Context',
+              description: 'Get project context and codebase information',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  projectPath: { type: 'string', description: 'Path to project directory' }
+                },
+                required: ['projectPath']
+              },
+              parameters: []
+            },
+            {
+              name: 'search_code',
+              displayName: 'Search Code',
+              description: 'Search for code patterns in the project',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  query: { type: 'string', description: 'Search query' },
+                  filePattern: { type: 'string', description: 'File pattern to search in' }
+                },
+                required: ['query']
+              },
+              parameters: []
+            }
+          ],
+          prompts: [],
+          resources: []
+        };
+      }
+
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
 
       // Convert to MCPServerConfig
       const serverConfig = {
