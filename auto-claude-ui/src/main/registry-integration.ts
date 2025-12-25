@@ -13,9 +13,9 @@ import { randomUUID } from 'crypto';
 import type { IpcMainInvokeEvent } from 'electron';
 import type { FastMCPServerConfig, MCPServersRegistry, MCPServer } from '../shared/types/mcp';
 import { ProgressReporter, GenerationStep } from './progress-reporter';
-import { generateServerPy, generatePyprojectToml, generateReadmeMd, generatePythonVersion } from './fastmcp-generator';
+import { generateServerPy, generatePyprojectToml, generateReadmeMd, generatePythonVersion, generateCompleteShowcaseFiles } from './fastmcp-generator';
 import { ensureDirectory, writeAllServerFiles, cleanupDirectory } from './fs-utils';
-import { uvInit, uvAdd, uvSync, checkUvInstalled } from './uv-utils';
+import { uvAdd, uvSync, checkUvInstalled } from './uv-utils';
 import { validateServerConfig } from './server-validator';
 
 /**
@@ -69,62 +69,42 @@ async function writeRegistry(registryPath: string, registry: MCPServersRegistry)
  * @param serverId - Unique server ID
  * @returns MCPServer registry entry
  */
-function createRegistryEntry(config: FastMCPServerConfig, serverId: string): MCPServer {
+function createRegistryEntry(config: FastMCPServerConfig, serverId: string): any {
+  // Extract package name from serverName (convert to snake_case for Python package name)
+  // Replace spaces and hyphens with underscores, then remove remaining invalid chars
+  const packageName = config.serverName.toLowerCase().replace(/[\s-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+  // Complete showcase template has additional capabilities
+  const isCompleteShowcase = config.templateId === 'complete-showcase';
+
+  // Create MCPServerConfig-compatible entry
   return {
     id: serverId,
     name: config.serverName,
     description: config.description,
-    type: 'custom',
-    category: 'FastMCP',
-    status: 'disabled',
+    type: 'custom',  // ← CRITICAL: Type field required for isServerEnabled
+
+    // Transport configuration (MCPServerConfig format)
+    transport: 'stdio',
+    command: 'uv',
+    args: ['run', packageName],  // Use package name, not server.py
+    cwd: config.workingDir,
+    env: {
+      PYTHONPATH: config.workingDir
+    },
+
+    // Status
     enabled: true,
 
-    // Required fields
-    requiredEnvVars: [],
-    optionalEnvVars: [],
-    capabilities: {
-      tools: config.tools.map(tool => ({
-        name: tool.name,
-        displayName: tool.name,
-        description: tool.description,
-        parameters: tool.parameters.map(param => ({
-          name: param.name,
-          type: param.type,
-          required: param.required,
-          description: param.description || '',
-          default: param.default
-        }))
-      }))
-    },
+    // Initial capability counts from wizard config
+    // (Real capabilities loaded dynamically when server connects via SDK)
     toolCount: config.tools.length,
-    promptCount: 0,
-    resourceCount: 0,
-    connectionType: 'stdio',
+    promptCount: 0,  // Will be loaded from server when connected
+    resourceCount: 0,  // Will be loaded from server when connected
 
-    // Python version
-    pythonVersion: config.pythonVersion,
-
-    // Custom configuration
-    config: {
-      command: 'uv',
-      args: ['run', 'server.py'],
-      env: {
-        PYTHONPATH: config.workingDir
-      },
-      cwd: config.workingDir,
-
-      // FastMCP-specific metadata
-      isFastMCP: true,
-      generatedFrom: 'wizard',
-      template: config.templateId,
-      pythonVersion: config.pythonVersion,
-      sourceFiles: {
-        pyprojectToml: path.join(config.workingDir, 'pyproject.toml'),
-        serverPy: path.join(config.workingDir, 'server.py'),
-        readmeMd: path.join(config.workingDir, 'README.md'),
-        pythonVersion: path.join(config.workingDir, '.python-version')
-      }
-    }
+    // Metadata
+    category: 'Custom',
+    icon: 'Package'
   };
 }
 
@@ -187,27 +167,30 @@ export async function generateAndRegisterServer(
   const registryBackup = JSON.parse(JSON.stringify(originalRegistry));
 
   try {
-    // Generate file contents
-    const files = [
-      { filename: 'server.py', content: generateServerPy(config) },
-      { filename: 'pyproject.toml', content: generatePyprojectToml(config) },
-      { filename: 'README.md', content: generateReadmeMd(config) },
-      { filename: '.python-version', content: generatePythonVersion(config.pythonVersion) }
-    ];
+    // Generate file contents based on template type
+    let files;
+    if (config.templateId === 'complete-showcase') {
+      // Use modular structure for complete-showcase template
+      files = generateCompleteShowcaseFiles(config);
+    } else {
+      // Use standard single-file structure for other templates
+      files = [
+        { filename: 'server.py', content: generateServerPy(config) },
+        { filename: 'pyproject.toml', content: generatePyprojectToml(config) },
+        { filename: 'README.md', content: generateReadmeMd(config) },
+        { filename: '.python-version', content: generatePythonVersion(config.pythonVersion) }
+      ];
+    }
 
     // Step 1: Create directory
     reporter.reportStep(GenerationStep.CREATING_DIRECTORY, { path: config.workingDir });
     await ensureDirectory(config.workingDir);
 
-    // Step 2: Write files
+    // Step 2: Write files (including pyproject.toml)
     reporter.reportStep(GenerationStep.WRITING_FILES, { fileCount: files.length });
     await writeAllServerFiles(config.workingDir, files);
 
-    // Step 3: Initialize uv project
-    reporter.reportStep(GenerationStep.UV_INIT, { serverName: config.serverName });
-    await uvInit(config.serverName, config.workingDir);
-
-    // Step 4: Add dependencies
+    // Step 3: Add dependencies (no need for uv init - we already have pyproject.toml)
     if (config.dependencies && config.dependencies.length > 0) {
       reporter.reportStep(GenerationStep.UV_ADD, {
         dependencies: config.dependencies,
@@ -216,16 +199,16 @@ export async function generateAndRegisterServer(
       await uvAdd(config.dependencies, config.workingDir);
     }
 
-    // Step 5: Sync dependencies
+    // Step 4: Sync dependencies
     reporter.reportStep(GenerationStep.UV_SYNC);
     await uvSync(config.workingDir);
 
-    // Step 6: Add to registry
+    // Step 5: Add to registry
     const registryEntry = createRegistryEntry(config, serverId);
     originalRegistry.servers.push(registryEntry);
     await writeRegistry(registryPath, originalRegistry);
 
-    // Step 7: Complete
+    // Step 6: Complete
     reporter.reportStep(GenerationStep.COMPLETE, { serverId });
 
     return {
