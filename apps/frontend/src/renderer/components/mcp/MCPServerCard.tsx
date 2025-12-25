@@ -13,7 +13,7 @@ interface MCPServerCardProps {
 export function MCPServerCard({ server, onConfigure }: MCPServerCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const showConfigure = !server.enabled && server.requiredEnvVars.length > 0;
+  const showConfigure = !server.enabled && (server.requiredEnvVars?.length ?? 0) > 0;
 
   return (
     <div className="border rounded-lg overflow-hidden bg-card">
@@ -53,8 +53,8 @@ export function MCPServerCard({ server, onConfigure }: MCPServerCardProps) {
                   <span>
                     {server.toolCount} tools • {server.promptCount} prompts • {server.resourceCount} resources
                   </span>
-                ) : server.requiredEnvVars.length > 0 ? (
-                  <span>Requires: {server.requiredEnvVars.join(', ')}</span>
+                ) : (server.requiredEnvVars?.length ?? 0) > 0 ? (
+                  <span>Requires: {server.requiredEnvVars?.join(', ')}</span>
                 ) : (
                   <span>Ready to configure</span>
                 )}
