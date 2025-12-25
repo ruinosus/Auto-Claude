@@ -341,21 +341,19 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     envVars.push(`export ANTHROPIC_FOUNDRY_API_KEY="${apiKey}"`);
     envVars.push(`export ANTHROPIC_FOUNDRY_BASE_URL="${baseUrl}"`);
 
-    // Extract and export resource name from URL
-    const resourceName = extractAzureResourceFromUrl(baseUrl);
-    if (resourceName) {
-      envVars.push(`export ANTHROPIC_FOUNDRY_RESOURCE="${resourceName}"`);
-    }
-
-    // Also export proxy mode variables for SDK compatibility
+    // Export proxy mode variables for SDK compatibility
+    // NOTE: When using ANTHROPIC_BASE_URL, do NOT export ANTHROPIC_FOUNDRY_RESOURCE
+    // as they are mutually exclusive in the Claude SDK
     envVars.push(`export ANTHROPIC_BASE_URL="${baseUrl}"`);
     envVars.push(`export ANTHROPIC_AUTH_TOKEN="${apiKey}"`);
 
     // Load and export ALL Azure Foundry config from backend .env
     const backendConfig = loadBackendAzureFoundryConfig();
     for (const [key, value] of Object.entries(backendConfig)) {
-      // Skip if already exported from profile
-      if (key === 'ANTHROPIC_BASE_URL' || key === 'ANTHROPIC_AUTH_TOKEN') {
+      // Skip if already exported from profile, or if mutually exclusive with base URL
+      if (key === 'ANTHROPIC_BASE_URL' ||
+          key === 'ANTHROPIC_AUTH_TOKEN' ||
+          key === 'ANTHROPIC_FOUNDRY_RESOURCE') {
         continue;
       }
       envVars.push(`export ${key}="${value}"`);
@@ -364,7 +362,6 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry profile env vars:', {
       hasApiKey: !!apiKey,
       hasBaseUrl: !!baseUrl,
-      hasResource: !!resourceName,
       backendConfigVars: Object.keys(backendConfig)
     });
 

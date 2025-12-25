@@ -68,6 +68,7 @@ export class TerminalNameGenerator extends EventEmitter {
 
   /**
    * Load environment variables from auto-claude .env file
+   * NOTE: Skips ANTHROPIC_FOUNDRY_RESOURCE as it's mutually exclusive with ANTHROPIC_BASE_URL
    */
   private loadAutoBuildEnv(): Record<string, string> {
     const autoBuildSource = this.getAutoBuildSourcePath();
@@ -89,6 +90,12 @@ export class TerminalNameGenerator extends EventEmitter {
         if (eqIndex > 0) {
           const key = trimmed.substring(0, eqIndex).trim();
           let value = trimmed.substring(eqIndex + 1).trim();
+
+          // Skip ANTHROPIC_FOUNDRY_RESOURCE as it conflicts with ANTHROPIC_BASE_URL
+          // (they are mutually exclusive in the Claude SDK)
+          if (key === 'ANTHROPIC_FOUNDRY_RESOURCE') {
+            continue;
+          }
 
           if ((value.startsWith('"') && value.endsWith('"')) ||
               (value.startsWith("'") && value.endsWith("'"))) {
