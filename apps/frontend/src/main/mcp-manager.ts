@@ -302,81 +302,14 @@ export function registerMCPHandlers() {
         ...projectRegistry.servers
       ];
 
-      // Check enabled status and load real capabilities for enabled servers
-      const { MCPManager } = await import('./mcp-manager-v2');
-      const mcpManager = new MCPManager();
-
+      // Check enabled status for each server
+      // Note: We don't load capabilities here anymore to avoid blocking/timeouts
+      // Capabilities are loaded on-demand when user expands a server
       const serversWithStatus = await Promise.all(
-        allServers.map(async (server) => {
-          const enabled = await isServerEnabled(server.id, projectPath);
-
-          // For enabled servers, try to load real capabilities from MCP server
-          if (enabled) {
-            try {
-              // Convert server format to MCPServerConfig for mcp-manager-v2
-              const serverConfig = {
-                id: server.id,
-                name: server.name,
-                description: server.description,
-                transport: server.connectionType === 'sdk' ? 'stdio' as const :
-                           server.connectionType === 'http' ? 'http' as const :
-                           'stdio' as const,
-                command: server.customConfig?.command,
-                args: server.customConfig?.args,
-                url: server.customConfig?.baseUrl || server.endpoint,
-                headers: server.customConfig?.headers,
-                cwd: server.customConfig?.workingDir,
-                env: server.customConfig?.env,
-                enabled: true,
-                category: server.category,
-                icon: server.icon
-              };
-
-              // Connect and fetch tools
-              await mcpManager.connect(serverConfig);
-              const tools = await mcpManager.listTools(server.id);
-
-              console.log(`[MCP Manager] Loaded ${tools.length} tools for ${server.id}`);
-              if (tools.length > 0) {
-                console.log(`[MCP Manager] First tool:`, JSON.stringify(tools[0], null, 2));
-              }
-
-              // Transform MCP SDK tool format to our format
-              const transformedTools = tools.map((tool: any) => ({
-                name: tool.name,
-                displayName: tool.name,
-                description: tool.description || '',
-                inputSchema: tool.inputSchema,
-                parameters: [] // Will be derived from inputSchema if needed
-              }));
-
-              return {
-                ...server,
-                enabled,
-                capabilities: {
-                  tools: transformedTools,
-                  prompts: server.capabilities?.prompts || [],
-                  resources: server.capabilities?.resources || []
-                },
-                toolCount: transformedTools.length,
-                status: 'connected' as const
-              };
-            } catch (error) {
-              console.error(`[MCP Manager] Failed to load tools for ${server.id}:`, error);
-              return {
-                ...server,
-                enabled,
-                status: 'error' as const,
-                statusMessage: error instanceof Error ? error.message : String(error)
-              };
-            }
-          }
-
-          return {
-            ...server,
-            enabled
-          };
-        })
+        allServers.map(async (server) => ({
+          ...server,
+          enabled: await isServerEnabled(server.id, projectPath)
+        }))
       );
 
       return serversWithStatus;
@@ -452,14 +385,70 @@ export function registerMCPHandlers() {
   });
 
   /**
-   * Get capabilities (stub - returns empty for now)
+   * Get capabilities from an MCP server (loaded on-demand)
    */
   ipcMain.handle('mcp:get-capabilities', async (event, serverId: string) => {
-    return {
-      tools: [],
-      prompts: [],
-      resources: []
-    };
+    try {
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
+      // Get server config from built-in servers or registry
+      const builtInServers = getBuiltInServers();
+      const server = builtInServers.find(s => s.id === serverId);
+
+      if (!server) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      // Convert to MCPServerConfig
+      const serverConfig = {
+        id: server.id,
+        name: server.name,
+        description: server.description,
+        transport: server.connectionType === 'sdk' ? 'stdio' as const :
+                   server.connectionType === 'http' ? 'http' as const :
+                   server.connectionType === 'stdio' ? 'stdio' as const :
+                   'stdio' as const,
+        command: server.customConfig?.command,
+        args: server.customConfig?.args,
+        url: server.customConfig?.baseUrl || server.endpoint,
+        headers: server.customConfig?.headers,
+        cwd: server.customConfig?.workingDir,
+        env: server.customConfig?.env,
+        enabled: true,
+        category: server.category,
+        icon: server.icon
+      };
+
+      // Connect and fetch capabilities
+      console.log(`[MCP Manager] Connecting to ${serverId}...`);
+      await mcpManager.connect(serverConfig);
+
+      const tools = await mcpManager.listTools(serverId);
+      console.log(`[MCP Manager] Loaded ${tools.length} tools for ${serverId}`);
+
+      // Transform tools to include inputSchema
+      const transformedTools = tools.map((tool: any) => ({
+        name: tool.name,
+        displayName: tool.name,
+        description: tool.description || '',
+        inputSchema: tool.inputSchema,
+        parameters: []
+      }));
+
+      return {
+        tools: transformedTools,
+        prompts: [],
+        resources: []
+      };
+    } catch (error) {
+      console.error(`[MCP Manager] Failed to get capabilities for ${serverId}:`, error);
+      return {
+        tools: [],
+        prompts: [],
+        resources: []
+      };
+    }
   });
 
   /**
