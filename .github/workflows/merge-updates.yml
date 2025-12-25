@@ -1,0 +1,134 @@
+name: 2️⃣ Merge Updates (Manual)
+
+on:
+  # APENAS manual - você decide quando integrar updates
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Branch to merge updates into'
+        required: true
+        default: 'develop'
+        type: choice
+        options:
+          - develop
+          - feat/mcp-template-modernization
+      strategy:
+        description: 'Merge strategy'
+        required: true
+        default: 'merge'
+        type: choice
+        options:
+          - merge
+          - rebase
+      auto_push:
+        description: 'Auto-push if no conflicts?'
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  merge-upstream-updates:
+    name: Merge main → ${{ inputs.target_branch }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Fetch all branches
+        run: |
+          git fetch origin main
+          git fetch origin ${{ inputs.target_branch }}
+      
+      - name: Check for updates
+        id: check_updates
+        run: |
+          # Check if main has new commits
+          BEHIND=$(git rev-list --count HEAD..origin/main)
+          echo "commits_behind=$BEHIND" >> $GITHUB_OUTPUT
+          
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "ℹ️  No new updates from main"
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Found $BEHIND new commits in main"
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            git log --oneline HEAD..origin/main
+          fi
+      
+      - name: Merge updates (merge strategy)
+        if: steps.check_updates.outputs.has_updates == 'true' && inputs.strategy == 'merge'
+        id: merge
+        run: |
+          git merge origin/main --no-edit || {
+            echo "❌ Merge conflicts detected!"
+            echo "has_conflicts=true" >> $GITHUB_OUTPUT
+            git merge --abort
+            exit 0  # Don't fail the workflow
+          }
+          echo "has_conflicts=false" >> $GITHUB_OUTPUT
+      
+      - name: Rebase updates (rebase strategy)
+        if: steps.check_updates.outputs.has_updates == 'true' && inputs.strategy == 'rebase'
+        id: rebase
+        run: |
+          git rebase origin/main || {
+            echo "❌ Rebase conflicts detected!"
+            echo "has_conflicts=true" >> $GITHUB_OUTPUT
+            git rebase --abort
+            exit 0
+          }
+          echo "has_conflicts=false" >> $GITHUB_OUTPUT
+      
+      - name: Push changes
+        if: |
+          steps.check_updates.outputs.has_updates == 'true' && 
+          (steps.merge.outputs.has_conflicts == 'false' || steps.rebase.outputs.has_conflicts == 'false') &&
+          inputs.auto_push == true
+        run: |
+          git push origin ${{ inputs.target_branch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create merge report
+        if: always()
+        run: |
+          echo "### 🔀 Merge Updates Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Source:** main (upstream mirror)" >> $GITHUB_STEP_SUMMARY
+          echo "**Target:** ${{ inputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Strategy:** ${{ inputs.strategy }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commits Behind:** ${{ steps.check_updates.outputs.commits_behind }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.check_updates.outputs.has_updates }}" == "false" ]; then
+            echo "ℹ️ No updates available - you're already up to date!" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.merge.outputs.has_conflicts }}" == "true" ] || [ "${{ steps.rebase.outputs.has_conflicts }}" == "true" ]; then
+            echo "⚠️ **CONFLICTS DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To resolve manually:" >> $GITHUB_STEP_SUMMARY
+            echo '```bash' >> $GITHUB_STEP_SUMMARY
+            echo "git checkout ${{ inputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
+            echo "git fetch origin main" >> $GITHUB_STEP_SUMMARY
+            echo "git ${{ inputs.strategy }} origin/main" >> $GITHUB_STEP_SUMMARY
+            echo "# Resolve conflicts, then:" >> $GITHUB_STEP_SUMMARY
+            echo "git push origin ${{ inputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Successfully merged updates!" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ inputs.auto_push }}" == "true" ]; then
+              echo "✅ Changes pushed to ${{ inputs.target_branch }}" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "ℹ️  Changes ready - push manually when ready" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi

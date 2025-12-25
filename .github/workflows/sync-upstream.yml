@@ -1,22 +1,24 @@
-name: Sync with Upstream Repository
+name: 1️⃣ Sync Upstream (Auto)
 
 on:
   # Executa diariamente à meia-noite UTC
   schedule:
     - cron: '0 0 * * *'
   
-  # Permite execução manual do workflow
+  # Permite execução manual
   workflow_dispatch:
 
 jobs:
-  sync:
+  sync-main:
+    name: Keep main clean and synced with upstream
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history
+          ref: main  # Always work on main
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Configure Git
@@ -31,14 +33,35 @@ jobs:
       
       - name: Fetch upstream changes
         run: |
-          git fetch upstream
+          git fetch upstream main
       
-      - name: Merge upstream/main into main
+      - name: Check if main has custom commits
+        id: check
         run: |
-          git checkout main
-          git merge upstream/main --no-edit || echo "No changes to merge or conflicts detected"
+          # Get commits that are in our main but not in upstream/main
+          CUSTOM_COMMITS=$(git log upstream/main..main --oneline | wc -l)
+          echo "custom_commits=$CUSTOM_COMMITS" >> $GITHUB_OUTPUT
+          
+          if [ "$CUSTOM_COMMITS" -gt 0 ]; then
+            echo "⚠️ WARNING: main branch has $CUSTOM_COMMITS custom commits!"
+            echo "⚠️ main should be a clean mirror of upstream"
+            echo "⚠️ Your modifications should be in 'develop' or feature branches"
+            git log upstream/main..main --oneline
+          fi
       
-      - name: Push changes
+      - name: Sync main with upstream (fast-forward only)
+        run: |
+          # Use --ff-only to ensure we don't create merge commits
+          # This will fail if main has diverged (which is good - prevents conflicts)
+          git merge upstream/main --ff-only || {
+            echo "❌ Cannot fast-forward. main has diverged from upstream!"
+            echo "❌ This means main has custom commits (bad practice)"
+            echo "ℹ️  Run workflow '2️⃣ Merge Updates' to integrate changes into develop"
+            exit 1
+          }
+      
+      - name: Push synced main
+        if: success()
         run: |
           git push origin main
         env:
@@ -47,9 +70,17 @@ jobs:
       - name: Create sync report
         if: always()
         run: |
-          echo "### Sync Report" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔄 Upstream Sync Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Upstream:** AndyMik90/Auto-Claude" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** main" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** main (clean mirror)" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Custom Commits in main:** ${{ steps.check.outputs.custom_commits }}" >> $GITHUB_STEP_SUMMARY
           echo "**Time:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.custom_commits }}" -gt 0 ]; then
+            echo "⚠️ **WARNING:** main should NOT have custom commits" >> $GITHUB_STEP_SUMMARY
+            echo "Move your work to develop or feature branches" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ main is a clean mirror of upstream" >> $GITHUB_STEP_SUMMARY
+          fi
