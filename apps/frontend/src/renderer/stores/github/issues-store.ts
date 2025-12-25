@@ -102,7 +102,6 @@ export async function loadGitHubIssues(projectId: string, state?: IssueFilterSta
   }
 }
 
-<<<<<<<< HEAD:apps/frontend/src/renderer/stores/github-store.ts
 export async function checkGitHubConnection(projectId: string): Promise<GitHubSyncStatus | null> {
   const store = useGitHubStore.getState();
 
@@ -134,8 +133,6 @@ export function investigateGitHubIssue(projectId: string, issueNumber: number, s
   window.electronAPI.investigateGitHubIssue(projectId, issueNumber, selectedCommentIds);
 }
 
-========
->>>>>>>> origin/develop:apps/frontend/src/renderer/stores/github/issues-store.ts
 export async function importGitHubIssues(
   projectId: string,
   issueNumbers: number[]
