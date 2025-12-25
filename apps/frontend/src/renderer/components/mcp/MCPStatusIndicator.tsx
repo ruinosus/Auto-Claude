@@ -14,7 +14,7 @@ export function MCPStatusIndicator({ status, className = '' }: MCPStatusIndicato
     disconnected: { icon: '🔴', label: 'Disconnected', color: 'text-red-600' }
   };
 
-  const config = statusConfig[status];
+  const config = statusConfig[status] || { icon: '⚪', label: status || 'Unknown', color: 'text-gray-400' };
 
   return (
     <span className={`inline-flex items-center gap-1 text-sm font-medium ${config.color} ${className}`}>
