@@ -114,19 +114,43 @@ function getBuiltInServers(): MCPServer[] {
     {
       id: 'auto-claude-tools',
       name: 'Auto-Claude Tools',
-      description: 'Internal MCP server for build progress and context',
+      description: 'Internal MCP server for build progress and context. Set AUTO_CLAUDE_TOOLS_MODE=stdio or http',
       type: 'internal',
       category: 'Internal',
       status: 'connected',
       enabled: true,
       requiredEnvVars: [],
       capabilities: {},
-      toolCount: 6,
+      toolCount: 3,
       promptCount: 0,
       resourceCount: 0,
-      connectionType: 'sdk',
+      // Check env var for mode selection (default: http for better performance)
+      connectionType: process.env.AUTO_CLAUDE_TOOLS_MODE === 'stdio' ? 'stdio' as const : 'http' as const,
       icon: 'Wrench',
-      color: 'gray'
+      color: 'gray',
+      // Configure based on mode
+      ...(process.env.AUTO_CLAUDE_TOOLS_MODE === 'stdio' ? {
+        // Option A: STDIO subprocess
+        customConfig: {
+          connectionType: 'stdio' as const,
+          command: 'npx',
+          args: [
+            'tsx',
+            path.join(__dirname, 'mcp-servers', 'auto-claude-tools-stdio.ts')
+          ],
+          env: {
+            ...process.env,
+            ELECTRON_API_PORT: '9824'
+          }
+        }
+      } : {
+        // Option B: HTTP localhost (default)
+        endpoint: 'http://localhost:9823/mcp',
+        customConfig: {
+          connectionType: 'http' as const,
+          baseUrl: 'http://localhost:9823/mcp'
+        }
+      })
     }
   ];
 }
@@ -389,6 +413,9 @@ export function registerMCPHandlers() {
    */
   ipcMain.handle('mcp:get-capabilities', async (event, serverId: string) => {
     try {
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
       // Get server config from built-in servers or registry
       const builtInServers = getBuiltInServers();
       const server = builtInServers.find(s => s.id === serverId);
@@ -396,60 +423,6 @@ export function registerMCPHandlers() {
       if (!server) {
         throw new Error(`Server ${serverId} not found`);
       }
-
-      // Special handling for internal servers (auto-claude-tools)
-      if (serverId === 'auto-claude-tools') {
-        console.log('[MCP Manager] Returning hardcoded capabilities for auto-claude-tools');
-        return {
-          tools: [
-            {
-              name: 'get_build_progress',
-              displayName: 'Get Build Progress',
-              description: 'Get current build progress for a spec',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  specId: { type: 'string', description: 'Spec ID to check progress for' }
-                },
-                required: ['specId']
-              },
-              parameters: []
-            },
-            {
-              name: 'get_context',
-              displayName: 'Get Context',
-              description: 'Get project context and codebase information',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  projectPath: { type: 'string', description: 'Path to project directory' }
-                },
-                required: ['projectPath']
-              },
-              parameters: []
-            },
-            {
-              name: 'search_code',
-              displayName: 'Search Code',
-              description: 'Search for code patterns in the project',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  query: { type: 'string', description: 'Search query' },
-                  filePattern: { type: 'string', description: 'File pattern to search in' }
-                },
-                required: ['query']
-              },
-              parameters: []
-            }
-          ],
-          prompts: [],
-          resources: []
-        };
-      }
-
-      const { MCPManager } = await import('./mcp-manager-v2');
-      const mcpManager = new MCPManager();
 
       // Convert to MCPServerConfig
       const serverConfig = {

@@ -156,6 +156,10 @@ app.whenReady().then(() => {
   // Setup IPC handlers (pass pythonEnvManager for Python path management)
   setupIpcHandlers(agentManager, terminalManager, () => mainWindow, pythonEnvManager);
 
+  // Initialize MCP servers (auto-claude-tools)
+  const { initializeMCPServers } = await import('./mcp-servers');
+  initializeMCPServers();
+
   // Create window
   createWindow();
 
