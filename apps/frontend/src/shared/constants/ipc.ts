@@ -312,6 +312,7 @@ export const IPC_CHANNELS = {
   MCP_TEST_CONNECTION: 'mcp:test-connection',
   MCP_SAVE_CONFIG: 'mcp:save-config',
   MCP_GET_CAPABILITIES: 'mcp:get-capabilities',
+  MCP_CALL_TOOL: 'mcp:call-tool',
   MCP_LIST_PROMPTS: 'mcp:list-prompts',
   MCP_LIST_RESOURCES: 'mcp:list-resources',
   MCP_START_FASTMCP_SERVER: 'mcp:start-fastmcp-server',

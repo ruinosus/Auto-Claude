@@ -22,6 +22,7 @@ export interface MCPAPI {
     testConnection: (serverId: string, config: MCPServerConfig) => Promise<MCPTestConnectionResult>;
     saveConfig: (serverId: string, config: MCPServerConfig, projectPath?: string) => Promise<{ success: boolean; error?: string }>;
     getCapabilities: (serverId: string) => Promise<{ tools: MCPTool[]; prompts: MCPPrompt[]; resources: MCPResource[] }>;
+    callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
     listPrompts: (serverId: string) => Promise<MCPPrompt[]>;
     listResources: (serverId: string) => Promise<MCPResource[]>;
     startFastMCPServer: (serverPath: string) => Promise<{ success: boolean; port?: number; error?: string }>;
@@ -48,6 +49,9 @@ export const createMCPAPI = (): MCPAPI => ({
 
     getCapabilities: (serverId: string): Promise<{ tools: MCPTool[]; prompts: MCPPrompt[]; resources: MCPResource[] }> =>
       invokeIpc(IPC_CHANNELS.MCP_GET_CAPABILITIES, serverId),
+
+    callTool: (serverId: string, toolName: string, args: any): Promise<any> =>
+      invokeIpc(IPC_CHANNELS.MCP_CALL_TOOL, serverId, toolName, args),
 
     listPrompts: (serverId: string): Promise<MCPPrompt[]> =>
       invokeIpc(IPC_CHANNELS.MCP_LIST_PROMPTS, serverId),

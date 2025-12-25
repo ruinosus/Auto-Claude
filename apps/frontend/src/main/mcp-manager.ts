@@ -387,6 +387,22 @@ export function registerMCPHandlers() {
   });
 
   /**
+   * Call an MCP tool
+   */
+  ipcMain.handle('mcp:call-tool', async (event, serverId: string, toolName: string, args: any) => {
+    try {
+      const { callTool } = await import('./mcp-client');
+      console.log(`[MCP Manager] Calling tool ${toolName} on server ${serverId} with args:`, args);
+      const result = await callTool(serverId, toolName, args);
+      console.log(`[MCP Manager] Tool ${toolName} result:`, result);
+      return result;
+    } catch (error) {
+      console.error(`[MCP Manager] Error calling tool ${toolName}:`, error);
+      throw error;
+    }
+  });
+
+  /**
    * List prompts (stub)
    */
   ipcMain.handle('mcp:list-prompts', async (event, serverId: string) => {
