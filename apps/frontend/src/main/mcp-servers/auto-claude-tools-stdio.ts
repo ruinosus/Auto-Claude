@@ -10,7 +10,6 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
 
 // HTTP client to communicate with Electron main process
 const ELECTRON_API_PORT = process.env.ELECTRON_API_PORT || '9824';
@@ -50,16 +49,14 @@ async function main() {
       title: 'Get Build Progress',
       description: 'Get current build progress and status for a spec',
       inputSchema: {
-        specId: z.string().describe('Spec ID to check progress for (e.g., "001", "spec-001")')
-      },
-      outputSchema: {
-        specId: z.string(),
-        status: z.enum(['pending', 'running', 'completed', 'failed']),
-        phase: z.string().optional(),
-        progress: z.number().min(0).max(100),
-        currentTask: z.string().optional(),
-        startedAt: z.string().optional(),
-        completedAt: z.string().optional()
+        type: 'object',
+        properties: {
+          specId: {
+            type: 'string',
+            description: 'Spec ID to check progress for (e.g., "001", "spec-001")'
+          }
+        },
+        required: ['specId']
       }
     },
     async ({ specId }) => {
@@ -93,23 +90,18 @@ async function main() {
       title: 'Get Project Context',
       description: 'Get project context and codebase information',
       inputSchema: {
-        projectPath: z.string().describe('Path to project directory').optional(),
-        includeMemory: z.boolean().describe('Include memory/insights from previous builds').default(false)
-      },
-      outputSchema: {
-        projectPath: z.string(),
-        projectName: z.string(),
-        techStack: z.array(z.string()),
-        recentSpecs: z.array(z.object({
-          id: z.string(),
-          name: z.string(),
-          status: z.string()
-        })),
-        codebaseStats: z.object({
-          totalFiles: z.number(),
-          totalLines: z.number(),
-          languages: z.record(z.number())
-        }).optional()
+        type: 'object',
+        properties: {
+          projectPath: {
+            type: 'string',
+            description: 'Path to project directory'
+          },
+          includeMemory: {
+            type: 'boolean',
+            description: 'Include memory/insights from previous builds',
+            default: false
+          }
+        }
       }
     },
     async ({ projectPath, includeMemory }) => {
@@ -147,21 +139,30 @@ async function main() {
       title: 'Search Code',
       description: 'Search for code patterns in the project codebase',
       inputSchema: {
-        query: z.string().describe('Search query (supports regex)'),
-        filePattern: z.string().describe('File pattern to search in (e.g., "*.ts", "src/**/*.py")').optional(),
-        caseSensitive: z.boolean().default(false),
-        maxResults: z.number().min(1).max(100).default(20)
-      },
-      outputSchema: {
-        query: z.string(),
-        totalMatches: z.number(),
-        results: z.array(z.object({
-          file: z.string(),
-          line: z.number(),
-          column: z.number(),
-          match: z.string(),
-          context: z.string().optional()
-        }))
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search query (supports regex)'
+          },
+          filePattern: {
+            type: 'string',
+            description: 'File pattern to search in (e.g., "*.ts", "src/**/*.py")'
+          },
+          caseSensitive: {
+            type: 'boolean',
+            description: 'Case sensitive search',
+            default: false
+          },
+          maxResults: {
+            type: 'number',
+            description: 'Maximum number of results',
+            minimum: 1,
+            maximum: 100,
+            default: 20
+          }
+        },
+        required: ['query']
       }
     },
     async ({ query, filePattern, caseSensitive, maxResults }) => {
