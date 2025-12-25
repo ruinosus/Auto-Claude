@@ -299,5 +299,25 @@ export const IPC_CHANNELS = {
   RELEASE_GET_VERSIONS: 'release:getVersions',
 
   // Release events (main -> renderer)
-  RELEASE_PROGRESS: 'release:progress'
+  RELEASE_PROGRESS: 'release:progress',
+
+  // Skills operations
+  SKILLS_LIST: 'skills:list',
+  SKILLS_INSTALL: 'skills:install',
+  SKILLS_REMOVE: 'skills:remove',
+  SKILLS_GET_CONTENT: 'skills:getContent',
+
+  // MCP operations
+  MCP_LIST: 'mcp:list',
+  MCP_TEST_CONNECTION: 'mcp:test-connection',
+  MCP_SAVE_CONFIG: 'mcp:save-config',
+  MCP_GET_CAPABILITIES: 'mcp:get-capabilities',
+  MCP_LIST_PROMPTS: 'mcp:list-prompts',
+  MCP_LIST_RESOURCES: 'mcp:list-resources',
+  MCP_START_FASTMCP_SERVER: 'mcp:start-fastmcp-server',
+  MCP_STOP_FASTMCP_SERVER: 'mcp:stop-fastmcp-server',
+  MCP_GENERATE_FASTMCP_SERVER: 'mcp:generate-fastmcp-server',
+  MCP_GENERATION_PROGRESS: 'mcp:generation-progress',
+  MCP_ADD_CUSTOM_SERVER: 'mcp:add-custom-server',
+  MCP_TEST_CONNECTION_CUSTOM: 'mcp:test-connection-custom'
 } as const;

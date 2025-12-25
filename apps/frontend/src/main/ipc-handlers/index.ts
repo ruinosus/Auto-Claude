@@ -26,7 +26,6 @@ import { registerAutobuildSourceHandlers } from './autobuild-source-handlers';
 import { registerIdeationHandlers } from './ideation-handlers';
 import { registerChangelogHandlers } from './changelog-handlers';
 import { registerInsightsHandlers } from './insights-handlers';
-import { registerDockerHandlers } from './docker-handlers';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
 import { registerListSkillsHandler } from './skills/list-skills';
@@ -98,7 +97,6 @@ export function setupIpcHandlers(
   registerInsightsHandlers(getMainWindow);
 
   // Memory & infrastructure handlers (for Graphiti/LadybugDB)
-  registerDockerHandlers();
   registerMemoryHandlers();
 
   // App auto-update handlers
@@ -130,7 +128,6 @@ export {
   registerIdeationHandlers,
   registerChangelogHandlers,
   registerInsightsHandlers,
-  registerDockerHandlers,
   registerMemoryHandlers,
   registerAppUpdateHandlers,
   registerListSkillsHandler,
