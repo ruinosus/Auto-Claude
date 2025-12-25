@@ -31,7 +31,7 @@ except ImportError:
     ClaudeAgentOptions = None
     ClaudeSDKClient = None
 
-from core.auth import ensure_claude_code_oauth_token, get_auth_token
+from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 from debug import (
     debug,
     debug_detailed,
@@ -177,6 +177,16 @@ Current question: {message}"""
     )
 
     try:
+        # Get SDK environment variables (includes Azure Foundry configuration)
+        sdk_env = get_sdk_env_vars()
+
+        debug(
+            "insights_runner",
+            "SDK environment variables loaded",
+            has_foundry=bool(sdk_env.get("CLAUDE_CODE_USE_FOUNDRY")),
+            has_foundry_key=bool(sdk_env.get("ANTHROPIC_FOUNDRY_API_KEY")),
+        )
+
         # Create Claude SDK client with appropriate settings for insights
         client = ClaudeSDKClient(
             options=ClaudeAgentOptions(
@@ -189,6 +199,7 @@ Current question: {message}"""
                 ],
                 max_turns=30,  # Allow sufficient turns for codebase exploration
                 cwd=str(project_path),
+                env=sdk_env,  # ✅ Pass Azure Foundry env vars to SDK
             )
         )
 

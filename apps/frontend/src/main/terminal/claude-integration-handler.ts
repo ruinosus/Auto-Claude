@@ -12,6 +12,7 @@ import * as OutputParser from './output-parser';
 import * as SessionHandler from './session-handler';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, buildCdCommand } from '../../shared/utils/shell-escape';
+import { parseEnvFile } from '../ipc-handlers/utils';
 import type {
   TerminalProcess,
   WindowGetter,
@@ -196,6 +197,98 @@ export function handleClaudeSessionId(
 }
 
 /**
+ * Build environment variables for terminal session.
+ *
+ * Priority:
+ * 1. Azure Foundry (if configured in project .env)
+ * 2. OAuth token (fallback)
+ *
+ * @param projectPath - Path to the project (to locate .env file)
+ * @param oauthToken - OAuth token from Claude profile (fallback)
+ * @returns Shell export commands as a string
+ */
+function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: string | undefined): string {
+  const envVars: string[] = [];
+
+  // Try to load Azure Foundry configuration from project .env
+  if (projectPath) {
+    const projectEnvPath = path.join(projectPath, '.auto-claude', '.env');
+
+    if (fs.existsSync(projectEnvPath)) {
+      try {
+        const envContent = fs.readFileSync(projectEnvPath, 'utf-8');
+        const vars = parseEnvFile(envContent);
+
+        // Check if Azure Foundry is enabled
+        const isFoundryEnabled = vars['CLAUDE_CODE_USE_FOUNDRY'] === '1' ||
+                                  vars['CLAUDE_CODE_USE_FOUNDRY'] === 'true';
+
+        if (isFoundryEnabled) {
+          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry detected in project .env');
+
+          // Export Azure Foundry flag
+          envVars.push('export CLAUDE_CODE_USE_FOUNDRY=1');
+
+          // Export Azure Foundry API Key
+          if (vars['ANTHROPIC_FOUNDRY_API_KEY']) {
+            envVars.push(`export ANTHROPIC_FOUNDRY_API_KEY="${vars['ANTHROPIC_FOUNDRY_API_KEY']}"`);
+          }
+
+          // Export Azure Foundry Base URL
+          if (vars['ANTHROPIC_FOUNDRY_BASE_URL']) {
+            envVars.push(`export ANTHROPIC_FOUNDRY_BASE_URL="${vars['ANTHROPIC_FOUNDRY_BASE_URL']}"`);
+          }
+
+          // Export Azure Foundry Resource
+          if (vars['ANTHROPIC_FOUNDRY_RESOURCE']) {
+            envVars.push(`export ANTHROPIC_FOUNDRY_RESOURCE="${vars['ANTHROPIC_FOUNDRY_RESOURCE']}"`);
+          }
+
+          // Export Azure Foundry Model Overrides
+          if (vars['ANTHROPIC_DEFAULT_SONNET_MODEL']) {
+            envVars.push(`export ANTHROPIC_DEFAULT_SONNET_MODEL="${vars['ANTHROPIC_DEFAULT_SONNET_MODEL']}"`);
+          }
+          if (vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']) {
+            envVars.push(`export ANTHROPIC_DEFAULT_HAIKU_MODEL="${vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']}"`);
+          }
+          if (vars['ANTHROPIC_DEFAULT_OPUS_MODEL']) {
+            envVars.push(`export ANTHROPIC_DEFAULT_OPUS_MODEL="${vars['ANTHROPIC_DEFAULT_OPUS_MODEL']}"`);
+          }
+
+          // Export base URL if set (for consistency)
+          if (vars['ANTHROPIC_BASE_URL']) {
+            envVars.push(`export ANTHROPIC_BASE_URL="${vars['ANTHROPIC_BASE_URL']}"`);
+          }
+
+          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry env vars:', {
+            hasApiKey: !!vars['ANTHROPIC_FOUNDRY_API_KEY'],
+            hasBaseUrl: !!vars['ANTHROPIC_FOUNDRY_BASE_URL'],
+            hasResource: !!vars['ANTHROPIC_FOUNDRY_RESOURCE'],
+            modelOverrides: {
+              sonnet: !!vars['ANTHROPIC_DEFAULT_SONNET_MODEL'],
+              haiku: !!vars['ANTHROPIC_DEFAULT_HAIKU_MODEL'],
+              opus: !!vars['ANTHROPIC_DEFAULT_OPUS_MODEL']
+            }
+          });
+
+          return envVars.join('\n') + '\n';
+        }
+      } catch (error) {
+        debugError('[ClaudeIntegration:buildTerminalEnvVars] Failed to load project .env:', error);
+      }
+    }
+  }
+
+  // Fallback to OAuth token (original behavior)
+  if (oauthToken) {
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using OAuth token (fallback)');
+    envVars.push(`export CLAUDE_CODE_OAUTH_TOKEN="${oauthToken}"`);
+  }
+
+  return envVars.join('\n') + '\n';
+}
+
+/**
  * Invoke Claude with optional profile override
  */
 export function invokeClaude(
@@ -251,8 +344,11 @@ export function invokeClaude(
 
     if (token) {
       const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}`);
-      debugLog('[ClaudeIntegration:invokeClaude] Writing token to temp file:', tempFile);
-      fs.writeFileSync(tempFile, `export CLAUDE_CODE_OAUTH_TOKEN="${token}"\n`, { mode: 0o600 });
+      debugLog('[ClaudeIntegration:invokeClaude] Writing environment variables to temp file:', tempFile);
+
+      // Build env vars (Azure Foundry if configured, otherwise OAuth token)
+      const envContent = buildTerminalEnvVars(terminal.projectPath, token);
+      fs.writeFileSync(tempFile, envContent, { mode: 0o600 });
 
       // Clear terminal and run command without adding to shell history:
       // - HISTFILE= disables history file writing for the current command
