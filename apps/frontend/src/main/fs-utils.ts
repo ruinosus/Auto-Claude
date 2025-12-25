@@ -1,139 +1,98 @@
 /**
- * Filesystem Utilities Module
+ * File System Utilities for Server Generation
  *
- * Provides utility functions for filesystem operations with
- * proper support for XDG Base Directory paths and sandboxed
- * environments (AppImage, Flatpak, Snap).
+ * Provides utilities for creating directories and writing files during
+ * FastMCP server generation process.
+ *
+ * @module fs-utils
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
-import { getAppPath, isImmutableEnvironment, getMemoriesDir } from './config-paths';
 
 /**
- * Ensure a directory exists, creating it if necessary
- *
- * @param dirPath - The path to the directory
- * @returns true if directory exists or was created, false on error
+ * Represents a file to be written to disk
  */
-export function ensureDir(dirPath: string): boolean {
+export interface ServerFile {
+  filename: string;
+  content: string;
+}
+
+/**
+ * Check if a directory exists
+ * @param dirPath - Path to check
+ * @returns Promise that resolves to true if directory exists, false otherwise
+ */
+export async function directoryExists(dirPath: string): Promise<boolean> {
   try {
-    if (!fs.existsSync(dirPath)) {
-      fs.mkdirSync(dirPath, { recursive: true });
-    }
-    return true;
+    const stats = await fs.stat(dirPath);
+    return stats.isDirectory();
   } catch (error) {
-    console.error(`[fs-utils] Failed to create directory ${dirPath}:`, error);
     return false;
   }
 }
 
 /**
- * Ensure the application data directories exist
- * Creates config, data, cache, and memories directories
+ * Ensure a directory exists, creating it if necessary
+ * @param dirPath - Path to directory
+ * @throws Error if directory cannot be created
  */
-export function ensureAppDirectories(): void {
-  const dirs = [
-    getAppPath('config'),
-    getAppPath('data'),
-    getAppPath('cache'),
-    getMemoriesDir(),
-  ];
-
-  for (const dir of dirs) {
-    ensureDir(dir);
-  }
-}
-
-/**
- * Get a writable path for a file
- * If the original path is not writable, falls back to XDG data directory
- *
- * @param originalPath - The preferred path for the file
- * @param filename - The filename (used for fallback path)
- * @returns A writable path for the file
- */
-export function getWritablePath(originalPath: string, filename: string): string {
-  // Check if we can write to the original path
-  const dir = path.dirname(originalPath);
-
+export async function ensureDirectory(dirPath: string): Promise<void> {
   try {
-    if (fs.existsSync(dir)) {
-      // Try to write a test file
-      const testFile = path.join(dir, `.write-test-${Date.now()}`);
-      fs.writeFileSync(testFile, '');
-      // Cleanup test file - ignore errors (e.g., file locked on Windows)
-      try { fs.unlinkSync(testFile); } catch { /* ignore cleanup failure */ }
-      return originalPath;
-    } else {
-      // Try to create the directory
-      fs.mkdirSync(dir, { recursive: true });
-      return originalPath;
-    }
-  } catch {
-    // Fall back to XDG data directory
-    if (isImmutableEnvironment()) {
-      const fallbackDir = getAppPath('data');
-      ensureDir(fallbackDir);
-      console.warn(`[fs-utils] Falling back to XDG path for ${filename}: ${fallbackDir}`);
-      return path.join(fallbackDir, filename);
-    }
-    // Non-immutable environment - just return original and let caller handle error
-    return originalPath;
-  }
-}
-
-/**
- * Safe write file that handles immutable filesystems
- * Falls back to XDG paths if the target is not writable
- *
- * @param filePath - The target file path
- * @param content - The content to write
- * @returns The actual path where the file was written
- * @throws Error if write fails (with context about the attempted path)
- */
-export function safeWriteFile(filePath: string, content: string): string {
-  const filename = path.basename(filePath);
-  const writablePath = getWritablePath(filePath, filename);
-
-  try {
-    fs.writeFileSync(writablePath, content, 'utf-8');
-    return writablePath;
+    await fs.mkdir(dirPath, { recursive: true });
   } catch (error) {
-    console.error(`[fs-utils] Failed to write file ${writablePath}:`, error);
-    throw error;
+    throw new Error(`Failed to create directory ${dirPath}: ${(error as Error).message}`);
   }
 }
 
 /**
- * Read a file, checking both original and XDG fallback locations
- *
- * @param originalPath - The expected file path
- * @returns The file content or null if not found or on error
+ * Write a single server file to disk
+ * @param serverDir - Directory to write file to
+ * @param file - File to write
+ * @throws Error if file cannot be written
  */
-export function safeReadFile(originalPath: string): string | null {
-  // Try original path first
+export async function writeServerFile(serverDir: string, file: ServerFile): Promise<void> {
+  const filePath = path.join(serverDir, file.filename);
+
   try {
-    if (fs.existsSync(originalPath)) {
-      return fs.readFileSync(originalPath, 'utf-8');
+    await fs.writeFile(filePath, file.content, 'utf-8');
+  } catch (error) {
+    throw new Error(
+      `Failed to write file ${file.filename}: ${(error as Error).message}`
+    );
+  }
+}
+
+/**
+ * Write multiple server files to disk
+ * @param serverDir - Directory to write files to
+ * @param files - Array of files to write
+ * @throws Error if any file cannot be written
+ */
+export async function writeAllServerFiles(
+  serverDir: string,
+  files: ServerFile[]
+): Promise<void> {
+  try {
+    // Write all files sequentially to ensure atomic-like behavior
+    for (const file of files) {
+      await writeServerFile(serverDir, file);
     }
   } catch (error) {
-    console.error(`[fs-utils] Failed to read file ${originalPath}:`, error);
-    // Fall through to try XDG fallback
+    throw error; // Re-throw to maintain error context
   }
+}
 
-  // Try XDG fallback path
-  if (isImmutableEnvironment()) {
-    const filename = path.basename(originalPath);
-    const fallbackPath = path.join(getAppPath('data'), filename);
-    try {
-      if (fs.existsSync(fallbackPath)) {
-        return fs.readFileSync(fallbackPath, 'utf-8');
-      }
-    } catch (error) {
-      console.error(`[fs-utils] Failed to read fallback file ${fallbackPath}:`, error);
-    }
+/**
+ * Clean up a directory and all its contents
+ * Used for rollback when server generation fails
+ * @param dirPath - Directory to remove
+ * @throws Error if directory cannot be removed
+ */
+export async function cleanupDirectory(dirPath: string): Promise<void> {
+  try {
+    await fs.rm(dirPath, { recursive: true, force: true });
+  } catch (error) {
+    throw new Error(`Failed to cleanup directory ${dirPath}: ${(error as Error).message}`);
   }
-
-  return null;
 }

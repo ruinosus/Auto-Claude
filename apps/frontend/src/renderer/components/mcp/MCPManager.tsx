@@ -81,7 +81,7 @@ export function MCPManager() {
 
   // Group by category
   const connectedServers = filteredServers.filter(s => s.status === 'connected');
-  const requiresSetup = filteredServers.filter(s => !s.enabled && s.requiredEnvVars.length > 0);
+  const requiresSetup = filteredServers.filter(s => !s.enabled && s.requiredEnvVars?.length > 0);
 
   return (
     <div className="flex flex-col h-full">
