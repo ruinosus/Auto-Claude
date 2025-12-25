@@ -107,7 +107,7 @@ if (process.platform === 'darwin') {
 }
 
 // Initialize the application
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for Windows
   electronApp.setAppUserModelId('com.autoclaude.ui');
 
