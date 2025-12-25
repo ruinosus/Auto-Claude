@@ -517,7 +517,7 @@ export function invokeClaude(
       tokenLength: token?.length
     });
 
-    if (token || activeProfile.configDir || isProxyMode) {
+    if (token || isProxyMode) {
       const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}`);
       debugLog('[ClaudeIntegration:invokeClaude] Writing environment variables to temp file:', tempFile);
 

@@ -107,7 +107,7 @@ if (process.platform === 'darwin') {
 }
 
 // Initialize the application
-app.whenReady().then(async () => {
+app.whenReady().then(() => {
   // Set app user model id for Windows
   electronApp.setAppUserModelId('com.autoclaude.ui');
 
@@ -155,10 +155,6 @@ app.whenReady().then(async () => {
 
   // Setup IPC handlers (pass pythonEnvManager for Python path management)
   setupIpcHandlers(agentManager, terminalManager, () => mainWindow, pythonEnvManager);
-
-  // Initialize MCP servers (auto-claude-tools)
-  const { initializeMCPServers } = await import('./mcp-servers');
-  initializeMCPServers();
 
   // Create window
   createWindow();

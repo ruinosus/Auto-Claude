@@ -7,7 +7,7 @@ import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './
 import type { SupportedLanguage } from '../constants/i18n';
 
 // Color theme types for multi-theme support
-export type ColorTheme = 'default' | 'dusk' | 'lime' | 'ocean' | 'retro' | 'neo' | 'forest' | 'avanade' | 'intraai';
+export type ColorTheme = 'default' | 'dusk' | 'lime' | 'ocean' | 'retro' | 'neo' | 'forest';
 
 export interface ThemePreviewColors {
   bg: string;
@@ -51,6 +51,8 @@ export interface FeatureModelConfig {
   insights: ModelTypeShort;    // Insights chat feature
   ideation: ModelTypeShort;    // Ideation generation
   roadmap: ModelTypeShort;     // Roadmap generation
+  githubIssues: ModelTypeShort; // GitHub Issues automation
+  githubPrs: ModelTypeShort;    // GitHub PR review automation
 }
 
 // Feature-specific thinking level configuration
@@ -58,6 +60,8 @@ export interface FeatureThinkingConfig {
   insights: ThinkingLevel;
   ideation: ThinkingLevel;
   roadmap: ThinkingLevel;
+  githubIssues: ThinkingLevel;
+  githubPrs: ThinkingLevel;
 }
 
 // Agent profile for preset model/thinking configurations

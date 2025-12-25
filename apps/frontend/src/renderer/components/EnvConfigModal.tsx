@@ -102,7 +102,7 @@ export function EnvConfigModal({
         // Handle Claude profiles
         if (profilesResult.success && profilesResult.data) {
           const authenticatedProfiles = profilesResult.data.profiles.filter(
-            (p: ClaudeProfile) => p.oauthToken || (p.isDefault && p.configDir) || (p.proxyEnabled && p.proxyBaseUrl && p.proxyApiKey)
+            (p: ClaudeProfile) => p.oauthToken || (p.isDefault && p.configDir)
           );
           setClaudeProfiles(authenticatedProfiles);
 

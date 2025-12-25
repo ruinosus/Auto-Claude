@@ -34,33 +34,9 @@ export function registerEnvHandlers(
     const existingVars = existingContent ? parseEnvFile(existingContent) : {};
 
     // Update with new values
-    // Authentication mode
-    if (config.authMode !== undefined) {
-      existingVars['CLAUDE_AUTH_MODE'] = config.authMode;
-    }
-
-    // Claude OAuth
     if (config.claudeOAuthToken !== undefined) {
       existingVars['CLAUDE_CODE_OAUTH_TOKEN'] = config.claudeOAuthToken;
     }
-
-    // Azure Foundry
-    if (config.azureFoundryApiKey !== undefined) {
-      existingVars['ANTHROPIC_FOUNDRY_API_KEY'] = config.azureFoundryApiKey;
-      existingVars['CLAUDE_CODE_USE_FOUNDRY'] = 'true';
-    }
-    if (config.azureFoundryBaseUrl !== undefined) {
-      existingVars['ANTHROPIC_FOUNDRY_BASE_URL'] = config.azureFoundryBaseUrl;
-    }
-    if (config.azureFoundryResource !== undefined) {
-      existingVars['ANTHROPIC_FOUNDRY_RESOURCE'] = config.azureFoundryResource;
-    }
-
-    // Auth Token (Proxy/CCR)
-    if (config.anthropicAuthToken !== undefined) {
-      existingVars['ANTHROPIC_AUTH_TOKEN'] = config.anthropicAuthToken;
-    }
-
     if (config.autoBuildModel !== undefined) {
       existingVars['AUTO_BUILD_MODEL'] = config.autoBuildModel;
     }
@@ -137,24 +113,8 @@ export function registerEnvHandlers(
     const content = `# Auto Claude Framework Environment Variables
 # Managed by Auto Claude UI
 
-# =============================================================================
-# AUTHENTICATION
-# =============================================================================
-# Authentication mode: oauth | azure-foundry | auth-token
-${existingVars['CLAUDE_AUTH_MODE'] ? `CLAUDE_AUTH_MODE=${existingVars['CLAUDE_AUTH_MODE']}` : '# CLAUDE_AUTH_MODE=oauth'}
-
-# Claude OAuth (default)
-${existingVars['CLAUDE_CODE_OAUTH_TOKEN'] ? `CLAUDE_CODE_OAUTH_TOKEN=${existingVars['CLAUDE_CODE_OAUTH_TOKEN']}` : '# CLAUDE_CODE_OAUTH_TOKEN='}
-
-# Azure Foundry (enterprise)
-# Note: Base URL must end with /anthropic
-${existingVars['ANTHROPIC_FOUNDRY_API_KEY'] ? `ANTHROPIC_FOUNDRY_API_KEY=${existingVars['ANTHROPIC_FOUNDRY_API_KEY']}` : '# ANTHROPIC_FOUNDRY_API_KEY='}
-${existingVars['ANTHROPIC_FOUNDRY_BASE_URL'] ? `ANTHROPIC_FOUNDRY_BASE_URL=${existingVars['ANTHROPIC_FOUNDRY_BASE_URL']}` : '# ANTHROPIC_FOUNDRY_BASE_URL=https://your-resource.openai.azure.com/anthropic'}
-${existingVars['ANTHROPIC_FOUNDRY_RESOURCE'] ? `ANTHROPIC_FOUNDRY_RESOURCE=${existingVars['ANTHROPIC_FOUNDRY_RESOURCE']}` : '# ANTHROPIC_FOUNDRY_RESOURCE=your-resource-name'}
-${existingVars['CLAUDE_CODE_USE_FOUNDRY'] ? `CLAUDE_CODE_USE_FOUNDRY=${existingVars['CLAUDE_CODE_USE_FOUNDRY']}` : '# CLAUDE_CODE_USE_FOUNDRY=true'}
-
-# Auth Token (proxy/CCR)
-${existingVars['ANTHROPIC_AUTH_TOKEN'] ? `ANTHROPIC_AUTH_TOKEN=${existingVars['ANTHROPIC_AUTH_TOKEN']}` : '# ANTHROPIC_AUTH_TOKEN='}
+# Claude Code OAuth Token (REQUIRED)
+CLAUDE_CODE_OAUTH_TOKEN=${existingVars['CLAUDE_CODE_OAUTH_TOKEN'] || ''}
 
 # Model override (OPTIONAL)
 ${existingVars['AUTO_BUILD_MODEL'] ? `AUTO_BUILD_MODEL=${existingVars['AUTO_BUILD_MODEL']}` : '# AUTO_BUILD_MODEL=claude-opus-4-5-20251101'}
@@ -272,11 +232,6 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         }
       }
 
-      // Authentication Mode
-      if (vars['CLAUDE_AUTH_MODE']) {
-        config.authMode = vars['CLAUDE_AUTH_MODE'] as 'oauth' | 'azure-foundry' | 'auth-token';
-      }
-
       // Claude OAuth Token: project-specific takes precedence, then global
       if (vars['CLAUDE_CODE_OAUTH_TOKEN']) {
         config.claudeOAuthToken = vars['CLAUDE_CODE_OAUTH_TOKEN'];
@@ -286,24 +241,6 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         config.claudeOAuthToken = globalSettings.globalClaudeOAuthToken;
         config.claudeAuthStatus = 'token_set';
         config.claudeTokenIsGlobal = true;
-      }
-
-      // Azure Foundry
-      if (vars['ANTHROPIC_FOUNDRY_API_KEY']) {
-        config.azureFoundryApiKey = vars['ANTHROPIC_FOUNDRY_API_KEY'];
-        config.azureFoundryAuthStatus = 'configured';
-      }
-      if (vars['ANTHROPIC_FOUNDRY_BASE_URL']) {
-        config.azureFoundryBaseUrl = vars['ANTHROPIC_FOUNDRY_BASE_URL'];
-      }
-      if (vars['ANTHROPIC_FOUNDRY_RESOURCE']) {
-        config.azureFoundryResource = vars['ANTHROPIC_FOUNDRY_RESOURCE'];
-      }
-
-      // Auth Token (Proxy/CCR)
-      if (vars['ANTHROPIC_AUTH_TOKEN']) {
-        config.anthropicAuthToken = vars['ANTHROPIC_AUTH_TOKEN'];
-        config.authTokenStatus = 'configured';
       }
 
       if (vars['AUTO_BUILD_MODEL']) {

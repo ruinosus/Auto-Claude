@@ -55,17 +55,5 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
     name: 'Forest',
     description: 'Natural, earthy green tones',
     previewColors: { bg: '#DCFCE7', accent: '#16A34A', darkBg: '#052E16' }
-  },
-  {
-    id: 'avanade',
-    name: 'Avanade.AI',
-    description: 'Corporate theme with warm orange/brown tones',
-    previewColors: { bg: '#FCFCFC', accent: '#DB5B0A', darkBg: '#0A0807', darkAccent: '#DB5B0A' }
-  },
-  {
-    id: 'intraai',
-    name: 'IntraAI',
-    description: 'Purple and green theme from Innove-C',
-    previewColors: { bg: '#FFFFFF', accent: '#9F509F', darkBg: '#1A1A1A', darkAccent: '#B366B3' }
   }
 ];

@@ -244,10 +244,8 @@ export function isAuthFailureError(output: string): boolean {
 
 /**
  * Get environment variables for a specific Claude profile.
- * Priority order:
- * 1. Proxy mode: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
- * 2. OAuth token: CLAUDE_CODE_OAUTH_TOKEN
- * 3. Config dir: CLAUDE_CONFIG_DIR (deprecated)
+ * Uses OAuth token (CLAUDE_CODE_OAUTH_TOKEN) if available, otherwise falls back to CLAUDE_CONFIG_DIR.
+ * OAuth tokens are preferred as they provide instant, reliable profile switching.
  * Note: Tokens are decrypted automatically by the profile manager.
  */
 export function getProfileEnv(profileId?: string): Record<string, string> {
@@ -262,7 +260,6 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     email: profile?.email,
     isDefault: profile?.isDefault,
     hasOAuthToken: !!profile?.oauthToken,
-    proxyEnabled: profile?.proxyEnabled,
     configDir: profile?.configDir
   });
 
@@ -271,18 +268,7 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     return {};
   }
 
-  // Priority 1: Proxy mode (LiteLLM/Azure OpenAI)
-  if (profile.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
-    console.warn('[getProfileEnv] Using proxy mode for profile:', profile.name, {
-      baseUrl: profile.proxyBaseUrl
-    });
-    return {
-      ANTHROPIC_BASE_URL: profile.proxyBaseUrl,
-      ANTHROPIC_AUTH_TOKEN: profile.proxyApiKey
-    };
-  }
-
-  // Priority 2: OAuth token (instant switching, no browser auth needed)
+  // Prefer OAuth token (instant switching, no browser auth needed)
   // Use profile manager to get decrypted token
   if (profile.oauthToken) {
     const decryptedToken = profileId
@@ -299,13 +285,13 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     }
   }
 
-  // Priority 3: If default profile, no env vars needed
+  // Fallback: If default profile, no env vars needed
   if (profile.isDefault) {
     console.warn('[getProfileEnv] Using default profile (no env vars)');
     return {};
   }
 
-  // Priority 4: Use configDir for profiles without OAuth token (legacy)
+  // Fallback: Use configDir for profiles without OAuth token (legacy)
   if (profile.configDir) {
     console.warn('[getProfileEnv] Using configDir fallback for profile:', profile.name);
     console.warn('[getProfileEnv] WARNING: Profile has no OAuth token. Run "claude setup-token" and save the token to enable instant switching.');
