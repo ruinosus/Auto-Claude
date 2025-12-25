@@ -76,7 +76,6 @@ def test_otel_exporter_record_message():
                 # Record message
                 exporter.record_message(
                     spec_id="001-test",
-                    session_num=1,
                     phase="coding",
                     model="claude-sonnet-4-5",
                     input_tokens=1000,
@@ -107,7 +106,6 @@ def test_otel_exporter_record_session():
                 # Record session
                 exporter.record_session(
                     spec_id="001-test",
-                    session_num=1,
                     phase="coding",
                     total_cost_usd=0.5,
                     duration_seconds=120.5

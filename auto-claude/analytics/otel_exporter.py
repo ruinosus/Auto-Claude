@@ -20,7 +20,7 @@ class OTelExporter:
 
     Exports:
     - Metrics: Token counts, costs, session durations
-    - Attributes: spec_id, phase, model, session_number
+    - Attributes: spec_id, phase, model
     """
 
     def __init__(self):
@@ -111,7 +111,6 @@ class OTelExporter:
     def record_message(
         self,
         spec_id: str,
-        session_num: int,
         phase: str,
         model: str,
         input_tokens: int,
@@ -124,7 +123,6 @@ class OTelExporter:
 
         attributes = {
             "spec_id": spec_id,
-            "session_number": str(session_num),
             "phase": phase,
             "model": model
         }
@@ -141,7 +139,6 @@ class OTelExporter:
     def record_session(
         self,
         spec_id: str,
-        session_num: int,
         phase: str,
         total_cost_usd: float,
         duration_seconds: float
