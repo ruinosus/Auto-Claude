@@ -55,6 +55,59 @@ class OTelExporter:
         metrics.set_meter_provider(meter_provider)
         self.meter = metrics.get_meter("auto-claude")
 
+        # Create instruments
+        self._create_instruments()
+
+    def _create_instruments(self):
+        """Create OpenTelemetry metric instruments."""
+        if not self.enabled or not self.meter:
+            return
+
+        # Counters (cumulative totals)
+        self.token_counter = self.meter.create_counter(
+            name="auto_claude.tokens.total",
+            description="Total tokens consumed",
+            unit="tokens"
+        )
+
+        self.cost_counter = self.meter.create_counter(
+            name="auto_claude.cost.total_usd",
+            description="Total cost in USD",
+            unit="USD"
+        )
+
+        self.session_counter = self.meter.create_counter(
+            name="auto_claude.sessions.total",
+            description="Total agent sessions",
+            unit="sessions"
+        )
+
+        # Histograms (distributions)
+        self.tokens_per_message = self.meter.create_histogram(
+            name="auto_claude.tokens.per_message",
+            description="Token distribution per message",
+            unit="tokens"
+        )
+
+        self.cost_per_session = self.meter.create_histogram(
+            name="auto_claude.cost.per_session_usd",
+            description="Cost distribution per session",
+            unit="USD"
+        )
+
+        self.session_duration = self.meter.create_histogram(
+            name="auto_claude.session.duration_seconds",
+            description="Session duration in seconds",
+            unit="seconds"
+        )
+
+        # UpDownCounter (current values)
+        self.active_sessions = self.meter.create_up_down_counter(
+            name="auto_claude.sessions.active",
+            description="Number of active sessions",
+            unit="sessions"
+        )
+
 
 # Singleton instance
 _otel_exporter: Optional[OTelExporter] = None

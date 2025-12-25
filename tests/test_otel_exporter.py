@@ -40,5 +40,24 @@ def test_otel_exporter_initialization_disabled():
         assert exporter.enabled is False
 
 
+def test_otel_exporter_creates_instruments():
+    """Test OTelExporter creates all required instruments."""
+    with patch.dict('os.environ', {'OTEL_ENABLED': 'true'}):
+        with patch('analytics.otel_exporter.OTLPMetricExporter'):
+            with patch('analytics.otel_exporter.MeterProvider'):
+                from analytics.otel_exporter import OTelExporter
+
+                exporter = OTelExporter()
+
+                # Check all instruments exist
+                assert hasattr(exporter, 'token_counter')
+                assert hasattr(exporter, 'cost_counter')
+                assert hasattr(exporter, 'session_counter')
+                assert hasattr(exporter, 'tokens_per_message')
+                assert hasattr(exporter, 'cost_per_session')
+                assert hasattr(exporter, 'session_duration')
+                assert hasattr(exporter, 'active_sessions')
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
