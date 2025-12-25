@@ -584,6 +584,17 @@ export interface ElectronAPI {
     output: string[];
   }>>;
 
+  // Ollama download progress listener
+  onDownloadProgress: (
+    callback: (data: {
+      modelName: string;
+      status: string;
+      completed: number;
+      total: number;
+      percentage: number;
+    }) => void
+  ) => () => void;
+
   // Skills operations
   skills: {
     list: (projectPath?: string) => Promise<Skill[]>;
