@@ -19,17 +19,19 @@ function getBuiltInServers(): MCPServer[] {
       enabled: true,
       requiredEnvVars: [],
       capabilities: {
-        tools: [
-          { name: 'resolve-library-id', displayName: 'Resolve Library', description: 'Find library by name' },
-          { name: 'get-library-docs', displayName: 'Get Documentation', description: 'Fetch library docs' }
-        ]
+        tools: [] // Will be loaded dynamically
       },
       toolCount: 2,
       promptCount: 0,
       resourceCount: 0,
       connectionType: 'sdk',
       icon: 'Book',
-      color: 'blue'
+      color: 'blue',
+      customConfig: {
+        connectionType: 'stdio',
+        command: 'npx',
+        args: ['-y', '@upstash/context7-mcp']
+      }
     },
     {
       id: 'linear',
@@ -102,7 +104,12 @@ function getBuiltInServers(): MCPServer[] {
       resourceCount: 0,
       connectionType: 'stdio',
       icon: 'Globe',
-      color: 'blue'
+      color: 'blue',
+      customConfig: {
+        connectionType: 'stdio',
+        command: 'npx',
+        args: ['-y', '@modelcontextprotocol/server-puppeteer']
+      }
     },
     {
       id: 'auto-claude-tools',
@@ -296,15 +303,38 @@ export function registerMCPHandlers() {
       ];
 
       // Check enabled status and load real capabilities for enabled servers
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
       const serversWithStatus = await Promise.all(
         allServers.map(async (server) => {
           const enabled = await isServerEnabled(server.id, projectPath);
 
           // For enabled servers, try to load real capabilities from MCP server
-          if (enabled && server.id === 'context7') {
+          if (enabled) {
             try {
-              const { listTools } = await import('./mcp-client');
-              const tools = await listTools(server.id);
+              // Convert server format to MCPServerConfig for mcp-manager-v2
+              const serverConfig = {
+                id: server.id,
+                name: server.name,
+                description: server.description,
+                transport: server.connectionType === 'sdk' ? 'stdio' as const :
+                           server.connectionType === 'http' ? 'http' as const :
+                           'stdio' as const,
+                command: server.customConfig?.command,
+                args: server.customConfig?.args,
+                url: server.customConfig?.baseUrl || server.endpoint,
+                headers: server.customConfig?.headers,
+                cwd: server.customConfig?.workingDir,
+                env: server.customConfig?.env,
+                enabled: true,
+                category: server.category,
+                icon: server.icon
+              };
+
+              // Connect and fetch tools
+              await mcpManager.connect(serverConfig);
+              const tools = await mcpManager.listTools(server.id);
 
               console.log(`[MCP Manager] Loaded ${tools.length} tools for ${server.id}`);
               if (tools.length > 0) {
