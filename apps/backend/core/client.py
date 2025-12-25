@@ -50,6 +50,20 @@ def is_electron_mcp_enabled() -> bool:
     return os.environ.get("ELECTRON_MCP_ENABLED", "").lower() == "true"
 
 
+def is_skills_enabled() -> bool:
+    """
+    Check if Claude Skills are enabled (default: true).
+
+    Skills allow Claude to use specialized capabilities defined in SKILL.md files.
+    Skills are discovered from:
+      - ~/.claude/skills/ (personal skills, available to all projects)
+      - .claude/skills/ (project-specific skills)
+
+    Set ENABLE_SKILLS=false to disable skills support.
+    """
+    return os.environ.get("ENABLE_SKILLS", "true").lower() == "true"
+
+
 def get_electron_debug_port() -> int:
     """Get the Electron remote debugging port (default: 9222)."""
     return int(os.environ.get("ELECTRON_DEBUG_PORT", "9222"))
@@ -194,6 +208,13 @@ def create_client(
     # Check if Electron MCP is enabled (for QA agents testing Electron apps)
     electron_mcp_enabled = is_electron_mcp_enabled()
 
+    # Check if Skills are enabled
+    skills_enabled = is_skills_enabled()
+
+    # Add Skill tool if Skills are enabled
+    if skills_enabled and "Skill" not in allowed_tools_list:
+        allowed_tools_list.insert(0, "Skill")  # Add at beginning for visibility
+
     # Add external MCP tools based on project capabilities
     # This saves context window by only including relevant tools
     allowed_tools_list.extend(CONTEXT7_TOOLS)  # Always available
@@ -234,6 +255,8 @@ def create_client(
                 # Bash permission granted here, but actual commands are validated
                 # by the bash_security_hook (see security.py for allowed commands)
                 "Bash(*)",
+                # Allow Skill tool for Claude Skills execution
+                "Skill",
                 # Allow Context7 MCP tools for documentation lookup
                 *CONTEXT7_TOOLS,
                 # Allow Linear MCP tools for project management (if enabled)
@@ -278,6 +301,12 @@ def create_client(
     if auto_claude_tools_enabled:
         mcp_servers_list.append(f"auto-claude ({agent_type} tools)")
     print(f"   - MCP servers: {', '.join(mcp_servers_list)}")
+
+    # Show Skills status
+    if skills_enabled:
+        print("   - Skills: enabled (user + project scopes)")
+    else:
+        print("   - Skills: disabled")
 
     # Show detected project capabilities for QA agents
     if agent_type in ("qa_reviewer", "qa_fixer") and any(project_capabilities.values()):
@@ -349,6 +378,7 @@ def create_client(
                 f"and build-progress.txt updates."
             ),
             allowed_tools=allowed_tools_list,
+            setting_sources=["user", "project"] if skills_enabled else None,
             mcp_servers=mcp_servers,
             hooks={
                 "PreToolUse": [
