@@ -480,26 +480,22 @@ export function invokeClaude(
 
   // Use safe shell escaping to prevent command injection
   const cwdCommand = buildCdCommand(cwd);
-  const needsEnvOverride = profileId && profileId !== previousProfileId;
 
-  debugLog('[ClaudeIntegration:invokeClaude] Environment override check:', {
-    profileIdProvided: !!profileId,
-    previousProfileId,
-    needsEnvOverride
-  });
-
-  if (needsEnvOverride && activeProfile && !activeProfile.isDefault) {
+  // ALWAYS export environment variables for non-default profiles (not just on profile switch)
+  if (activeProfile && !activeProfile.isDefault) {
     const token = profileManager.getProfileToken(activeProfile.id);
-    debugLog('[ClaudeIntegration:invokeClaude] Token retrieval:', {
+    debugLog('[ClaudeIntegration:invokeClaude] Non-default profile detected, exporting env vars:', {
+      profileName: activeProfile.name,
       hasToken: !!token,
+      hasConfigDir: !!activeProfile.configDir,
       tokenLength: token?.length
     });
 
-    if (token) {
+    if (token || activeProfile.configDir) {
       const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}`);
       debugLog('[ClaudeIntegration:invokeClaude] Writing environment variables to temp file:', tempFile);
 
-      // Build env vars (Azure Foundry if configured, otherwise OAuth token)
+      // Build env vars (Azure Foundry if configured via profile, otherwise OAuth token)
       const envContent = buildTerminalEnvVars(terminal.projectPath, token);
       fs.writeFileSync(tempFile, envContent, { mode: 0o600 });
 
@@ -510,32 +506,18 @@ export function invokeClaude(
       // - Uses subshell (...) to isolate environment changes
       // This prevents temp file paths from appearing in shell history
       const command = `clear && ${cwdCommand} HISTFILE= HISTCONTROL=ignorespace bash -c 'source "${tempFile}" && rm -f "${tempFile}" && exec claude'\r`;
-      debugLog('[ClaudeIntegration:invokeClaude] Executing command (temp file method, history-safe)');
+      debugLog('[ClaudeIntegration:invokeClaude] Executing command (env vars exported via temp file)');
       terminal.pty.write(command);
-      debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (temp file) ==========');
-      return;
-    } else if (activeProfile.configDir) {
-      // Clear terminal and run command without adding to shell history:
-      // Same history-disabling technique as temp file method above
-      // SECURITY: Use escapeShellArg for configDir to prevent command injection
-      // Set CLAUDE_CONFIG_DIR as env var before bash -c to avoid embedding user input in the command string
-      const escapedConfigDir = escapeShellArg(activeProfile.configDir);
-      const command = `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} bash -c 'exec claude'\r`;
-      debugLog('[ClaudeIntegration:invokeClaude] Executing command (configDir method, history-safe)');
-      terminal.pty.write(command);
-      debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (configDir) ==========');
+      debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (with env vars) ==========');
       return;
     } else {
       debugLog('[ClaudeIntegration:invokeClaude] WARNING: No token or configDir available for non-default profile');
     }
   }
 
-  if (activeProfile && !activeProfile.isDefault) {
-    debugLog('[ClaudeIntegration:invokeClaude] Using terminal environment for non-default profile:', activeProfile.name);
-  }
-
+  // Default behavior for default profile (no env vars needed)
   const command = `${cwdCommand}claude\r`;
-  debugLog('[ClaudeIntegration:invokeClaude] Executing command (default method):', command);
+  debugLog('[ClaudeIntegration:invokeClaude] Executing command (default profile, no env vars):', command);
   terminal.pty.write(command);
 
   if (activeProfile) {
