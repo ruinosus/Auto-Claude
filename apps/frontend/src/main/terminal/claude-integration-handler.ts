@@ -536,6 +536,17 @@ export function invokeClaude(
       terminal.pty.write(command);
       debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (with env vars) ==========');
       return;
+    } else if (activeProfile.configDir) {
+      // Clear terminal and run command without adding to shell history:
+      // Same history-disabling technique as temp file method above
+      // SECURITY: Use escapeShellArg for configDir to prevent command injection
+      // Set CLAUDE_CONFIG_DIR as env var before bash -c to avoid embedding user input in the command string
+      const escapedConfigDir = escapeShellArg(activeProfile.configDir);
+      const command = `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} bash -c 'exec claude'\r`;
+      debugLog('[ClaudeIntegration:invokeClaude] Executing command (configDir method, history-safe)');
+      terminal.pty.write(command);
+      debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (configDir) ==========');
+      return;
     } else {
       debugLog('[ClaudeIntegration:invokeClaude] WARNING: No token, configDir, or proxy config available');
     }
