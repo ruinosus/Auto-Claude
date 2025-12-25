@@ -1,15 +1,20 @@
 import { useState } from 'react';
-import { Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, ChevronDown, ChevronUp, Play } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { ExecuteToolDialog } from './ExecuteToolDialog';
 import type { MCPTool } from '../../../shared/types/mcp';
 
 interface MCPToolsListProps {
   tools: MCPTool[];
+  serverId?: string;
+  serverName?: string;
 }
 
-export function MCPToolsList({ tools }: MCPToolsListProps) {
+export function MCPToolsList({ tools, serverId, serverName }: MCPToolsListProps) {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
+  const [selectedTool, setSelectedTool] = useState<MCPTool | null>(null);
+  const [executeDialogOpen, setExecuteDialogOpen] = useState(false);
 
   const toggleTool = (toolName: string) => {
     const newExpanded = new Set(expandedTools);
@@ -23,6 +28,11 @@ export function MCPToolsList({ tools }: MCPToolsListProps) {
 
   const copyToClipboard = async (text: string) => {
     await navigator.clipboard.writeText(text);
+  };
+
+  const handleExecuteTool = (tool: MCPTool) => {
+    setSelectedTool(tool);
+    setExecuteDialogOpen(true);
   };
 
   const getTypeIcon = (type: string): string => {
@@ -66,14 +76,26 @@ export function MCPToolsList({ tools }: MCPToolsListProps) {
               </p>
             </div>
 
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => copyToClipboard(tool.name)}
-              title="Copy tool name"
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
+            <div className="flex gap-1">
+              {serverId && serverName && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleExecuteTool(tool)}
+                  title="Execute tool"
+                >
+                  <Play className="h-3 w-3" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyToClipboard(tool.name)}
+                title="Copy tool name"
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
           </div>
 
           {expandedTools.has(tool.name) && tool.parameters && (
@@ -104,6 +126,19 @@ export function MCPToolsList({ tools }: MCPToolsListProps) {
           )}
         </div>
       ))}
+
+      {selectedTool && serverId && serverName && (
+        <ExecuteToolDialog
+          open={executeDialogOpen}
+          onClose={() => {
+            setExecuteDialogOpen(false);
+            setSelectedTool(null);
+          }}
+          tool={selectedTool}
+          serverId={serverId}
+          serverName={serverName}
+        />
+      )}
     </div>
   );
 }

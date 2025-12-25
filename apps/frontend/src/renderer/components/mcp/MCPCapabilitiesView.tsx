@@ -34,7 +34,11 @@ export function MCPCapabilitiesView({ server, expanded, onToggle }: MCPCapabilit
         </TabsList>
 
         <TabsContent value="tools">
-          <MCPToolsList tools={server.capabilities?.tools || []} />
+          <MCPToolsList
+            tools={server.capabilities?.tools || []}
+            serverId={server.id}
+            serverName={server.name}
+          />
         </TabsContent>
 
         <TabsContent value="prompts">
