@@ -43,9 +43,54 @@ from .report import (
 )
 from .reviewer import run_qa_agent_session
 
+# ROI tracking (optional - graceful degradation if not available)
+try:
+    from analytics import get_analytics_storage, is_tracking_enabled
+    ROI_TRACKING_AVAILABLE = True
+except ImportError:
+    ROI_TRACKING_AVAILABLE = False
+
 # Configuration
 MAX_QA_ITERATIONS = 50
 MAX_CONSECUTIVE_ERRORS = 3  # Stop after 3 consecutive errors without progress
+
+
+# =============================================================================
+# ROI TRACKING HELPERS
+# =============================================================================
+
+
+async def _update_qa_roi(project_dir: Path, spec_id: str, qa_passed: bool, qa_attempts: int):
+    """Update ROI record with QA attempt results."""
+    if not ROI_TRACKING_AVAILABLE or not is_tracking_enabled():
+        return
+
+    try:
+        from datetime import datetime
+
+        db_path = str(project_dir / ".auto-claude" / "analytics.db")
+        storage = get_analytics_storage(db_path)
+
+        # Get existing ROI data
+        existing = await storage.get_spec_roi(spec_id)
+
+        if existing:
+            # Update existing record
+            existing['qa_attempts'] = qa_attempts
+            existing['qa_passed'] = qa_passed
+            if qa_passed:
+                existing['completed_at'] = datetime.utcnow().isoformat()
+            await storage.save_spec_roi(spec_id, existing)
+        else:
+            # Create new record with just QA data
+            await storage.save_spec_roi(spec_id, {
+                'qa_attempts': qa_attempts,
+                'qa_passed': qa_passed,
+                'completed_at': datetime.utcnow().isoformat() if qa_passed else None
+            })
+    except Exception as e:
+        # Don't fail QA loop if ROI tracking fails
+        debug("qa_loop", f"Failed to update ROI tracking: {e}")
 
 
 # =============================================================================
@@ -277,6 +322,10 @@ async def run_qa_validation_loop(
                 await linear_qa_approved(spec_dir)
                 print("\nLinear: Task marked as QA approved, awaiting human review")
 
+            # Update ROI tracking with QA result
+            spec_id = spec_dir.name
+            await _update_qa_roi(project_dir, spec_id, qa_passed=True, qa_attempts=qa_iteration)
+
             return True
 
         elif status == "rejected":
@@ -344,6 +393,10 @@ async def run_qa_validation_loop(
                     print(
                         "\nLinear: Task marked as needing human intervention (recurring issues)"
                     )
+
+                # Update ROI tracking with QA result (recurring issues - failed)
+                spec_id = spec_dir.name
+                await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration)
 
                 return False
 
@@ -450,6 +503,11 @@ async def run_qa_validation_loop(
                         success=False,
                         message=f"QA agent failed {MAX_CONSECUTIVE_ERRORS} consecutive times - unable to update implementation_plan.json",
                     )
+
+                # Update ROI tracking with QA result (max errors - failed)
+                spec_id = spec_dir.name
+                await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration)
+
                 return False
 
             print("Retrying with error feedback...")
@@ -508,6 +566,10 @@ async def run_qa_validation_loop(
     if linear_task and linear_task.task_id:
         await linear_qa_max_iterations(spec_dir, qa_iteration)
         print("\nLinear: Task marked as needing human intervention")
+
+    # Update ROI tracking with QA result (max iterations - failed)
+    spec_id = spec_dir.name
+    await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration)
 
     print("\nManual intervention required.")
     return False
