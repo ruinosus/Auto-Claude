@@ -22,7 +22,7 @@ export function ROISettingsSection() {
 
   const loadSettings = async () => {
     try {
-      const result = await window.api.roi.getSettings();
+      const result = await window.electronAPI.roi.getSettings();
       setSettings(result);
     } catch (error) {
       console.error('Failed to load ROI settings:', error);
@@ -33,7 +33,7 @@ export function ROISettingsSection() {
 
   const saveSettings = async (updates: Partial<ROISettings>) => {
     try {
-      await window.api.roi.saveSettings({ ...settings, ...updates });
+      await window.electronAPI.roi.saveSettings({ ...settings, ...updates });
       setSettings((prev) => ({ ...prev, ...updates }));
     } catch (error) {
       console.error('Failed to save ROI settings:', error);
