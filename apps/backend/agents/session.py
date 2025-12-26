@@ -8,6 +8,7 @@ memory updates, recovery tracking, and Linear integration.
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from claude_agent_sdk import ClaudeSDKClient
 from debug import debug, debug_detailed, debug_error, debug_section, debug_success
@@ -45,6 +46,7 @@ from .utils import (
 # Analytics tracking (optional - graceful degradation if not available)
 try:
     from analytics import UsageTracker, get_analytics_storage, is_tracking_enabled
+    from analytics.roi_tracker import create_roi_tracker, ROITracker
     ANALYTICS_AVAILABLE = True
 except ImportError:
     ANALYTICS_AVAILABLE = False
@@ -391,6 +393,16 @@ async def run_agent_session(
             logger.warning(f"Failed to initialize analytics tracking: {e}")
             usage_tracker = None
 
+    # ROI tracking (if analytics available)
+    roi_tracker: Optional[ROITracker] = None
+    if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id and project_dir:
+        try:
+            roi_tracker = await create_roi_tracker(spec_id, project_dir)
+            debug("session", "ROI tracking initialized", spec_id=spec_id)
+        except Exception as e:
+            logger.warning(f"Failed to initialize ROI tracking: {e}")
+            roi_tracker = None
+
     try:
         # Send the query
         debug("session", "Sending query to Claude SDK...")
@@ -608,3 +620,16 @@ async def run_agent_session(
                       output_tokens=usage_tracker.total_output_tokens)
             except Exception as e:
                 logger.debug(f"Failed to finalize analytics tracking: {e}")
+
+        # Finalize ROI tracking
+        if roi_tracker:
+            try:
+                total_cost = usage_tracker.total_cost_usd if usage_tracker else 0
+                total_tokens = (
+                    (usage_tracker.total_input_tokens + usage_tracker.total_output_tokens)
+                    if usage_tracker else 0
+                )
+                await roi_tracker.finalize(total_cost, total_tokens)
+                debug("session", "ROI tracking finalized")
+            except Exception as e:
+                logger.debug(f"Failed to finalize ROI tracking: {e}")
