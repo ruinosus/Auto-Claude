@@ -14,7 +14,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle
-} from '@/renderer/components/ui/card';
+} from '../ui/card';
 
 interface SessionDurationData {
   phase: string;
