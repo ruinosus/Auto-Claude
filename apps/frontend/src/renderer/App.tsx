@@ -688,8 +688,11 @@ export function App() {
                 {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
                   <Worktrees projectId={activeProjectId || selectedProjectId!} />
                 )}
-                {activeView === 'analytics' && (
-                  <Analytics projectId={activeProjectId || selectedProjectId || undefined} />
+                {(activeView === 'analytics' || activeView === 'roi') && (
+                  <Analytics
+                    projectId={activeProjectId || selectedProjectId || undefined}
+                    initialTab={activeView === 'roi' ? 'roi' : 'usage'}
+                  />
                 )}
                 {activeView === 'agent-tools' && (
                   <div className="flex h-full items-center justify-center">

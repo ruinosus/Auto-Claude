@@ -13,15 +13,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 interface AnalyticsProps {
   projectId?: string;
+  initialTab?: 'usage' | 'roi';
 }
 
-export function Analytics({ projectId }: AnalyticsProps) {
+export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
   const { t } = useTranslation(['analytics']);
   const data = useAnalyticsStore((state) => state.data);
   const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
   const [dbPath, setDbPath] = useState<string | null>(null);
   const [isLoadingPath, setIsLoadingPath] = useState(true);
-  const [activeTab, setActiveTab] = useState<'usage' | 'roi'>('usage');
+  const [activeTab, setActiveTab] = useState<'usage' | 'roi'>(initialTab);
+
+  // Sync activeTab with initialTab when navigation changes
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   // Fetch analytics DB path from Electron
   useEffect(() => {
