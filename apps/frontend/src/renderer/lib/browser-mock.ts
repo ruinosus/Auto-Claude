@@ -200,7 +200,35 @@ const browserMockAPI: ElectronAPI = {
   getAnalyticsDbPath: async () => ({ success: true, data: null }),
   startAnalyticsPolling: () => {},
   stopAnalyticsPolling: () => {},
-  onAnalyticsDataUpdate: () => () => {}
+  onAnalyticsDataUpdate: () => () => {},
+
+  // ROI API
+  roi: {
+    getSettings: async () => ({
+      developerHourlyRate: 75,
+      primaryCurrency: 'USD' as const,
+      secondaryCurrency: 'BRL' as const,
+      exchangeRate: 6.2,
+      exchangeRateUpdatedAt: null,
+      autoEstimateHours: true,
+      minutesPerLine: 2.5
+    }),
+    saveSettings: async () => ({ success: true }),
+    getProjectSettings: async () => null,
+    saveProjectSettings: async () => ({ success: true }),
+    getSpec: async () => null,
+    saveSpec: async () => ({ success: true }),
+    getAllSpecs: async () => [],
+    getAggregate: async () => ({
+      totalROI: 0,
+      totalSavings: 0,
+      totalHoursSaved: 0,
+      totalCost: 0,
+      successRate: 0,
+      specsCount: 0
+    }),
+    deleteSpec: async () => ({ success: true })
+  }
 };
 
 /**

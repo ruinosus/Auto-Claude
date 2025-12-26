@@ -112,6 +112,13 @@ import type {
   SkillContent,
   SkillInstallOutput
 } from './skills';
+import type {
+  ROISettings,
+  SpecROI,
+  SpecROIWithMetrics,
+  ROIAggregateMetrics,
+  ProjectROISettings
+} from './roi';
 
 // Electron API exposed via contextBridge
 // Tab state interface (persisted in main process)
@@ -634,6 +641,19 @@ export interface ElectronAPI {
 
   // Analytics event listeners
   onAnalyticsDataUpdate: (callback: (data: any) => void) => () => void;
+
+  // ROI API (nested for organized access)
+  roi: {
+    getSettings: () => Promise<ROISettings>;
+    saveSettings: (settings: Partial<ROISettings>) => Promise<{ success: boolean }>;
+    getProjectSettings: (projectId: string) => Promise<ProjectROISettings | null>;
+    saveProjectSettings: (projectId: string, hourlyRate: number | null) => Promise<{ success: boolean }>;
+    getSpec: (specId: string) => Promise<SpecROI | null>;
+    saveSpec: (spec: Partial<SpecROI> & { specId: string }) => Promise<{ success: boolean }>;
+    getAllSpecs: (projectId?: string) => Promise<SpecROIWithMetrics[]>;
+    getAggregate: (projectId?: string) => Promise<ROIAggregateMetrics>;
+    deleteSpec: (specId: string) => Promise<{ success: boolean }>;
+  };
 }
 
 declare global {
