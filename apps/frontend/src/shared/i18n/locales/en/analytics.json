@@ -31,6 +31,9 @@
       "status": "Status",
       "linesChanged": "Lines",
       "date": "Date"
+    },
+    "dashboard": {
+      "retry": "Retry"
     }
   }
 }
