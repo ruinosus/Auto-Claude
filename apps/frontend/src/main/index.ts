@@ -8,6 +8,7 @@ import { TerminalManager } from './terminal-manager';
 import { pythonEnvManager } from './python-env-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
 import { initializeUsageMonitorForwarding } from './ipc-handlers/terminal-handlers';
+import { getAnalyticsService } from './ipc-handlers/analytics-handlers';
 import { initializeAppUpdater } from './app-updater';
 import { DEFAULT_APP_SETTINGS } from '../shared/constants';
 import { readSettingsFile } from './settings-utils';
@@ -107,7 +108,7 @@ if (process.platform === 'darwin') {
 }
 
 // Initialize the application
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set app user model id for Windows
   electronApp.setAppUserModelId('com.autoclaude.ui');
 
@@ -155,6 +156,10 @@ app.whenReady().then(() => {
 
   // Setup IPC handlers (pass pythonEnvManager for Python path management)
   setupIpcHandlers(agentManager, terminalManager, () => mainWindow, pythonEnvManager);
+
+  // Initialize MCP servers (auto-claude-tools)
+  const { initializeMCPServers } = await import('./mcp-servers');
+  initializeMCPServers();
 
   // Create window
   createWindow();
@@ -221,6 +226,13 @@ app.on('before-quit', async () => {
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();
   console.warn('[main] Usage monitor stopped');
+
+  // Stop analytics polling
+  const analyticsService = getAnalyticsService();
+  if (analyticsService) {
+    analyticsService.stopPolling();
+    console.warn('[main] Analytics polling stopped');
+  }
 
   // Kill all running agent processes
   if (agentManager) {

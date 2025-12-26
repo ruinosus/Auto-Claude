@@ -28,6 +28,12 @@ import { registerChangelogHandlers } from './changelog-handlers';
 import { registerInsightsHandlers } from './insights-handlers';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
+import { setupAnalyticsHandlers } from './analytics-handlers';
+import { registerListSkillsHandler } from './skills/list-skills';
+import { registerInstallSkillHandler } from './skills/install-skill';
+import { registerRemoveSkillHandler } from './skills/remove-skill';
+import { registerGetSkillContentHandler } from './skills/get-skill-content';
+import { registerMCPHandlers } from '../mcp-manager';
 import { notificationService } from '../notification-service';
 
 /**
@@ -98,6 +104,18 @@ export function setupIpcHandlers(
   // App auto-update handlers
   registerAppUpdateHandlers();
 
+  // Analytics handlers
+  setupAnalyticsHandlers(getMainWindow);
+
+  // Skills management handlers
+  registerListSkillsHandler();
+  registerInstallSkillHandler();
+  registerRemoveSkillHandler();
+  registerGetSkillContentHandler();
+
+  // MCP (Model Context Protocol) handlers
+  registerMCPHandlers();
+
   console.warn('[IPC] All handler modules registered successfully');
 }
 
@@ -119,5 +137,11 @@ export {
   registerChangelogHandlers,
   registerInsightsHandlers,
   registerMemoryHandlers,
-  registerAppUpdateHandlers
+  registerAppUpdateHandlers,
+  setupAnalyticsHandlers,
+  registerListSkillsHandler,
+  registerInstallSkillHandler,
+  registerRemoveSkillHandler,
+  registerGetSkillContentHandler,
+  registerMCPHandlers
 };

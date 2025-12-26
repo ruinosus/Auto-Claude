@@ -137,3 +137,54 @@ export function safeReadFile(originalPath: string): string | null {
 
   return null;
 }
+
+/**
+ * Ensure a directory exists (async version), creating it if necessary
+ *
+ * @param dirPath - The path to the directory
+ */
+export async function ensureDirectory(dirPath: string): Promise<void> {
+  const fsPromises = await import('fs/promises');
+  try {
+    await fsPromises.mkdir(dirPath, { recursive: true });
+  } catch (error) {
+    // Ignore if directory already exists
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+      throw error;
+    }
+  }
+}
+
+/**
+ * Write multiple files to a directory
+ *
+ * @param directory - The target directory
+ * @param files - Map of filename to content
+ */
+export async function writeAllServerFiles(
+  directory: string,
+  files: Map<string, string>
+): Promise<void> {
+  const fsPromises = await import('fs/promises');
+  await ensureDirectory(directory);
+
+  for (const [filename, content] of files) {
+    const filePath = path.join(directory, filename);
+    await fsPromises.writeFile(filePath, content, 'utf-8');
+  }
+}
+
+/**
+ * Clean up a directory by removing it and all contents
+ *
+ * @param directory - The directory to remove
+ */
+export async function cleanupDirectory(directory: string): Promise<void> {
+  const fsPromises = await import('fs/promises');
+  try {
+    await fsPromises.rm(directory, { recursive: true, force: true });
+  } catch (error) {
+    console.error(`[fs-utils] Failed to cleanup directory ${directory}:`, error);
+    // Don't throw - cleanup is best-effort
+  }
+}

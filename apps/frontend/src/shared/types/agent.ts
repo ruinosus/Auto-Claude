@@ -95,6 +95,14 @@ export interface ClaudeProfile {
   usage?: ClaudeUsageData;
   /** Recent rate limit events for this profile */
   rateLimitEvents?: ClaudeRateLimitEvent[];
+
+  // Proxy mode settings (LiteLLM/Azure OpenAI)
+  /** Whether proxy mode is enabled for this profile */
+  proxyEnabled?: boolean;
+  /** Base URL for the proxy server (e.g., LiteLLM, Azure OpenAI) */
+  proxyBaseUrl?: string;
+  /** API key for the proxy server */
+  proxyApiKey?: string;
 }
 
 /**

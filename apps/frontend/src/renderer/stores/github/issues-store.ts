@@ -102,37 +102,6 @@ export async function loadGitHubIssues(projectId: string, state?: IssueFilterSta
   }
 }
 
-export async function checkGitHubConnection(projectId: string): Promise<GitHubSyncStatus | null> {
-  const store = useGitHubStore.getState();
-
-  try {
-    const result = await window.electronAPI.checkGitHubConnection(projectId);
-    if (result.success && result.data) {
-      store.setSyncStatus(result.data);
-      return result.data;
-    } else {
-      store.setError(result.error || 'Failed to check GitHub connection');
-      return null;
-    }
-  } catch (error) {
-    store.setError(error instanceof Error ? error.message : 'Unknown error');
-    return null;
-  }
-}
-
-export function investigateGitHubIssue(projectId: string, issueNumber: number, selectedCommentIds?: number[]): void {
-  const store = useGitHubStore.getState();
-  store.setInvestigationStatus({
-    phase: 'fetching',
-    issueNumber,
-    progress: 0,
-    message: 'Starting investigation...'
-  });
-  store.setInvestigationResult(null);
-
-  window.electronAPI.investigateGitHubIssue(projectId, issueNumber, selectedCommentIds);
-}
-
 export async function importGitHubIssues(
   projectId: string,
   issueNumbers: number[]

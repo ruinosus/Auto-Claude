@@ -267,11 +267,24 @@ export interface ProjectContextData {
 
 // Environment Configuration for project .env files
 export interface ProjectEnvConfig {
-  // Claude Authentication
+  // Authentication Mode
+  authMode?: 'oauth' | 'azure-foundry' | 'auth-token'; // Default: 'oauth'
+
+  // Claude OAuth Authentication
   claudeOAuthToken?: string;
   claudeAuthStatus: 'authenticated' | 'token_set' | 'not_configured';
   // Indicates if the Claude token is from global settings (not project-specific)
   claudeTokenIsGlobal?: boolean;
+
+  // Azure Foundry Authentication (Enterprise)
+  azureFoundryApiKey?: string;
+  azureFoundryBaseUrl?: string; // e.g., "https://your-resource.openai.azure.com/anthropic"
+  azureFoundryResource?: string; // Azure resource name
+  azureFoundryAuthStatus?: 'configured' | 'not_configured';
+
+  // Auth Token (Proxy/CCR)
+  anthropicAuthToken?: string;
+  authTokenStatus?: 'configured' | 'not_configured';
 
   // Model Override
   autoBuildModel?: string;

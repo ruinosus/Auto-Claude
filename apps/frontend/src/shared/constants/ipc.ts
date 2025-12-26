@@ -361,5 +361,30 @@ export const IPC_CHANNELS = {
   RELEASE_PROGRESS: 'release:progress',
 
   // Analytics operations
-  ANALYTICS_GET_DB_PATH: 'analytics:get-db-path'
+  ANALYTICS_GET_DB_PATH: 'analytics:get-db-path',
+  ANALYTICS_START_POLLING: 'analytics:start-polling',
+  ANALYTICS_STOP_POLLING: 'analytics:stop-polling',
+
+  // Analytics events (main -> renderer)
+  ANALYTICS_DATA_UPDATE: 'analytics:data-update',
+
+  // Skills IPC Channels
+  SKILLS_LIST: 'skills:list',
+  SKILLS_INSTALL: 'skills:install',
+  SKILLS_REMOVE: 'skills:remove',
+  SKILLS_GET_CONTENT: 'skills:getContent',
+
+  // MCP IPC Channels
+  MCP_LIST: 'mcp:list',
+  MCP_TEST_CONNECTION: 'mcp:testConnection',
+  MCP_SAVE_CONFIG: 'mcp:saveConfig',
+  MCP_GET_CAPABILITIES: 'mcp:getCapabilities',
+  MCP_CALL_TOOL: 'mcp:callTool',
+  MCP_LIST_PROMPTS: 'mcp:listPrompts',
+  MCP_LIST_RESOURCES: 'mcp:listResources',
+  MCP_START_FASTMCP_SERVER: 'mcp:startFastMCPServer',
+  MCP_STOP_FASTMCP_SERVER: 'mcp:stopFastMCPServer',
+  MCP_GENERATE_FASTMCP_SERVER: 'mcp:generateFastMCPServer',
+  MCP_ADD_CUSTOM_SERVER: 'mcp:addCustomServer',
+  MCP_TEST_CONNECTION_CUSTOM: 'mcp:testConnectionCustom'
 } as const;

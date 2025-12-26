@@ -8,6 +8,8 @@ import { IdeationAPI, createIdeationAPI } from './modules/ideation-api';
 import { InsightsAPI, createInsightsAPI } from './modules/insights-api';
 import { AppUpdateAPI, createAppUpdateAPI } from './app-update-api';
 import { GitHubAPI, createGitHubAPI } from './modules/github-api';
+import { SkillsAPI, createSkillsAPI } from './modules/skills-api';
+import { MCPAPI, createMCPAPI } from './modules/mcp-api';
 
 export interface ElectronAPI extends
   ProjectAPI,
@@ -18,7 +20,9 @@ export interface ElectronAPI extends
   AgentAPI,
   IdeationAPI,
   InsightsAPI,
-  AppUpdateAPI {
+  AppUpdateAPI,
+  SkillsAPI,
+  MCPAPI {
   github: GitHubAPI;
 }
 
@@ -32,6 +36,8 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createIdeationAPI(),
   ...createInsightsAPI(),
   ...createAppUpdateAPI(),
+  ...createSkillsAPI(),
+  ...createMCPAPI(),
   github: createGitHubAPI()
 });
 
@@ -46,7 +52,9 @@ export {
   createIdeationAPI,
   createInsightsAPI,
   createAppUpdateAPI,
-  createGitHubAPI
+  createGitHubAPI,
+  createSkillsAPI,
+  createMCPAPI
 };
 
 export type {
@@ -59,5 +67,7 @@ export type {
   IdeationAPI,
   InsightsAPI,
   AppUpdateAPI,
-  GitHubAPI
+  GitHubAPI,
+  SkillsAPI,
+  MCPAPI
 };

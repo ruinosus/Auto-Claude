@@ -346,7 +346,7 @@ export function registerMCPHandlers() {
   /**
    * Save MCP server configuration
    */
-  ipcMain.handle('mcp:save-config', async (event, serverId: string, config: MCPServerConfig, projectPath?: string) => {
+  ipcMain.handle('mcp:saveConfig', async (event, serverId: string, config: MCPServerConfig, projectPath?: string) => {
     try {
       const envPath = getEnvPath(projectPath);
       await updateEnvVars(envPath, config.envVars);
@@ -362,7 +362,7 @@ export function registerMCPHandlers() {
   /**
    * Test connection - now with real implementations
    */
-  ipcMain.handle('mcp:test-connection', async (event, serverId: string, config: MCPServerConfig) => {
+  ipcMain.handle('mcp:testConnection', async (event, serverId: string, config: MCPServerConfig) => {
     try {
       switch (serverId) {
         case 'linear':
@@ -411,7 +411,7 @@ export function registerMCPHandlers() {
   /**
    * Get capabilities from an MCP server (loaded on-demand)
    */
-  ipcMain.handle('mcp:get-capabilities', async (event, serverId: string) => {
+  ipcMain.handle('mcp:getCapabilities', async (event, serverId: string) => {
     try {
       const { MCPManager } = await import('./mcp-manager-v2');
       const mcpManager = new MCPManager();
@@ -478,7 +478,7 @@ export function registerMCPHandlers() {
   /**
    * Call an MCP tool
    */
-  ipcMain.handle('mcp:call-tool', async (event, serverId: string, toolName: string, args: any) => {
+  ipcMain.handle('mcp:callTool', async (event, serverId: string, toolName: string, args: any) => {
     try {
       const { MCPManager } = await import('./mcp-manager-v2');
       const mcpManager = new MCPManager();
@@ -528,35 +528,35 @@ export function registerMCPHandlers() {
   /**
    * List prompts (stub)
    */
-  ipcMain.handle('mcp:list-prompts', async (event, serverId: string) => {
+  ipcMain.handle('mcp:listPrompts', async (event, serverId: string) => {
     return [];
   });
 
   /**
    * List resources (stub)
    */
-  ipcMain.handle('mcp:list-resources', async (event, serverId: string) => {
+  ipcMain.handle('mcp:listResources', async (event, serverId: string) => {
     return [];
   });
 
   /**
    * Start FastMCP server (stub)
    */
-  ipcMain.handle('mcp:start-fastmcp-server', async (event, serverPath: string) => {
+  ipcMain.handle('mcp:startFastMCPServer', async (event, serverPath: string) => {
     return { success: false, error: 'Not implemented yet' };
   });
 
   /**
    * Stop FastMCP server (stub)
    */
-  ipcMain.handle('mcp:stop-fastmcp-server', async (event, serverPath: string) => {
+  ipcMain.handle('mcp:stopFastMCPServer', async (event, serverPath: string) => {
     return { success: false, error: 'Not implemented yet' };
   });
 
   /**
    * Generate FastMCP server with uv
    */
-  ipcMain.handle('mcp:generate-fastmcp-server', async (event, config: FastMCPServerConfig) => {
+  ipcMain.handle('mcp:generateFastMCPServer', async (event, config: FastMCPServerConfig) => {
     console.log('[FastMCP] Starting server generation:', config.serverName);
     try {
       console.log('[FastMCP] Importing registry-integration module...');
@@ -587,7 +587,7 @@ export function registerMCPHandlers() {
   /**
    * Add custom server configuration
    */
-  ipcMain.handle('mcp:add-custom-server', async (
+  ipcMain.handle('mcp:addCustomServer', async (
     event,
     config: CustomServerConfig,
     scope: 'global' | 'project',
@@ -649,7 +649,7 @@ export function registerMCPHandlers() {
   /**
    * Test connection to custom MCP server (simulated for now)
    */
-  ipcMain.handle('mcp:test-connection-custom', async (event, config: CustomServerConfig) => {
+  ipcMain.handle('mcp:testConnectionCustom', async (event, config: CustomServerConfig) => {
     try {
       // Validate configuration
       const validationError = validateCustomServerConfig(config);

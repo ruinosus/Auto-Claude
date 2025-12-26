@@ -107,6 +107,11 @@ import type {
   GitHubInvestigationResult,
   GitHubInvestigationStatus
 } from './integrations';
+import type {
+  Skill,
+  SkillContent,
+  SkillInstallOutput
+} from './skills';
 
 // Electron API exposed via contextBridge
 // Tab state interface (persisted in main process)
@@ -593,8 +598,37 @@ export interface ElectronAPI {
   // GitHub API (nested for organized access)
   github: import('../../preload/api/modules/github-api').GitHubAPI;
 
+  // Skills API (nested for organized access)
+  skills: {
+    list: (projectPath?: string) => Promise<Skill[]>;
+    install: (skillPath: string) => Promise<IPCResult<SkillInstallOutput>>;
+    remove: (skillPath: string) => Promise<IPCResult<void>>;
+    getContent: (skillPath: string) => Promise<IPCResult<SkillContent>>;
+  };
+
+  // MCP API (nested for organized access)
+  mcp: {
+    list: (projectPath?: string) => Promise<import('./mcp').MCPServer[]>;
+    testConnection: (serverId: string, config: import('./mcp').MCPServerConfig) => Promise<import('./mcp').MCPTestConnectionResult>;
+    saveConfig: (serverId: string, config: import('./mcp').MCPServerConfig, projectPath?: string) => Promise<{ success: boolean; error?: string }>;
+    getCapabilities: (serverId: string) => Promise<{ tools: import('./mcp').MCPTool[]; prompts: import('./mcp').MCPPrompt[]; resources: import('./mcp').MCPResource[] }>;
+    callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
+    listPrompts: (serverId: string) => Promise<import('./mcp').MCPPrompt[]>;
+    listResources: (serverId: string) => Promise<import('./mcp').MCPResource[]>;
+    startFastMCPServer: (serverPath: string) => Promise<{ success: boolean; port?: number; error?: string }>;
+    stopFastMCPServer: (serverPath: string) => Promise<{ success: boolean; error?: string }>;
+    generateFastMCPServer: (config: import('./mcp').FastMCPServerConfig) => Promise<import('./mcp').MCPInstallResult>;
+    addCustomServer: (config: import('./mcp').CustomServerConfig, scope: 'global' | 'project', projectPath?: string) => Promise<{ success: boolean; serverId?: string; error?: string }>;
+    testConnectionCustom: (config: import('./mcp').CustomServerConfig) => Promise<import('./mcp').MCPTestConnectionResult & { capabilities?: { tools?: unknown[]; prompts?: unknown[]; resources?: unknown[] } }>;
+  };
+
   // Analytics operations
   getAnalyticsDbPath: (projectId: string) => Promise<IPCResult<string | null>>;
+  startAnalyticsPolling: (dbPath: string) => void;
+  stopAnalyticsPolling: () => void;
+
+  // Analytics event listeners
+  onAnalyticsDataUpdate: (callback: (data: any) => void) => () => void;
 }
 
 declare global {

@@ -274,6 +274,24 @@ export function registerAutobuildSourceHandlers(
     IPC_CHANNELS.AUTOBUILD_SOURCE_ENV_CHECK_TOKEN,
     async (): Promise<IPCResult<SourceEnvCheckResult>> => {
       try {
+        // First check if active profile has proxy mode enabled
+        const { getClaudeProfileManager } = await import('../claude-profile-manager');
+        const profileManager = getClaudeProfileManager();
+        if (profileManager.hasValidAuth()) {
+          const profile = profileManager.getActiveProfile();
+          if (profile?.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
+            console.warn('[CHECK_TOKEN] Proxy mode enabled for profile:', profile.name);
+            return {
+              success: true,
+              data: {
+                hasToken: true,
+                sourcePath: getEffectiveSourcePath() || undefined
+              }
+            };
+          }
+        }
+
+        // Fallback to checking .env file for CLAUDE_CODE_OAUTH_TOKEN
         const sourcePath = getEffectiveSourcePath();
         if (!sourcePath) {
           return {

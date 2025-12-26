@@ -169,7 +169,37 @@ const browserMockAPI: ElectronAPI = {
     onAnalyzePreviewProgress: () => () => {},
     onAnalyzePreviewComplete: () => () => {},
     onAnalyzePreviewError: () => () => {}
-  }
+  },
+
+  // Skills API
+  skills: {
+    list: async () => [],
+    install: async () => ({ success: true, data: { output: 'Mock install' } }),
+    remove: async () => ({ success: true, data: undefined }),
+    getContent: async () => ({ success: true, data: { content: '# Mock Skill', name: 'mock-skill' } })
+  },
+
+  // MCP API
+  mcp: {
+    list: async () => [],
+    testConnection: async () => ({ success: false, status: 'disconnected' as const, message: 'Browser mock' }),
+    saveConfig: async () => ({ success: true }),
+    getCapabilities: async () => ({ tools: [], prompts: [], resources: [] }),
+    callTool: async () => ({}),
+    listPrompts: async () => [],
+    listResources: async () => [],
+    startFastMCPServer: async () => ({ success: false, error: 'Browser mock' }),
+    stopFastMCPServer: async () => ({ success: false, error: 'Browser mock' }),
+    generateFastMCPServer: async () => ({ success: false, error: 'Browser mock' }),
+    addCustomServer: async () => ({ success: false, error: 'Browser mock' }),
+    testConnectionCustom: async () => ({ success: false, status: 'disconnected' as const, message: 'Browser mock' })
+  },
+
+  // Analytics operations
+  getAnalyticsDbPath: async () => ({ success: true, data: null }),
+  startAnalyticsPolling: () => {},
+  stopAnalyticsPolling: () => {},
+  onAnalyticsDataUpdate: () => () => {}
 };
 
 /**

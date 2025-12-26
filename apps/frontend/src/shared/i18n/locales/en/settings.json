@@ -36,6 +36,14 @@
     "notifications": {
       "title": "Notifications",
       "description": "Alert preferences"
+    },
+    "skills": {
+      "title": "Skills",
+      "description": "Browse and manage Claude Skills"
+    },
+    "mcp": {
+      "title": "MCP Servers",
+      "description": "Configure Model Context Protocol integrations"
     }
   },
   "language": {

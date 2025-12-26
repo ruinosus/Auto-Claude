@@ -16,7 +16,8 @@ import {
   Database,
   Sparkles,
   Monitor,
-  Globe
+  Globe,
+  Plug
 } from 'lucide-react';
 import {
   FullScreenDialog,
@@ -41,6 +42,8 @@ import { ProjectSelector } from './ProjectSelector';
 import { ProjectSettingsContent, ProjectSettingsSection } from './ProjectSettingsContent';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
+import { SkillsManager } from '../skills';
+import { MCPManager } from '../mcp';
 
 interface AppSettingsDialogProps {
   open: boolean;
@@ -51,7 +54,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings sections
-export type AppSection = 'appearance' | 'display' | 'language' | 'agent' | 'paths' | 'integrations' | 'updates' | 'notifications';
+export type AppSection = 'appearance' | 'display' | 'language' | 'agent' | 'paths' | 'integrations' | 'updates' | 'notifications' | 'skills' | 'mcp';
 
 interface NavItemConfig<T extends string> {
   id: T;
@@ -66,7 +69,9 @@ const appNavItemsConfig: NavItemConfig<AppSection>[] = [
   { id: 'paths', icon: FolderOpen },
   { id: 'integrations', icon: Key },
   { id: 'updates', icon: Package },
-  { id: 'notifications', icon: Bell }
+  { id: 'notifications', icon: Bell },
+  { id: 'skills', icon: Zap },
+  { id: 'mcp', icon: Plug }
 ];
 
 const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
@@ -177,6 +182,10 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="updates" version={version} />;
       case 'notifications':
         return <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="notifications" version={version} />;
+      case 'skills':
+        return <SkillsManager />;
+      case 'mcp':
+        return <MCPManager />;
       default:
         return null;
     }

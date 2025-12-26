@@ -136,6 +136,9 @@ export interface ProjectAPI {
 
   // Analytics Operations
   getAnalyticsDbPath: (projectId: string) => Promise<IPCResult<string | null>>;
+  startAnalyticsPolling: (dbPath: string) => void;
+  stopAnalyticsPolling: () => void;
+  onAnalyticsDataUpdate: (callback: (data: any) => void) => () => void;
 }
 
 export const createProjectAPI = (): ProjectAPI => ({
@@ -293,5 +296,19 @@ export const createProjectAPI = (): ProjectAPI => ({
 
   // Analytics Operations
   getAnalyticsDbPath: (projectId: string): Promise<IPCResult<string | null>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_GET_DB_PATH, projectId)
+    ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_GET_DB_PATH, projectId),
+
+  startAnalyticsPolling: (dbPath: string): void => {
+    ipcRenderer.send(IPC_CHANNELS.ANALYTICS_START_POLLING, dbPath);
+  },
+
+  stopAnalyticsPolling: (): void => {
+    ipcRenderer.send(IPC_CHANNELS.ANALYTICS_STOP_POLLING);
+  },
+
+  onAnalyticsDataUpdate: (callback: (data: any) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.ANALYTICS_DATA_UPDATE, listener);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.ANALYTICS_DATA_UPDATE, listener);
+  }
 });

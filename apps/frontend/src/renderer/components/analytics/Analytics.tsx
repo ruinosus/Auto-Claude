@@ -31,7 +31,7 @@ export function Analytics({ projectId }: AnalyticsProps) {
       .getAnalyticsDbPath(projectId)
       .then((result) => {
         if (result.success) {
-          setDbPath(result.data);
+          setDbPath(result.data ?? null);
         } else {
           console.error('Failed to get analytics DB path:', result.error);
           setDbPath(null);
@@ -46,8 +46,8 @@ export function Analytics({ projectId }: AnalyticsProps) {
       });
   }, [projectId]);
 
-  // Start polling
-  useAnalyticsData(dbPath, 2000);
+  // Start polling (polling interval is now handled by analytics service in main process)
+  useAnalyticsData(dbPath);
 
   if (isLoadingPath) {
     return (

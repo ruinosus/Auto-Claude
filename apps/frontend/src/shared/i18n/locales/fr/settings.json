@@ -36,6 +36,14 @@
     "notifications": {
       "title": "Notifications",
       "description": "Préférences d'alertes"
+    },
+    "skills": {
+      "title": "Compétences",
+      "description": "Parcourir et gérer les compétences de Claude"
+    },
+    "mcp": {
+      "title": "Serveurs MCP",
+      "description": "Configurer les intégrations du protocole de contexte de modèle"
     }
   },
   "language": {
