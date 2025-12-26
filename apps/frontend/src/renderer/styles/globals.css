@@ -145,6 +145,13 @@
   --error: #D84F68;
   --error-light: #FCE8EC;
 
+  /* Chart colors - harmonious palette for data visualization */
+  --chart-1: #A5A66A;
+  --chart-2: #4EBE96;
+  --chart-3: #479FFA;
+  --chart-4: #D2D714;
+  --chart-5: #D84F68;
+
   /* Shadows - soft and diffused for light mode */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
@@ -205,6 +212,13 @@
   --info-light: #1A2230;
   --error: #FF5C5C;
   --error-light: #2A1A1A;
+
+  /* Chart colors - vibrant for dark mode data visualization */
+  --chart-1: #D6D876;
+  --chart-2: #5BD4A9;
+  --chart-3: #64B5FF;
+  --chart-4: #FFE066;
+  --chart-5: #FF7B7B;
 
   /* Shadows - deeper for dark mode, but cards use borders primarily */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.6);
@@ -1084,6 +1098,13 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
   --shadow-focus: 0 0 0 3px rgba(219, 91, 10, 0.2);
+
+  /* Chart colors - Avanade corporate palette */
+  --chart-1: #DB5B0A;
+  --chart-2: #16A34A;
+  --chart-3: #0284C7;
+  --chart-4: #F59E0B;
+  --chart-5: #EA4335;
 }
 
 /* ============================================
@@ -1152,6 +1173,13 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.9);
   --shadow-focus: 0 0 0 3px rgba(219, 91, 10, 0.25);
+
+  /* Chart colors - Avanade dark palette (vibrant) */
+  --chart-1: #FF7A33;
+  --chart-2: #22C55E;
+  --chart-3: #38BDF8;
+  --chart-4: #FBBF24;
+  --chart-5: #F87171;
 }
 
 /* ============================================
@@ -1219,6 +1247,13 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
   --shadow-focus: 0 0 0 3px rgba(159, 80, 159, 0.2);
+
+  /* Chart colors - IntraAI purple/green palette */
+  --chart-1: #9F509F;
+  --chart-2: #7CB420;
+  --chart-3: #0284C7;
+  --chart-4: #F59E0B;
+  --chart-5: #DC2626;
 }
 
 /* ============================================
@@ -1286,6 +1321,13 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.9);
   --shadow-focus: 0 0 0 3px rgba(179, 102, 179, 0.25);
+
+  /* Chart colors - IntraAI dark palette (vibrant) */
+  --chart-1: #B366B3;
+  --chart-2: #8FCC2C;
+  --chart-3: #38BDF8;
+  --chart-4: #FBBF24;
+  --chart-5: #F87171;
 }
 
 /* Base styles */
