@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import '@testing-library/jest-dom/vitest';
+import { Sidebar } from '../Sidebar';
 
 describe('SidebarView Type', () => {
   it('includes analytics in SidebarView type', () => {
@@ -19,5 +22,20 @@ describe('SidebarView Type', () => {
     ];
 
     expect(validViews).toHaveLength(12);
+  });
+});
+
+describe('Sidebar Navigation', () => {
+  it('renders analytics navigation item', () => {
+    render(
+      <Sidebar
+        onSettingsClick={() => {}}
+        onNewTaskClick={() => {}}
+        activeView="kanban"
+        onViewChange={() => {}}
+      />
+    );
+
+    expect(screen.getByText(/analytics/i)).toBeInTheDocument();
   });
 });
