@@ -1,4 +1,5 @@
 import { DollarSign, Clock, TrendingUp, CheckCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '../../ui/card';
 import type { ROIAggregateMetrics, ROISettings, Currency } from '../../../../shared/types/roi';
 
@@ -64,6 +65,8 @@ function formatCurrencyValue(amount: number, currency: Currency): string {
 }
 
 export function ROIOverviewCards({ aggregate, settings, isLoading }: ROIOverviewCardsProps) {
+  const { t } = useTranslation(['analytics']);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -86,7 +89,7 @@ export function ROIOverviewCards({ aggregate, settings, isLoading }: ROIOverview
 
   const cards = [
     {
-      title: 'Total Savings',
+      title: t('analytics:roi.totalSavings'),
       value: formatCurrencyValue(totalSavings, settings.primaryCurrency),
       subtitle: secondaryAmount !== null && settings.secondaryCurrency
         ? formatCurrencyValue(secondaryAmount, settings.secondaryCurrency)
@@ -95,21 +98,21 @@ export function ROIOverviewCards({ aggregate, settings, isLoading }: ROIOverview
       iconColor: 'text-green-500',
     },
     {
-      title: 'Hours Saved',
-      value: `${totalHoursSaved.toFixed(1)} hrs`,
+      title: t('analytics:roi.hoursSaved'),
+      value: `${totalHoursSaved.toFixed(1)} ${t('analytics:roi.hours')}`,
       icon: Clock,
       iconColor: 'text-blue-500',
     },
     {
-      title: 'ROI',
+      title: t('analytics:roi.roiPercentage'),
       value: `${totalROI.toFixed(0)}%`,
       icon: TrendingUp,
       iconColor: totalROI > 0 ? 'text-green-500' : 'text-muted-foreground',
     },
     {
-      title: 'Success Rate',
+      title: t('analytics:roi.successRate'),
       value: `${successRate.toFixed(0)}%`,
-      subtitle: `${specsCount} specs`,
+      subtitle: `${specsCount} ${t('analytics:roi.specs')}`,
       icon: CheckCircle,
       iconColor: 'text-primary',
     },

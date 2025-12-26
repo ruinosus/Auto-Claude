@@ -1,0 +1,10 @@
+{
+  "roi": {
+    "totalSavings": "Total Savings",
+    "hoursSaved": "Hours Saved",
+    "roiPercentage": "ROI",
+    "successRate": "Success Rate",
+    "hours": "hrs",
+    "specs": "specs"
+  }
+}
