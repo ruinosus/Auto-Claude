@@ -203,6 +203,31 @@ pip install real_ladybug graphiti-core
 
 Enable with: `GRAPHITI_ENABLED=true` + provider credentials. See `.env.example`.
 
+### OpenTelemetry Analytics Export
+
+Auto-Claude exports analytics to OpenTelemetry-compatible platforms (Langfuse, SigNoz, Grafana).
+
+**Enable:**
+```bash
+# Add to .env
+OTEL_ENABLED=true
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
+
+**View metrics:**
+```bash
+# CLI viewer
+python -m analytics.cli_viewer summary
+python -m analytics.cli_viewer spec 001-feature
+
+# Check your OTLP platform for:
+# - auto_claude.tokens.total
+# - auto_claude.cost.total_usd
+# - auto_claude.sessions.total
+```
+
+**Configuration:** See [OTEL_CONFIGURATION.md](docs/OTEL_CONFIGURATION.md)
+
 ### MCP (Model Context Protocol)
 
 Auto-Claude supports MCP for extending Claude's capabilities with external tools and services.
