@@ -371,6 +371,17 @@ export const IPC_CHANNELS = {
   // Analytics events (main -> renderer)
   ANALYTICS_DATA_UPDATE: 'analytics:data-update',
 
+  // ROI operations
+  ROI_GET_SETTINGS: 'roi:getSettings',
+  ROI_SAVE_SETTINGS: 'roi:saveSettings',
+  ROI_GET_PROJECT_SETTINGS: 'roi:getProjectSettings',
+  ROI_SAVE_PROJECT_SETTINGS: 'roi:saveProjectSettings',
+  ROI_GET_SPEC: 'roi:getSpec',
+  ROI_SAVE_SPEC: 'roi:saveSpec',
+  ROI_GET_ALL_SPECS: 'roi:getAllSpecs',
+  ROI_GET_AGGREGATE: 'roi:getAggregate',
+  ROI_DELETE_SPEC: 'roi:deleteSpec',
+
   // Skills IPC Channels
   SKILLS_LIST: 'skills:list',
   SKILLS_INSTALL: 'skills:install',
