@@ -7,6 +7,7 @@ Detailed documentation for Auto Claude setup and usage.
 | Guide | Description |
 |-------|-------------|
 | **[CLI-USAGE.md](CLI-USAGE.md)** | Terminal-only usage for power users, headless servers, and CI/CD |
+| **[ANALYTICS.md](ANALYTICS.md)** | Analytics Dashboard usage, Python API, and budget management |
 
 ## Quick Links
 

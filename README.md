@@ -56,6 +56,7 @@ Get the latest pre-built release for your platform:
 | **Self-Validating QA** | Built-in quality assurance loop catches issues before you review |
 | **AI-Powered Merge** | Automatic conflict resolution when integrating back to main |
 | **Memory Layer** | Agents retain insights across sessions for smarter builds |
+| **Analytics Dashboard** | Track costs, tokens, and budgets in real-time with visual charts |
 | **Cross-Platform** | Native desktop apps for Windows, macOS, and Linux |
 | **Auto-Updates** | App updates automatically when new versions are released |
 
@@ -80,6 +81,18 @@ AI-assisted feature planning with competitor analysis and audience targeting.
 - **Insights** - Chat interface for exploring your codebase
 - **Ideation** - Discover improvements, performance issues, and vulnerabilities
 - **Changelog** - Generate release notes from completed tasks
+- **Analytics Dashboard** - Real-time cost tracking, budget management, and usage analytics
+
+### Analytics Dashboard
+
+Monitor your Auto Claude usage with comprehensive analytics:
+
+- **Real-time Metrics** - Cost tracking, token usage, and session monitoring
+- **Visual Charts** - Cost trends, token distribution, model usage, and session durations
+- **Budget Management** - Set per-spec budgets with automated alerts at 80%, 90%, and 100%
+- **Agent API** - HTTP API for programmatic access to analytics data
+
+See [guides/ANALYTICS.md](guides/ANALYTICS.md) for detailed usage and API documentation.
 
 ---
 

@@ -75,6 +75,7 @@ src/
 │   │   ├── github/          # GitHub integration
 │   │   ├── agents/          # Claude profile management
 │   │   ├── worktrees/       # Git worktree management
+│   │   ├── analytics/       # Analytics dashboard (Phase 3)
 │   │   └── onboarding/      # First-time setup wizard
 │   │
 │   ├── shared/              # Shared resources
@@ -89,6 +90,61 @@ src/
     ├── constants/           # Application constants
     └── utils/               # Shared utilities
 ```
+
+## Phase 3: Analytics Dashboard
+
+The Analytics Dashboard provides comprehensive usage tracking and budget management for Auto-Claude.
+
+### Features
+
+- **Real-time Metrics** - Cost, tokens, and active session tracking
+- **Visual Charts** - Cost trends, token usage, model distribution, session durations
+- **Budget Management** - Per-spec budgets with automated alerts (80%, 90%, 100%)
+- **Agent API** - Python FastAPI server for programmatic access
+
+### Architecture
+
+**Frontend Components** (`src/renderer/components/analytics/`):
+- `Analytics.tsx` - Main dashboard container
+- `OverviewCards.tsx` - Total cost, tokens, active sessions
+- `CostChart.tsx` - Cost over time (Recharts line chart)
+- `TokensChart.tsx` - Token usage by spec (stacked bar chart)
+- `ModelDistributionChart.tsx` - Model distribution (pie chart)
+- `SessionDurationChart.tsx` - Session durations (horizontal bars)
+- `BudgetManager.tsx` - Budget settings and alerts
+
+**State Management**:
+- `analytics-store.ts` - Zustand store for budget and filters
+- `useAnalyticsData.ts` - SQLite polling hook (2s interval)
+
+**Backend Integration**:
+- IPC Handler: `analytics:get-db-path` (project-handlers.ts)
+- Database: SQLite (`analytics.db` in project `.auto-claude/` directory)
+- Python API: FastAPI server at `apps/backend/analytics/api.py`
+
+### Testing
+
+34 comprehensive E2E tests covering:
+- Database operations and schema
+- Chart data transformations
+- Budget calculations and alerts
+- Error handling
+- Real-time updates
+
+**Run tests:**
+```bash
+npm run test:e2e -- analytics-dashboard.e2e.ts
+```
+
+See [e2e/ANALYTICS_DASHBOARD_E2E_SUMMARY.md](e2e/ANALYTICS_DASHBOARD_E2E_SUMMARY.md) for detailed test documentation.
+
+### Documentation
+
+- **User Guide**: [guides/ANALYTICS.md](../../guides/ANALYTICS.md)
+- **API Reference**: [apps/backend/analytics/API.md](../backend/analytics/API.md)
+- **E2E Tests**: [e2e/ANALYTICS_DASHBOARD_E2E_SUMMARY.md](e2e/ANALYTICS_DASHBOARD_E2E_SUMMARY.md)
+
+---
 
 ## Scripts
 
