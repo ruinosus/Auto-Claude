@@ -16,6 +16,8 @@ from .storage import (
 
 from .usage_tracker import UsageTracker
 
+from .roi_tracker import ROITracker, create_roi_tracker
+
 from .pricing_provider import (
     ModelPricing,
     ModelsPricingProvider,
@@ -36,6 +38,9 @@ __all__ = [
     "is_tracking_enabled",
     # Tracker
     "UsageTracker",
+    # ROI Tracker
+    "ROITracker",
+    "create_roi_tracker",
     # Pricing
     "ModelPricing",
     "ModelsPricingProvider",

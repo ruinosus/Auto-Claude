@@ -397,7 +397,7 @@ async def run_agent_session(
     roi_tracker: Optional[ROITracker] = None
     if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id and project_dir:
         try:
-            roi_tracker = await create_roi_tracker(spec_id, project_dir)
+            roi_tracker = await create_roi_tracker(spec_id, project_dir, storage)
             debug("session", "ROI tracking initialized", spec_id=spec_id)
         except Exception as e:
             logger.warning(f"Failed to initialize ROI tracking: {e}")

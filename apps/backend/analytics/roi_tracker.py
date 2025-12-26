@@ -20,10 +20,10 @@ class ROITracker:
     - Execution time
     """
 
-    def __init__(self, spec_id: str, project_dir: Path):
+    def __init__(self, spec_id: str, project_dir: Path, storage=None):
         self.spec_id = spec_id
         self.project_dir = project_dir
-        self.storage = get_analytics_storage()
+        self.storage = storage if storage else get_analytics_storage()
 
         self.start_time = datetime.utcnow()
         self.qa_attempts = 0
@@ -125,6 +125,6 @@ class ROITracker:
 
 
 # Helper function for integration
-async def create_roi_tracker(spec_id: str, project_dir: Path) -> ROITracker:
+async def create_roi_tracker(spec_id: str, project_dir: Path, storage=None) -> ROITracker:
     """Create and return ROI tracker instance."""
-    return ROITracker(spec_id, project_dir)
+    return ROITracker(spec_id, project_dir, storage)
