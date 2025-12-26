@@ -93,9 +93,8 @@ Set per-spec budgets to prevent overspending.
 
 Receive visual alerts as you approach your budget:
 
-- **75% (Yellow)** - Warning threshold
-- **90% (Orange)** - High usage alert
-- **100%+ (Red)** - Budget exceeded
+- **80% (Yellow)** - Warning threshold
+- **90%+ (Red)** - Budget exceeded
 
 Alerts appear in the Budget Manager section and on the Cost Over Time chart.
 

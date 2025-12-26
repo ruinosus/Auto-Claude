@@ -410,11 +410,9 @@ class AnalyticsClient:
 
     def _get_alert_level(self, percentage: float) -> str:
         """Get alert level based on budget percentage."""
-        if percentage >= 100:
+        if percentage >= 90:
             return "critical"
-        elif percentage >= 90:
-            return "high"
-        elif percentage >= 75:
+        elif percentage >= 80:
             return "warning"
         else:
             return "ok"

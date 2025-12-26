@@ -89,7 +89,7 @@ Monitor your Auto Claude usage with comprehensive analytics:
 
 - **Real-time Metrics** - Cost tracking, token usage, and session monitoring
 - **Visual Charts** - Cost trends, token distribution, model usage, and session durations
-- **Budget Management** - Set per-spec budgets with automated alerts at 80%, 90%, and 100%
+- **Budget Management** - Set per-spec budgets with automated alerts at 80% and 90%
 - **Agent API** - HTTP API for programmatic access to analytics data
 
 See [guides/ANALYTICS.md](guides/ANALYTICS.md) for detailed usage and API documentation.

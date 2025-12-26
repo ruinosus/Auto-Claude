@@ -45,7 +45,7 @@ Proactive spend control with automated alerts:
 
 - **Budget Setting** - Define per-spec cost limits in USD
 - **Progress Tracking** - Visual progress bar with percentage utilization
-- **Alert Thresholds** - Color-coded warnings at 75% (yellow), 90% (orange), 100%+ (red)
+- **Alert Thresholds** - Color-coded warnings at 80% (yellow), 90%+ (red)
 - **Remaining Budget** - Real-time calculation of available spend
 
 Budget alerts appear in both the Budget Manager component and the Cost Over Time chart.
@@ -115,7 +115,7 @@ Agents can query their own usage programmatically using the `requests` library, 
 **Files**:
 - `apps/backend/analytics/api.py` - API server (5 endpoints)
 - `apps/backend/analytics/test_api.py` - Comprehensive test suite
-- `apps/backend/analytics/requirements.txt` - Dependencies (fastapi, uvicorn, python-dotenv)
+- `apps/backend/analytics/requirements.txt` - Dependencies (fastapi, uvicorn)
 
 **Database**: SQLite (embedded, zero-config)
 - Location: `.auto-claude/analytics.db` in project root
