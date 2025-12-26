@@ -1,4 +1,12 @@
 {
+  "header": {
+    "title": "Tableau de bord analytique",
+    "subtitle": "Surveillez votre utilisation et vos couts Auto-Claude"
+  },
+  "tabs": {
+    "usage": "Utilisation",
+    "roi": "ROI"
+  },
   "roi": {
     "totalSavings": "Economies totales",
     "hoursSaved": "Heures economisees",

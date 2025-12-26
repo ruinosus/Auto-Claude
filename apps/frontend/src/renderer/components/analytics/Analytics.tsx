@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAnalyticsStore } from '../../stores/analytics-store';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import { OverviewCards } from './OverviewCards';
@@ -7,16 +8,20 @@ import { TokensChart } from './TokensChart';
 import { ModelDistributionChart } from './ModelDistributionChart';
 import { SessionDurationChart } from './SessionDurationChart';
 import { BudgetManager } from './BudgetManager';
+import { ROIDashboard } from './roi/ROIDashboard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
 interface AnalyticsProps {
   projectId?: string;
 }
 
 export function Analytics({ projectId }: AnalyticsProps) {
+  const { t } = useTranslation(['analytics']);
   const data = useAnalyticsStore((state) => state.data);
   const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
   const [dbPath, setDbPath] = useState<string | null>(null);
   const [isLoadingPath, setIsLoadingPath] = useState(true);
+  const [activeTab, setActiveTab] = useState<'usage' | 'roi'>('usage');
 
   // Fetch analytics DB path from Electron
   useEffect(() => {
@@ -137,41 +142,58 @@ export function Analytics({ projectId }: AnalyticsProps) {
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
-          <p className="text-muted-foreground">Monitor your Auto-Claude usage and costs</p>
+          <h1 className="text-3xl font-bold">{t('analytics:header.title')}</h1>
+          <p className="text-muted-foreground">{t('analytics:header.subtitle')}</p>
         </div>
 
-        {/* Overview Cards */}
-        <OverviewCards
-          data={{
-            totalCost: data.totalCost,
-            totalTokens: data.totalTokens,
-            activeSessions: data.activeSessions,
-            budgetRemaining: budgetRemaining,
-            budgetProgress: budgetProgress
-          }}
-        />
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'usage' | 'roi')}>
+          <TabsList>
+            <TabsTrigger value="usage">{t('analytics:tabs.usage')}</TabsTrigger>
+            <TabsTrigger value="roi">{t('analytics:tabs.roi')}</TabsTrigger>
+          </TabsList>
 
-        {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <CostChart
-            data={data.chartData.costOverTime.map((point) => ({
-              timestamp: point.timestamp.toISOString(),
-              cost: point.value
-            }))}
-            budgetLimit={budgetLimit}
-          />
-          <TokensChart data={tokensChartData} />
-          <ModelDistributionChart data={modelDistribution} />
-          <SessionDurationChart data={sessionDurationData} />
-        </div>
+          <TabsContent value="usage" className="mt-6">
+            {/* Existing usage analytics content */}
+            <div className="space-y-6">
+              {/* Overview Cards */}
+              <OverviewCards
+                data={{
+                  totalCost: data.totalCost,
+                  totalTokens: data.totalTokens,
+                  activeSessions: data.activeSessions,
+                  budgetRemaining: budgetRemaining,
+                  budgetProgress: budgetProgress
+                }}
+              />
 
-        {/* Budget Manager */}
-        <BudgetManager
-          currentCost={data.totalCost}
-          budgetLimit={budgetLimit}
-          onBudgetChange={setBudgetLimit}
-        />
+              {/* Charts Grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <CostChart
+                  data={data.chartData.costOverTime.map((point) => ({
+                    timestamp: point.timestamp.toISOString(),
+                    cost: point.value
+                  }))}
+                  budgetLimit={budgetLimit}
+                />
+                <TokensChart data={tokensChartData} />
+                <ModelDistributionChart data={modelDistribution} />
+                <SessionDurationChart data={sessionDurationData} />
+              </div>
+
+              {/* Budget Manager */}
+              <BudgetManager
+                currentCost={data.totalCost}
+                budgetLimit={budgetLimit}
+                onBudgetChange={setBudgetLimit}
+              />
+            </div>
+          </TabsContent>
+
+          <TabsContent value="roi" className="mt-6">
+            <ROIDashboard projectId={projectId} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
