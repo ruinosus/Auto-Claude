@@ -42,6 +42,13 @@ from .utils import (
     sync_plan_to_source,
 )
 
+# Analytics tracking (optional - graceful degradation if not available)
+try:
+    from analytics import UsageTracker, get_analytics_storage, is_tracking_enabled
+    ANALYTICS_AVAILABLE = True
+except ImportError:
+    ANALYTICS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -316,6 +323,9 @@ async def run_agent_session(
     spec_dir: Path,
     verbose: bool = False,
     phase: LogPhase = LogPhase.CODING,
+    spec_id: str | None = None,
+    session_num: int = 1,
+    project_dir: Path | None = None,
 ) -> tuple[str, str]:
     """
     Run a single agent session using Claude Agent SDK.
@@ -326,6 +336,9 @@ async def run_agent_session(
         spec_dir: Spec directory path
         verbose: Whether to show detailed output
         phase: Current execution phase for logging
+        spec_id: Spec identifier for analytics tracking
+        session_num: Session number for analytics tracking
+        project_dir: Project directory for analytics database location
 
     Returns:
         (status, response_text) where status is:
@@ -350,6 +363,34 @@ async def run_agent_session(
     message_count = 0
     tool_count = 0
 
+    # Initialize analytics tracking (if available and enabled)
+    usage_tracker = None
+    if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id:
+        try:
+            # Determine database path
+            db_path = str(project_dir / ".auto-claude" / "analytics.db") if project_dir else ".auto-claude/analytics.db"
+            storage = get_analytics_storage(db_path)
+
+            # Map LogPhase to analytics phase
+            phase_map = {
+                LogPhase.PLANNING: "planning",
+                LogPhase.CODING: "coding",
+                LogPhase.VALIDATION: "validation",
+            }
+            analytics_phase = phase_map.get(phase, "coding")
+
+            usage_tracker = UsageTracker(
+                spec_id=spec_id,
+                session_num=session_num,
+                phase=analytics_phase,
+                storage=storage
+            )
+            await usage_tracker.start_conversation()
+            debug("session", "Analytics tracking initialized", spec_id=spec_id)
+        except Exception as e:
+            logger.warning(f"Failed to initialize analytics tracking: {e}")
+            usage_tracker = None
+
     try:
         # Send the query
         debug("session", "Sending query to Claude SDK...")
@@ -370,6 +411,13 @@ async def run_agent_session(
 
             # Handle AssistantMessage (text and tool use)
             if msg_type == "AssistantMessage" and hasattr(msg, "content"):
+                # Track message for analytics (if enabled)
+                if usage_tracker:
+                    try:
+                        await usage_tracker.track_message(msg)
+                    except Exception as e:
+                        logger.debug(f"Analytics tracking failed for message: {e}")
+
                 for block in msg.content:
                     block_type = type(block).__name__
 
@@ -548,3 +596,15 @@ async def run_agent_session(
         if task_logger:
             task_logger.log_error(f"Session error: {e}", phase)
         return "error", str(e)
+
+    finally:
+        # Finalize analytics tracking
+        if usage_tracker:
+            try:
+                await usage_tracker.finalize()
+                debug("session", "Analytics tracking finalized",
+                      cost=f"${usage_tracker.total_cost_usd:.4f}",
+                      input_tokens=usage_tracker.total_input_tokens,
+                      output_tokens=usage_tracker.total_output_tokens)
+            except Exception as e:
+                logger.debug(f"Failed to finalize analytics tracking: {e}")
