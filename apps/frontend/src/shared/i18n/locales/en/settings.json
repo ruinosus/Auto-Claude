@@ -44,6 +44,10 @@
     "mcp": {
       "title": "MCP Servers",
       "description": "Configure Model Context Protocol integrations"
+    },
+    "roi": {
+      "title": "ROI Settings",
+      "description": "Configure ROI calculation parameters"
     }
   },
   "language": {
@@ -244,5 +248,20 @@
     "apiKeysInfo": "Keys set here are used as defaults. Individual projects can override these in their settings.",
     "openaiKey": "OpenAI API Key",
     "openaiKeyDescription": "Required for Graphiti memory backend (embeddings)"
+  },
+  "roi": {
+    "title": "ROI Settings",
+    "description": "Configure how ROI is calculated for your specs",
+    "hourlyRate": "Developer Hourly Rate",
+    "hourlyRateHint": "Your typical hourly rate for manual development",
+    "primaryCurrency": "Primary Currency",
+    "secondaryCurrency": "Secondary Currency",
+    "none": "None",
+    "exchangeRate": "Exchange Rate",
+    "autoEstimate": "Auto-estimate manual hours",
+    "autoEstimateHint": "Estimate hours based on lines of code changed",
+    "minutesPerLine": "Minutes per Line",
+    "minPerLine": "min/line",
+    "minutesPerLineHint": "Average time to manually write or modify a line of code"
   }
 }

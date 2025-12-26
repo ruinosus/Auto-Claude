@@ -17,7 +17,8 @@ import {
   Sparkles,
   Monitor,
   Globe,
-  Plug
+  Plug,
+  TrendingUp
 } from 'lucide-react';
 import {
   FullScreenDialog,
@@ -44,6 +45,7 @@ import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
 import { SkillsManager } from '../skills';
 import { MCPManager } from '../mcp';
+import { ROISettingsSection } from './ROISettingsSection';
 
 interface AppSettingsDialogProps {
   open: boolean;
@@ -54,7 +56,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings sections
-export type AppSection = 'appearance' | 'display' | 'language' | 'agent' | 'paths' | 'integrations' | 'updates' | 'notifications' | 'skills' | 'mcp';
+export type AppSection = 'appearance' | 'display' | 'language' | 'agent' | 'paths' | 'integrations' | 'updates' | 'notifications' | 'skills' | 'mcp' | 'roi';
 
 interface NavItemConfig<T extends string> {
   id: T;
@@ -71,7 +73,8 @@ const appNavItemsConfig: NavItemConfig<AppSection>[] = [
   { id: 'updates', icon: Package },
   { id: 'notifications', icon: Bell },
   { id: 'skills', icon: Zap },
-  { id: 'mcp', icon: Plug }
+  { id: 'mcp', icon: Plug },
+  { id: 'roi', icon: TrendingUp }
 ];
 
 const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
@@ -186,6 +189,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <SkillsManager />;
       case 'mcp':
         return <MCPManager />;
+      case 'roi':
+        return <ROISettingsSection />;
       default:
         return null;
     }
