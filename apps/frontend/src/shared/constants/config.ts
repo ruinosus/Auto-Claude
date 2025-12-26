@@ -46,7 +46,17 @@ export const DEFAULT_APP_SETTINGS = {
   // Beta updates opt-in (receive pre-release versions)
   betaUpdates: false,
   // Language preference (default to English)
-  language: 'en' as const
+  language: 'en' as const,
+  // ROI (Return on Investment) settings
+  roi: {
+    developerHourlyRate: 75,
+    primaryCurrency: 'USD' as const,
+    secondaryCurrency: 'BRL' as const,
+    exchangeRate: 6.20,
+    exchangeRateUpdatedAt: null,
+    autoEstimateHours: true,
+    minutesPerLine: 2.5
+  }
 };
 
 // ============================================

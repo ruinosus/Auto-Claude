@@ -5,6 +5,7 @@
 import type { NotificationSettings } from './project';
 import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './changelog';
 import type { SupportedLanguage } from '../constants/i18n';
+import type { ROISettings } from './roi';
 
 // Color theme types for multi-theme support
 export type ColorTheme = 'default' | 'dusk' | 'lime' | 'ocean' | 'retro' | 'neo' | 'forest' | 'avanade' | 'intraai';
@@ -120,6 +121,8 @@ export interface AppSettings {
   _migratedAgentProfileToAuto?: boolean;
   // Language preference for UI (i18n)
   language?: SupportedLanguage;
+  // ROI (Return on Investment) settings
+  roi?: ROISettings;
 }
 
 // Auto-Claude Source Environment Configuration (for auto-claude repo .env)

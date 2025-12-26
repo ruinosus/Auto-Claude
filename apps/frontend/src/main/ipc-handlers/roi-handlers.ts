@@ -18,7 +18,7 @@ function getProjectPath(projectId?: string): string | undefined {
 export function setupROIHandlers(): void {
   const roiService = getROIService();
 
-  // Settings handlers (global, stored in userData/roi.db)
+  // Settings handlers (global, stored in settings.json)
   ipcMain.handle(IPC_CHANNELS.ROI_GET_SETTINGS, () => {
     return roiService.getSettings();
   });
@@ -28,7 +28,7 @@ export function setupROIHandlers(): void {
     return { success: true };
   });
 
-  // Project settings handlers (stored in userData/roi.db)
+  // Project settings handlers (stored in settings.json)
   ipcMain.handle(IPC_CHANNELS.ROI_GET_PROJECT_SETTINGS, (_event, projectId: string) => {
     const projectPath = getProjectPath(projectId);
     return roiService.getProjectSettings(projectPath || projectId);
