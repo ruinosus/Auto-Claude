@@ -5,6 +5,12 @@
     "roiPercentage": "ROI",
     "successRate": "Success Rate",
     "hours": "hrs",
-    "specs": "specs"
+    "specs": "specs",
+    "chart": {
+      "title": "ROI by Spec",
+      "description": "Return on investment for recent specs",
+      "noData": "No spec data available",
+      "roiLabel": "ROI"
+    }
   }
 }
