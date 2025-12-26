@@ -98,6 +98,40 @@ BEGIN
         total_output_tokens = total_output_tokens + EXCLUDED.total_output_tokens,
         last_updated = CURRENT_TIMESTAMP;
 END;
+
+-- ROI Settings (global)
+CREATE TABLE IF NOT EXISTS roi_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    developer_hourly_rate REAL DEFAULT 75.0,
+    primary_currency TEXT DEFAULT 'USD',
+    secondary_currency TEXT DEFAULT 'BRL',
+    exchange_rate REAL DEFAULT 6.20,
+    exchange_rate_updated_at TIMESTAMP,
+    auto_estimate_hours INTEGER DEFAULT 1,
+    minutes_per_line REAL DEFAULT 2.5,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ROI per spec (with git diff and QA tracking)
+CREATE TABLE IF NOT EXISTS spec_roi (
+    spec_id TEXT PRIMARY KEY,
+    project_id TEXT,
+    estimated_business_value REAL DEFAULT 0,
+    estimated_hours_manual REAL,
+    developer_rate_override REAL,
+    actual_cost REAL DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    lines_added INTEGER DEFAULT 0,
+    lines_removed INTEGER DEFAULT 0,
+    files_changed INTEGER DEFAULT 0,
+    execution_time_seconds INTEGER DEFAULT 0,
+    qa_attempts INTEGER DEFAULT 0,
+    qa_passed INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_spec_roi_project ON spec_roi(project_id);
 """
 
 
@@ -422,6 +456,144 @@ class AnalyticsStorage:
             return None
 
         return await loop.run_in_executor(None, _get_totals)
+
+    async def get_roi_settings(self) -> Dict:
+        """Get global ROI settings."""
+        loop = asyncio.get_event_loop()
+
+        def _get():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM roi_settings WHERE id = 1")
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                return dict(row)
+            return {
+                'developer_hourly_rate': 75.0,
+                'primary_currency': 'USD',
+                'secondary_currency': 'BRL',
+                'exchange_rate': 6.20,
+                'auto_estimate_hours': True,
+                'minutes_per_line': 2.5
+            }
+
+        return await loop.run_in_executor(None, _get)
+
+    async def save_roi_settings(self, settings: Dict):
+        """Save global ROI settings."""
+        loop = asyncio.get_event_loop()
+
+        def _save():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO roi_settings (id, developer_hourly_rate, primary_currency,
+                    secondary_currency, exchange_rate, auto_estimate_hours, minutes_per_line)
+                VALUES (1, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    developer_hourly_rate = excluded.developer_hourly_rate,
+                    primary_currency = excluded.primary_currency,
+                    secondary_currency = excluded.secondary_currency,
+                    exchange_rate = excluded.exchange_rate,
+                    auto_estimate_hours = excluded.auto_estimate_hours,
+                    minutes_per_line = excluded.minutes_per_line,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                settings.get('developer_hourly_rate', 75.0),
+                settings.get('primary_currency', 'USD'),
+                settings.get('secondary_currency', 'BRL'),
+                settings.get('exchange_rate', 6.20),
+                1 if settings.get('auto_estimate_hours', True) else 0,
+                settings.get('minutes_per_line', 2.5)
+            ))
+            conn.commit()
+            conn.close()
+
+        await loop.run_in_executor(None, _save)
+
+    async def save_spec_roi(self, spec_id: str, data: Dict):
+        """Save or update spec ROI data."""
+        loop = asyncio.get_event_loop()
+
+        def _save():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO spec_roi (
+                    spec_id, project_id, estimated_business_value, estimated_hours_manual,
+                    developer_rate_override, actual_cost, total_tokens, lines_added,
+                    lines_removed, files_changed, execution_time_seconds, qa_attempts,
+                    qa_passed, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(spec_id) DO UPDATE SET
+                    project_id = excluded.project_id,
+                    estimated_business_value = excluded.estimated_business_value,
+                    estimated_hours_manual = excluded.estimated_hours_manual,
+                    developer_rate_override = excluded.developer_rate_override,
+                    actual_cost = excluded.actual_cost,
+                    total_tokens = excluded.total_tokens,
+                    lines_added = excluded.lines_added,
+                    lines_removed = excluded.lines_removed,
+                    files_changed = excluded.files_changed,
+                    execution_time_seconds = excluded.execution_time_seconds,
+                    qa_attempts = excluded.qa_attempts,
+                    qa_passed = excluded.qa_passed,
+                    completed_at = excluded.completed_at
+            """, (
+                spec_id,
+                data.get('project_id', ''),
+                data.get('estimated_business_value', 0),
+                data.get('estimated_hours_manual'),
+                data.get('developer_rate_override'),
+                data.get('actual_cost', 0),
+                data.get('total_tokens', 0),
+                data.get('lines_added', 0),
+                data.get('lines_removed', 0),
+                data.get('files_changed', 0),
+                data.get('execution_time_seconds', 0),
+                data.get('qa_attempts', 0),
+                1 if data.get('qa_passed') else 0,
+                data.get('completed_at')
+            ))
+            conn.commit()
+            conn.close()
+
+        await loop.run_in_executor(None, _save)
+
+    async def get_spec_roi(self, spec_id: str) -> Optional[Dict]:
+        """Get ROI data for a spec."""
+        loop = asyncio.get_event_loop()
+
+        def _get():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM spec_roi WHERE spec_id = ?", (spec_id,))
+            row = cursor.fetchone()
+            conn.close()
+            return dict(row) if row else None
+
+        return await loop.run_in_executor(None, _get)
+
+    async def get_all_spec_roi(self, project_id: Optional[str] = None) -> List[Dict]:
+        """Get all spec ROI data, optionally filtered by project."""
+        loop = asyncio.get_event_loop()
+
+        def _get():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            if project_id:
+                cursor.execute(
+                    "SELECT * FROM spec_roi WHERE project_id = ? ORDER BY created_at DESC",
+                    (project_id,)
+                )
+            else:
+                cursor.execute("SELECT * FROM spec_roi ORDER BY created_at DESC")
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+
+        return await loop.run_in_executor(None, _get)
 
     async def flush(self):
         """Flush any pending writes (currently no-op, writes are immediate)."""
