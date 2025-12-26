@@ -92,6 +92,13 @@ if (typeof window !== 'undefined') {
   };
 }
 
+// Mock ResizeObserver for Recharts and other components
+global.ResizeObserver = class ResizeObserver {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+};
+
 // Suppress console errors in tests unless explicitly testing error scenarios
 const originalConsoleError = console.error;
 console.error = (...args: unknown[]) => {
