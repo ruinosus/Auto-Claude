@@ -55,7 +55,7 @@ export function OverviewCards({ data }: { data: OverviewCardsData }) {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <OverviewCard
         title="Total Cost"
-        value={formatCurrency(totalCost, 4)}
+        value={formatCurrency(totalCost, 2)}
         subtitle={formatCurrencyBRL(totalCost, 2)}
         icon={DollarSign}
       />

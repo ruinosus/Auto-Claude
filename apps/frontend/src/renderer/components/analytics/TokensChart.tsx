@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts';
+import { useChartColors } from './utils/useChartColors';
 
 interface TokensDataPoint {
   spec_id: string;
@@ -20,6 +21,8 @@ interface TokensChartProps {
 }
 
 export function TokensChart({ data }: TokensChartProps) {
+  const chartColors = useChartColors();
+
   if (data.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-6">
@@ -49,24 +52,24 @@ export function TokensChart({ data }: TokensChartProps) {
           <XAxis
             dataKey="spec_id"
             className="text-xs"
-            tick={{ fill: 'hsl(var(--muted-foreground))' }}
+            tick={{ fill: chartColors.muted }}
           />
           <YAxis
             className="text-xs"
-            tick={{ fill: 'hsl(var(--muted-foreground))' }}
+            tick={{ fill: chartColors.muted }}
             tickFormatter={formatTokens}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: chartColors.card,
+              border: `1px solid ${chartColors.border}`,
               borderRadius: '8px'
             }}
             formatter={(value: number) => [formatTokens(value), '']}
           />
           <Legend />
-          <Bar dataKey="input_tokens" stackId="a" fill="hsl(var(--primary))" name="Input" />
-          <Bar dataKey="output_tokens" stackId="a" fill="hsl(var(--chart-2))" name="Output" />
+          <Bar dataKey="input_tokens" stackId="a" fill={chartColors.chart1} name="Input" />
+          <Bar dataKey="output_tokens" stackId="a" fill={chartColors.chart2} name="Output" />
         </BarChart>
       </ResponsiveContainer>
     </div>

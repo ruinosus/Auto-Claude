@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle
 } from '../ui/card';
+import { useChartColors } from './utils/useChartColors';
 
 interface SessionDurationData {
   phase: string;
@@ -64,6 +65,8 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export function SessionDurationChart({ data }: SessionDurationChartProps) {
+  const chartColors = useChartColors();
+
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -106,7 +109,7 @@ export function SessionDurationChart({ data }: SessionDurationChartProps) {
             <Tooltip content={<CustomTooltip />} />
             <Bar
               dataKey="avg_duration_seconds"
-              fill="hsl(var(--primary))"
+              fill={chartColors.chart1}
               radius={[0, 4, 4, 0]}
             />
           </BarChart>

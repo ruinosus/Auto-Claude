@@ -8,6 +8,7 @@ import {
   Tooltip
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { useChartColorArray } from './utils/useChartColors';
 
 interface ModelDistributionData {
   model: string;
@@ -19,13 +20,6 @@ interface ModelDistributionChartProps {
   data: ModelDistributionData[];
 }
 
-const COLORS = [
-  'hsl(var(--primary))',
-  'hsl(var(--chart-2))',
-  'hsl(var(--chart-3))',
-  'hsl(var(--chart-4))'
-];
-
 const renderCustomLabel = (entry: any) => {
   return `${entry.percentage.toFixed(1)}%`;
 };
@@ -33,6 +27,8 @@ const renderCustomLabel = (entry: any) => {
 export const ModelDistributionChart: React.FC<ModelDistributionChartProps> = ({
   data
 }) => {
+  const colors = useChartColorArray();
+
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -68,7 +64,7 @@ export const ModelDistributionChart: React.FC<ModelDistributionChartProps> = ({
               {data.map((entry, index) => (
                 <Cell
                   key={`cell-${entry.model}`}
-                  fill={COLORS[index % COLORS.length]}
+                  fill={colors[index % colors.length]}
                 />
               ))}
             </Pie>

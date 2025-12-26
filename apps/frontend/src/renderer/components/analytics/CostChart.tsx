@@ -9,7 +9,8 @@ import {
   ReferenceLine
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
-import { formatCurrency, formatCurrencyBRL, formatCurrencyDual } from './utils/formatters';
+import { formatCurrency } from './utils/formatters';
+import { useChartColors } from './utils/useChartColors';
 
 interface CostDataPoint {
   timestamp: string;
@@ -22,6 +23,8 @@ interface CostChartProps {
 }
 
 export function CostChart({ data, budgetLimit }: CostChartProps) {
+  const chartColors = useChartColors();
+
   if (data.length === 0) {
     return (
       <div className="rounded-lg border bg-card p-6">
@@ -53,32 +56,32 @@ export function CostChart({ data, budgetLimit }: CostChartProps) {
           <XAxis
             dataKey="date"
             className="text-xs"
-            tick={{ fill: 'hsl(var(--muted-foreground))' }}
+            tick={{ fill: chartColors.muted }}
           />
           <YAxis
             className="text-xs"
-            tick={{ fill: 'hsl(var(--muted-foreground))' }}
+            tick={{ fill: chartColors.muted }}
             tickFormatter={(value) => formatCurrency(value, 2)}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: chartColors.card,
+              border: `1px solid ${chartColors.border}`,
               borderRadius: '8px'
             }}
-            formatter={(value: number) => [formatCurrencyDual(value, 4), 'Cost']}
+            formatter={(value: number) => [formatCurrency(value, 2), 'Cost']}
           />
           <Line
             type="monotone"
             dataKey="cost"
-            stroke="hsl(var(--primary))"
+            stroke={chartColors.chart1}
             strokeWidth={2}
-            dot={{ fill: 'hsl(var(--primary))' }}
+            dot={{ fill: chartColors.chart1 }}
           />
           {budgetLimit && (
             <ReferenceLine
               y={budgetLimit}
-              stroke="hsl(var(--destructive))"
+              stroke={chartColors.destructive}
               strokeDasharray="3 3"
               label={{ value: 'Budget', position: 'right' }}
             />
