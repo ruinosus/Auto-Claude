@@ -1,6 +1,6 @@
 import { DollarSign, Cpu, Activity, PiggyBank } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
-import { formatLargeNumber } from './utils/formatters';
+import { formatLargeNumber, formatCurrencyDual, formatCurrency, formatCurrencyBRL } from './utils/formatters';
 
 interface OverviewCardProps {
   title: string;
@@ -55,7 +55,8 @@ export function OverviewCards({ data }: { data: OverviewCardsData }) {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       <OverviewCard
         title="Total Cost"
-        value={`$${totalCost.toFixed(4)}`}
+        value={formatCurrency(totalCost, 4)}
+        subtitle={formatCurrencyBRL(totalCost, 2)}
         icon={DollarSign}
       />
       <OverviewCard
@@ -71,7 +72,8 @@ export function OverviewCards({ data }: { data: OverviewCardsData }) {
       />
       <OverviewCard
         title="Budget Remaining"
-        value={`$${budgetRemaining.toFixed(2)}`}
+        value={formatCurrency(budgetRemaining, 2)}
+        subtitle={formatCurrencyBRL(budgetRemaining, 2)}
         icon={PiggyBank}
         progress={budgetProgress}
       />

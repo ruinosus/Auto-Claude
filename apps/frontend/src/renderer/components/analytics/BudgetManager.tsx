@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
+import { formatCurrencyDual } from './utils/formatters';
 
 interface BudgetManagerProps {
   currentCost: number;
@@ -47,14 +48,14 @@ export function BudgetManager({ currentCost, budgetLimit, onBudgetChange }: Budg
           {/* Current usage display */}
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Current Cost:</span>
-            <span className="font-semibold">${currentCost.toFixed(2)}</span>
+            <span className="font-semibold">{formatCurrencyDual(currentCost, 2)}</span>
           </div>
 
           {budgetLimit && (
             <>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Budget Limit:</span>
-                <span className="font-semibold">${budgetLimit.toFixed(2)}</span>
+                <span className="font-semibold">{formatCurrencyDual(budgetLimit, 2)}</span>
               </div>
 
               {/* Progress bar with color coding */}

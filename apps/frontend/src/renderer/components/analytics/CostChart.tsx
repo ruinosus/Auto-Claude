@@ -9,6 +9,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
+import { formatCurrency, formatCurrencyBRL, formatCurrencyDual } from './utils/formatters';
 
 interface CostDataPoint {
   timestamp: string;
@@ -57,7 +58,7 @@ export function CostChart({ data, budgetLimit }: CostChartProps) {
           <YAxis
             className="text-xs"
             tick={{ fill: 'hsl(var(--muted-foreground))' }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => formatCurrency(value, 2)}
           />
           <Tooltip
             contentStyle={{
@@ -65,7 +66,7 @@ export function CostChart({ data, budgetLimit }: CostChartProps) {
               border: '1px solid hsl(var(--border))',
               borderRadius: '8px'
             }}
-            formatter={(value: number) => [`$${value.toFixed(4)}`, 'Cost']}
+            formatter={(value: number) => [formatCurrencyDual(value, 4), 'Cost']}
           />
           <Line
             type="monotone"
