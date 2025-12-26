@@ -485,4 +485,35 @@ export function registerProjectHandlers(
       }
     }
   );
+
+  // ============================================
+  // Analytics Operations
+  // ============================================
+
+  // Get analytics DB path for a project
+  ipcMain.handle(
+    IPC_CHANNELS.ANALYTICS_GET_DB_PATH,
+    async (_, projectId: string): Promise<IPCResult<string | null>> => {
+      try {
+        const project = projectStore.getProject(projectId);
+        if (!project) {
+          return { success: false, error: 'Project not found' };
+        }
+
+        const dbPath = path.join(project.path, '.auto-claude', 'analytics.db');
+
+        // Check if exists
+        if (!existsSync(dbPath)) {
+          return { success: true, data: null };
+        }
+
+        return { success: true, data: dbPath };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    }
+  );
 }

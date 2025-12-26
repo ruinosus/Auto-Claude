@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAnalyticsStore } from '../../stores/analytics-store';
 import { useAnalyticsData } from '../../hooks/useAnalyticsData';
 import { OverviewCards } from './OverviewCards';
@@ -8,15 +8,81 @@ import { ModelDistributionChart } from './ModelDistributionChart';
 import { SessionDurationChart } from './SessionDurationChart';
 import { BudgetManager } from './BudgetManager';
 
-export function Analytics() {
+interface AnalyticsProps {
+  projectId?: string;
+}
+
+export function Analytics({ projectId }: AnalyticsProps) {
   const data = useAnalyticsStore((state) => state.data);
   const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
+  const [dbPath, setDbPath] = useState<string | null>(null);
+  const [isLoadingPath, setIsLoadingPath] = useState(true);
 
-  // Get analytics DB path from Electron (for now, use placeholder)
-  const dbPath = '/path/to/analytics.db'; // TODO: Get from electronAPI
+  // Fetch analytics DB path from Electron
+  useEffect(() => {
+    if (!projectId) {
+      setIsLoadingPath(false);
+      setDbPath(null);
+      return;
+    }
+
+    setIsLoadingPath(true);
+    window.electronAPI
+      .getAnalyticsDbPath(projectId)
+      .then((result) => {
+        if (result.success) {
+          setDbPath(result.data);
+        } else {
+          console.error('Failed to get analytics DB path:', result.error);
+          setDbPath(null);
+        }
+      })
+      .catch((error) => {
+        console.error('Error fetching analytics DB path:', error);
+        setDbPath(null);
+      })
+      .finally(() => {
+        setIsLoadingPath(false);
+      });
+  }, [projectId]);
 
   // Start polling
   useAnalyticsData(dbPath, 2000);
+
+  if (isLoadingPath) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">Loading Analytics...</h2>
+          <p className="text-muted-foreground">Initializing analytics dashboard</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!projectId) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">No Project Selected</h2>
+          <p className="text-muted-foreground">Please select a project to view analytics</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!dbPath) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold mb-2">No Analytics Data</h2>
+          <p className="text-muted-foreground">
+            Analytics database not found. Run some tasks to generate analytics data.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!data) {
     return (

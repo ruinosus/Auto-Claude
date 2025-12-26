@@ -693,7 +693,9 @@ export function App() {
                 {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
                   <Worktrees projectId={activeProjectId || selectedProjectId!} />
                 )}
-                {activeView === 'analytics' && <Analytics />}
+                {activeView === 'analytics' && (
+                  <Analytics projectId={activeProjectId || selectedProjectId || undefined} />
+                )}
                 {activeView === 'agent-tools' && (
                   <div className="flex h-full items-center justify-center">
                     <div className="text-center">

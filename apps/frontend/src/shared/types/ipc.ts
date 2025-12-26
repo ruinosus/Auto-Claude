@@ -592,6 +592,9 @@ export interface ElectronAPI {
 
   // GitHub API (nested for organized access)
   github: import('../../preload/api/modules/github-api').GitHubAPI;
+
+  // Analytics operations
+  getAnalyticsDbPath: (projectId: string) => Promise<IPCResult<string | null>>;
 }
 
 declare global {

@@ -133,6 +133,9 @@ export interface ProjectAPI {
     status: 'completed' | 'failed';
     output: string[];
   }>>;
+
+  // Analytics Operations
+  getAnalyticsDbPath: (projectId: string) => Promise<IPCResult<string | null>>;
 }
 
 export const createProjectAPI = (): ProjectAPI => ({
@@ -286,5 +289,9 @@ export const createProjectAPI = (): ProjectAPI => ({
     ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_LIST_EMBEDDING_MODELS, baseUrl),
 
   pullOllamaModel: (modelName: string, baseUrl?: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_PULL_MODEL, modelName, baseUrl)
+    ipcRenderer.invoke(IPC_CHANNELS.OLLAMA_PULL_MODEL, modelName, baseUrl),
+
+  // Analytics Operations
+  getAnalyticsDbPath: (projectId: string): Promise<IPCResult<string | null>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_GET_DB_PATH, projectId)
 });

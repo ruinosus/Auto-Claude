@@ -358,5 +358,8 @@ export const IPC_CHANNELS = {
   RELEASE_GET_VERSIONS: 'release:getVersions',
 
   // Release events (main -> renderer)
-  RELEASE_PROGRESS: 'release:progress'
+  RELEASE_PROGRESS: 'release:progress',
+
+  // Analytics operations
+  ANALYTICS_GET_DB_PATH: 'analytics:get-db-path'
 } as const;
