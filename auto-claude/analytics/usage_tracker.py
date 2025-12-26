@@ -10,6 +10,7 @@ from datetime import datetime
 
 from .pricing_provider import get_model_pricing
 from .storage import AnalyticsStorage
+from .otel_exporter import get_otel_exporter, is_otel_enabled
 
 
 class UsageTracker:
@@ -130,6 +131,22 @@ class UsageTracker:
         self.total_output_tokens += output_tokens
         self.total_cost_usd += cost_usd
 
+        # Export to OpenTelemetry (if enabled)
+        if is_otel_enabled():
+            try:
+                otel_exporter = get_otel_exporter()
+                otel_exporter.record_message(
+                    spec_id=self.spec_id,
+                    phase=self.phase,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cost_usd=cost_usd
+                )
+            except Exception as e:
+                # Don't fail tracking if OTel export fails
+                pass
+
     async def _track_result_message(self, message):
         """Track final result message with totals."""
         # Record final conversation totals
@@ -153,6 +170,15 @@ class UsageTracker:
             phase=self.phase,
             started_at=self.session_start
         )
+
+        # Track session start in OTel
+        if is_otel_enabled():
+            try:
+                otel_exporter = get_otel_exporter()
+                otel_exporter.start_session()
+            except Exception:
+                pass
+
         return self.conversation_id
 
     def set_subtask(self, subtask_id: str):
@@ -185,6 +211,23 @@ class UsageTracker:
         """Finalize tracking and export to JSON."""
         if not self.conversation_id:
             return
+
+        # Calculate session duration
+        duration_seconds = (datetime.utcnow() - self.session_start).total_seconds()
+
+        # Export session metrics to OTel
+        if is_otel_enabled():
+            try:
+                otel_exporter = get_otel_exporter()
+                otel_exporter.record_session(
+                    spec_id=self.spec_id,
+                    phase=self.phase,
+                    total_cost_usd=self.total_cost_usd,
+                    duration_seconds=duration_seconds
+                )
+                otel_exporter.end_session()
+            except Exception:
+                pass
 
         # Export to JSON backup
         from pathlib import Path

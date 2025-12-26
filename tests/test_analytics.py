@@ -662,5 +662,90 @@ async def test_get_analytics_storage_singleton():
     assert storage1 is storage2
 
 
+@pytest.mark.asyncio
+async def test_usage_tracker_otel_integration(storage, mock_pricing):
+    """Test UsageTracker emits OTel metrics."""
+    from unittest.mock import MagicMock, patch
+
+    mock_exporter = MagicMock()
+
+    with patch('analytics.usage_tracker.get_model_pricing', mock_pricing):
+        with patch('analytics.usage_tracker.get_otel_exporter', return_value=mock_exporter):
+            with patch('analytics.usage_tracker.is_otel_enabled', return_value=True):
+                tracker = UsageTracker(
+                    spec_id="001-test",
+                    session_num=1,
+                    phase="coding",
+                    storage=storage
+                )
+
+                await tracker.start_conversation()
+                mock_exporter.start_session.assert_called_once()
+
+                message = MagicMock()
+                message.id = "msg_otel_test"
+                message.model = "claude-sonnet-4-5"
+                message.usage = {
+                    'input_tokens': 1000,
+                    'output_tokens': 500,
+                    'cache_read_input_tokens': 0,
+                    'cache_creation_input_tokens': 0
+                }
+
+                await tracker._track_assistant_message(message)
+
+                assert mock_exporter.record_message.called
+                call_kwargs = mock_exporter.record_message.call_args[1]
+                assert call_kwargs['spec_id'] == "001-test"
+                assert call_kwargs['phase'] == "coding"
+                assert call_kwargs['model'] == "claude-sonnet-4-5"
+                assert call_kwargs['input_tokens'] == 1000
+                assert call_kwargs['output_tokens'] == 500
+
+                await tracker.finalize()
+                mock_exporter.record_session.assert_called_once()
+                mock_exporter.end_session.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_usage_tracker_otel_failure_graceful(storage, mock_pricing):
+    """Test UsageTracker continues tracking when OTel export fails."""
+    from unittest.mock import MagicMock, patch
+
+    mock_exporter = MagicMock()
+    mock_exporter.start_session.side_effect = Exception("OTel unavailable")
+    mock_exporter.record_message.side_effect = Exception("OTel unavailable")
+    mock_exporter.record_session.side_effect = Exception("OTel unavailable")
+    mock_exporter.end_session.side_effect = Exception("OTel unavailable")
+
+    with patch('analytics.usage_tracker.get_model_pricing', mock_pricing):
+        with patch('analytics.usage_tracker.get_otel_exporter', return_value=mock_exporter):
+            with patch('analytics.usage_tracker.is_otel_enabled', return_value=True):
+                tracker = UsageTracker(
+                    spec_id="001-test",
+                    session_num=1,
+                    phase="coding",
+                    storage=storage
+                )
+
+                await tracker.start_conversation()
+
+                message = MagicMock()
+                message.id = "msg_test"
+                message.model = "claude-sonnet-4-5"
+                message.usage = {
+                    'input_tokens': 1000,
+                    'output_tokens': 500,
+                    'cache_read_input_tokens': 0,
+                    'cache_creation_input_tokens': 0
+                }
+
+                await tracker._track_assistant_message(message)
+                await tracker.finalize()
+
+                assert tracker.total_input_tokens == 1000
+                assert tracker.total_output_tokens == 500
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
