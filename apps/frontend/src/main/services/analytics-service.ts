@@ -61,11 +61,13 @@ interface AnalyticsData {
 export class AnalyticsService {
   private dbPath: string | null = null;
   private pollingInterval: NodeJS.Timeout | null = null;
-  private mainWindow: BrowserWindow | null = null;
+  private getMainWindow: () => BrowserWindow | null;
   private isPolling = false;
 
   constructor(getMainWindow: () => BrowserWindow | null) {
-    this.mainWindow = getMainWindow();
+    // Store the getter function, not the window itself
+    // The window may not exist yet at construction time
+    this.getMainWindow = getMainWindow;
   }
 
   /**
@@ -119,9 +121,12 @@ export class AnalyticsService {
     try {
       const data = this.fetchAnalyticsData(this.dbPath);
 
-      // Broadcast to renderer
-      if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-        this.mainWindow.webContents.send('analytics:data-update', data);
+      // Broadcast to renderer - get window fresh each time
+      const mainWindow = this.getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('analytics:data-update', data);
+      } else {
+        console.warn('[analytics-service] No main window available to send data');
       }
     } catch (error) {
       console.error('[analytics-service] Failed to fetch analytics data:', error);
