@@ -11,6 +11,26 @@
       "description": "Return on investment for recent specs",
       "noData": "No spec data available",
       "roiLabel": "ROI"
+    },
+    "costValue": {
+      "title": "Cost vs Value",
+      "description": "Actual AI cost compared to estimated manual development cost",
+      "noData": "No spec data available",
+      "actualCost": "Actual Cost",
+      "estimatedCost": "Estimated Manual Cost",
+      "hint": "Points above the diagonal line represent positive ROI"
+    },
+    "table": {
+      "title": "Spec Details",
+      "description": "Detailed ROI metrics for each spec",
+      "noData": "No specs found",
+      "spec": "Spec",
+      "actualCost": "Actual Cost",
+      "savings": "Savings",
+      "roi": "ROI",
+      "status": "Status",
+      "linesChanged": "Lines",
+      "date": "Date"
     }
   }
 }

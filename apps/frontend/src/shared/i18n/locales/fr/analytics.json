@@ -11,6 +11,26 @@
       "description": "Retour sur investissement pour les specs recentes",
       "noData": "Aucune donnee disponible",
       "roiLabel": "ROI"
+    },
+    "costValue": {
+      "title": "Cout vs Valeur",
+      "description": "Cout IA reel compare au cout de developpement manuel estime",
+      "noData": "Aucune donnee disponible",
+      "actualCost": "Cout reel",
+      "estimatedCost": "Cout manuel estime",
+      "hint": "Les points au-dessus de la diagonale representent un ROI positif"
+    },
+    "table": {
+      "title": "Details des specs",
+      "description": "Metriques ROI detaillees pour chaque spec",
+      "noData": "Aucun spec trouve",
+      "spec": "Spec",
+      "actualCost": "Cout reel",
+      "savings": "Economies",
+      "roi": "ROI",
+      "status": "Statut",
+      "linesChanged": "Lignes",
+      "date": "Date"
     }
   }
 }
