@@ -8,6 +8,7 @@ import { TokensChart } from './TokensChart';
 import { ModelDistributionChart } from './ModelDistributionChart';
 import { SessionDurationChart } from './SessionDurationChart';
 import { BudgetManager } from './BudgetManager';
+import { FeatureUsageSection } from './FeatureUsageSection';
 import { ROIDashboard } from './roi/ROIDashboard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 
@@ -195,6 +196,14 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
                 <ModelDistributionChart data={modelDistribution} />
                 <SessionDurationChart data={sessionDurationData} />
               </div>
+
+              {/* Feature Usage Section */}
+              {data.featureUsage && data.featureUsage.length > 0 && (
+                <FeatureUsageSection
+                  featureUsage={data.featureUsage}
+                  totalCost={data.totalCost}
+                />
+              )}
 
               {/* Budget Manager */}
               <BudgetManager

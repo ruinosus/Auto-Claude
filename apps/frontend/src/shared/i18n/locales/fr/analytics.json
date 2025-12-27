@@ -7,6 +7,10 @@
     "usage": "Utilisation",
     "roi": "ROI"
   },
+  "featureUsage": {
+    "title": "Utilisation des fonctionnalites",
+    "description": "Repartition des tokens par fonctionnalite IA"
+  },
   "roi": {
     "totalSavings": "Economies totales",
     "hoursSaved": "Heures economisees",

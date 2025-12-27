@@ -7,6 +7,10 @@
     "usage": "Usage",
     "roi": "ROI"
   },
+  "featureUsage": {
+    "title": "Feature Usage",
+    "description": "Token usage breakdown by AI-powered features"
+  },
   "roi": {
     "totalSavings": "Total Savings",
     "hoursSaved": "Hours Saved",

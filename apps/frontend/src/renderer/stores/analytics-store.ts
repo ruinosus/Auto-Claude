@@ -34,12 +34,23 @@ export interface ModelDistributionData {
   percentage: number;
 }
 
+// Feature usage data (Roadmap, Ideation, Insights, etc.)
+export interface FeatureUsageData {
+  featureType: string;
+  totalSessions: number;
+  totalCost: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  lastUsed: Date | null;
+}
+
 export interface ChartData {
   costOverTime: ChartDataPoint[];
   tokensOverTime: ChartDataPoint[];
   sessionActivity: ChartDataPoint[];
   sessionDuration: SessionDurationData[];
   modelDistribution: ModelDistributionData[];
+  featureCostDistribution: ChartDataPoint[]; // Cost by feature type
 }
 
 export interface AnalyticsData {
@@ -49,6 +60,10 @@ export interface AnalyticsData {
   budgetRemaining: number;
   conversations: ConversationAnalytics[];
   chartData: ChartData;
+  // Feature usage data
+  featureUsage: FeatureUsageData[];
+  featureTotalCost: number;
+  featureTotalTokens: TokenUsage;
 }
 
 // Alert tracking

@@ -50,6 +50,29 @@ interface SessionDurationData {
   avg_duration_seconds: number;
 }
 
+// Feature usage types
+interface FeatureUsageData {
+  featureType: string;
+  totalSessions: number;
+  totalCost: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  lastUsed: Date | null;
+}
+
+interface FeatureSessionRow {
+  id: number;
+  project_id: string;
+  feature_type: string;
+  started_at: string;
+  ended_at: string | null;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  model: string | null;
+  metadata: string | null;
+}
+
 interface ModelDistributionData {
   model: string;
   count: number;
@@ -62,6 +85,7 @@ interface ChartData {
   sessionActivity: ChartDataPoint[];
   sessionDuration: SessionDurationData[];
   modelDistribution: ModelDistributionData[];
+  featureCostDistribution: ChartDataPoint[]; // Cost by feature type
 }
 
 interface AnalyticsData {
@@ -71,6 +95,10 @@ interface AnalyticsData {
   budgetRemaining: number;
   conversations: ConversationAnalytics[];
   chartData: ChartData;
+  // Feature usage data
+  featureUsage: FeatureUsageData[];
+  featureTotalCost: number;
+  featureTotalTokens: TokenUsage;
 }
 
 // Error recovery configuration
@@ -355,6 +383,76 @@ export class AnalyticsService {
         percentage: totalConversations > 0 ? (row.count / totalConversations) * 100 : 0
       }));
 
+      // ========== FEATURE USAGE DATA ==========
+
+      // Check if feature_sessions table exists
+      const tableExists = db.prepare(`
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='feature_sessions'
+      `).get() as { name: string } | undefined;
+
+      let featureUsage: FeatureUsageData[] = [];
+      let featureTotalCost = 0;
+      let featureTotalInputTokens = 0;
+      let featureTotalOutputTokens = 0;
+      let featureCostDistribution: ChartDataPoint[] = [];
+
+      if (tableExists) {
+        // Get feature usage aggregated by type
+        const featureUsageRows = db.prepare(`
+          SELECT
+            feature_type,
+            COUNT(*) as total_sessions,
+            COALESCE(SUM(total_cost_usd), 0) as total_cost,
+            COALESCE(SUM(total_input_tokens), 0) as total_input_tokens,
+            COALESCE(SUM(total_output_tokens), 0) as total_output_tokens,
+            MAX(started_at) as last_used
+          FROM feature_sessions
+          GROUP BY feature_type
+          ORDER BY total_cost DESC
+        `).all() as Array<{
+          feature_type: string;
+          total_sessions: number;
+          total_cost: number;
+          total_input_tokens: number;
+          total_output_tokens: number;
+          last_used: string | null;
+        }>;
+
+        featureUsage = featureUsageRows.map(row => ({
+          featureType: row.feature_type,
+          totalSessions: row.total_sessions,
+          totalCost: row.total_cost,
+          totalInputTokens: row.total_input_tokens,
+          totalOutputTokens: row.total_output_tokens,
+          lastUsed: row.last_used ? new Date(row.last_used) : null,
+        }));
+
+        // Get feature totals
+        const featureTotals = db.prepare(`
+          SELECT
+            COALESCE(SUM(total_cost_usd), 0) as total_cost,
+            COALESCE(SUM(total_input_tokens), 0) as total_input_tokens,
+            COALESCE(SUM(total_output_tokens), 0) as total_output_tokens
+          FROM feature_sessions
+        `).get() as {
+          total_cost: number;
+          total_input_tokens: number;
+          total_output_tokens: number;
+        };
+
+        featureTotalCost = featureTotals.total_cost;
+        featureTotalInputTokens = featureTotals.total_input_tokens;
+        featureTotalOutputTokens = featureTotals.total_output_tokens;
+
+        // Create cost distribution chart data
+        featureCostDistribution = featureUsageRows.map(row => ({
+          timestamp: new Date(), // Not really a timestamp, using for chart compatibility
+          value: row.total_cost,
+          label: row.feature_type,
+        }));
+      }
+
       // Transform conversations to ConversationAnalytics
       const conversations: ConversationAnalytics[] = conversationsRows.map((row) => {
         // Calculate duration in seconds if ended_at exists
@@ -381,11 +479,16 @@ export class AnalyticsService {
       });
 
       // Build analytics data matching store interface
+      // Combine spec costs with feature costs for total
+      const combinedTotalCost = totals.totalCost + featureTotalCost;
+      const combinedTotalInputTokens = totals.input_tokens + featureTotalInputTokens;
+      const combinedTotalOutputTokens = totals.output_tokens + featureTotalOutputTokens;
+
       const analyticsData: AnalyticsData = {
-        totalCost: totals.totalCost,
+        totalCost: combinedTotalCost,
         totalTokens: {
-          input: totals.input_tokens,
-          output: totals.output_tokens,
+          input: combinedTotalInputTokens,
+          output: combinedTotalOutputTokens,
         },
         activeSessions: activeSessions.count,
         budgetRemaining: 0, // Will be calculated from budgets in store
@@ -411,6 +514,14 @@ export class AnalyticsService {
               avg_duration_seconds: Math.round(row.avg_duration_seconds || 0),
             })),
           modelDistribution,
+          featureCostDistribution,
+        },
+        // Feature usage data
+        featureUsage,
+        featureTotalCost,
+        featureTotalTokens: {
+          input: featureTotalInputTokens,
+          output: featureTotalOutputTokens,
         },
       };
 

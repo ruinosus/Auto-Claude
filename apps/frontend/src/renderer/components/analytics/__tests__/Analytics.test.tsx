@@ -34,6 +34,10 @@ vi.mock('../BudgetManager', () => ({
   BudgetManager: () => <div data-testid="budget-manager">Budget Manager</div>
 }));
 
+vi.mock('../FeatureUsageSection', () => ({
+  FeatureUsageSection: () => <div data-testid="feature-usage">Feature Usage</div>
+}));
+
 describe('Analytics', () => {
   beforeEach(() => {
     // Reset store to default state
@@ -65,8 +69,14 @@ describe('Analytics', () => {
         chartData: {
           costOverTime: [],
           tokensOverTime: [],
-          sessionActivity: []
-        }
+          sessionActivity: [],
+          sessionDuration: [],
+          modelDistribution: [],
+          featureCostDistribution: []
+        },
+        featureUsage: [],
+        featureTotalCost: 0,
+        featureTotalTokens: { input: 0, output: 0 }
       }
     });
 
@@ -96,8 +106,14 @@ describe('Analytics', () => {
         chartData: {
           costOverTime: [],
           tokensOverTime: [],
-          sessionActivity: []
-        }
+          sessionActivity: [],
+          sessionDuration: [],
+          modelDistribution: [],
+          featureCostDistribution: []
+        },
+        featureUsage: [],
+        featureTotalCost: 0,
+        featureTotalTokens: { input: 0, output: 0 }
       }
     });
 
