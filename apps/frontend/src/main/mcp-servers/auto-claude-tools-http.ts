@@ -8,7 +8,9 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse, Application } from 'express';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ipcMain } from 'electron';
