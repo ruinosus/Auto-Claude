@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useAnalyticsStore, setAnalyticsData } from '../analytics-store';
+import { useAnalyticsStore, setAnalyticsData, AnalyticsData } from '../analytics-store';
 
 describe('Analytics Store', () => {
   beforeEach(() => {
@@ -20,7 +20,7 @@ describe('Analytics Store', () => {
   });
 
   it('updates analytics data', () => {
-    const mockData = {
+    const mockData: AnalyticsData = {
       totalCost: 1.5,
       totalTokens: { input: 10000, output: 5000 },
       activeSessions: 2,
@@ -29,8 +29,14 @@ describe('Analytics Store', () => {
       chartData: {
         costOverTime: [],
         tokensOverTime: [],
-        sessionActivity: []
-      }
+        sessionActivity: [],
+        sessionDuration: [],
+        modelDistribution: [],
+        featureCostDistribution: []
+      },
+      featureUsage: [],
+      featureTotalCost: 0,
+      featureTotalTokens: { input: 0, output: 0 }
     };
 
     setAnalyticsData(mockData);

@@ -72,12 +72,12 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
 
     setBudgetLimit(newBudget);
     window.electronAPI.saveBudget(projectId, newBudget)
-      .then((result) => {
+      .then((result: { success: boolean; error?: string }) => {
         if (!result.success) {
           console.error('Failed to save budget:', result.error);
         }
       })
-      .catch((error) => {
+      .catch((error: Error) => {
         console.error('Error saving budget:', error);
       });
   };

@@ -45,6 +45,12 @@ export function useAnalyticsData(dbPath: string | null) {
             ...point,
             timestamp: new Date(point.timestamp),
           })),
+          sessionDuration: data.chartData.sessionDuration || [],
+          modelDistribution: data.chartData.modelDistribution || [],
+          featureCostDistribution: (data.chartData.featureCostDistribution || []).map((point) => ({
+            ...point,
+            timestamp: new Date(point.timestamp),
+          })),
         },
       };
 

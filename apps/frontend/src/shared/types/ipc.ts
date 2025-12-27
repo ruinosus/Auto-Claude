@@ -646,6 +646,10 @@ export interface ElectronAPI {
   startAnalyticsPolling: (dbPath: string) => void;
   stopAnalyticsPolling: () => void;
 
+  // Budget operations
+  getBudget: (projectId: string) => Promise<IPCResult<number | undefined>>;
+  saveBudget: (projectId: string, budget: number | null) => Promise<IPCResult>;
+
   // Analytics event listeners
   onAnalyticsDataUpdate: (callback: (data: any) => void) => () => void;
 

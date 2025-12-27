@@ -202,6 +202,10 @@ const browserMockAPI: ElectronAPI = {
   stopAnalyticsPolling: () => {},
   onAnalyticsDataUpdate: () => () => {},
 
+  // Budget operations
+  getBudget: async () => ({ success: true, data: undefined }),
+  saveBudget: async () => ({ success: true }),
+
   // ROI API
   roi: {
     getSettings: async () => ({
