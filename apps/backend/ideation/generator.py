@@ -12,6 +12,7 @@ Uses Claude agents to generate ideas of different types:
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Add auto-claude to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -19,6 +20,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from client import create_client
 from phase_config import get_thinking_budget
 from ui import print_status
+from debug import debug, debug_error
+
+# Import feature tracker for token tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_IDEATION,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 # Ideation types
 IDEATION_TYPES = [
@@ -68,6 +81,21 @@ class IdeationGenerator:
         self.max_ideas_per_type = max_ideas_per_type
         self.prompts_dir = Path(__file__).parent.parent / "prompts"
 
+        # Generate a project ID from the project directory
+        self.project_id = self.project_dir.name
+
+        # Feature tracker for token usage
+        self.tracker = None
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=self.project_id,
+                feature_type=FEATURE_IDEATION if TRACKING_AVAILABLE else "ideation",
+                db_path=db_path,
+                metadata={"model": self.model, "thinking_level": self.thinking_level}
+            )
+            debug("ideation_generator", "Feature tracker initialized", project_id=self.project_id)
+
     async def run_agent(
         self,
         prompt_file: str,
@@ -98,6 +126,15 @@ class IdeationGenerator:
             max_thinking_tokens=self.thinking_budget,
         )
 
+        # Start tracking session if tracker is available
+        if self.tracker:
+            try:
+                self.tracker.update_metadata("prompt_file", prompt_file)
+                await self.tracker.start_session()
+                debug("ideation_generator", "Feature tracking session started")
+            except Exception as e:
+                debug_error("ideation_generator", f"Failed to start tracking session: {e}")
+
         try:
             async with client:
                 await client.query(prompt)
@@ -105,6 +142,13 @@ class IdeationGenerator:
                 response_text = ""
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
+
+                    # Track message usage if tracker is available
+                    if self.tracker and msg_type == "AssistantMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception as e:
+                            debug_error("ideation_generator", f"Failed to track message: {e}")
 
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
@@ -117,10 +161,39 @@ class IdeationGenerator:
                             ):
                                 print(f"\n[Tool: {block.name}]", flush=True)
 
+                    # Track result message for final totals
+                    if self.tracker and msg_type == "ResultMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception as e:
+                            debug_error("ideation_generator", f"Failed to track result: {e}")
+
                 print()
+
+                # Finalize tracking
+                if self.tracker:
+                    try:
+                        await self.tracker.finalize()
+                        totals = self.tracker.get_totals()
+                        debug(
+                            "ideation_generator",
+                            "Feature tracking finalized",
+                            total_cost_usd=totals.get("total_cost_usd", 0),
+                            total_input_tokens=totals.get("total_input_tokens", 0),
+                            total_output_tokens=totals.get("total_output_tokens", 0),
+                        )
+                    except Exception as e:
+                        debug_error("ideation_generator", f"Failed to finalize tracking: {e}")
+
                 return True, response_text
 
         except Exception as e:
+            # Still try to finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
             return False, str(e)
 
     async def run_recovery_agent(
@@ -191,12 +264,27 @@ Write the fixed JSON to the file now.
             max_thinking_tokens=self.thinking_budget,
         )
 
+        # Start tracking session if tracker is available
+        if self.tracker:
+            try:
+                self.tracker.update_metadata("recovery_type", ideation_type)
+                await self.tracker.start_session()
+            except Exception as e:
+                debug_error("ideation_generator", f"Failed to start recovery tracking: {e}")
+
         try:
             async with client:
                 await client.query(recovery_prompt)
 
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
+
+                    # Track message usage if tracker is available
+                    if self.tracker and msg_type == "AssistantMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
 
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
@@ -208,11 +296,32 @@ Write the fixed JSON to the file now.
                             ):
                                 print(f"\n[Recovery Tool: {block.name}]", flush=True)
 
+                    # Track result message for final totals
+                    if self.tracker and msg_type == "ResultMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
                 print()
+
+                # Finalize tracking
+                if self.tracker:
+                    try:
+                        await self.tracker.finalize()
+                    except Exception:
+                        pass
+
                 return True
 
         except Exception as e:
             print_status(f"Recovery agent error: {e}", "error")
+            # Still try to finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
             return False
 
     def get_prompt_file(self, ideation_type: str) -> str | None:

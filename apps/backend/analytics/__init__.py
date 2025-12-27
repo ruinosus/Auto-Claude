@@ -16,6 +16,18 @@ from .storage import (
 
 from .usage_tracker import UsageTracker
 
+from .feature_tracker import (
+    FeatureUsageTracker,
+    create_feature_tracker,
+    FEATURE_ROADMAP,
+    FEATURE_IDEATION,
+    FEATURE_INSIGHTS,
+    FEATURE_PR_REVIEW,
+    FEATURE_ISSUE_TRIAGE,
+    FEATURE_AUTOFIX,
+    FEATURE_CHANGELOG,
+)
+
 from .roi_tracker import ROITracker, create_roi_tracker
 
 from .pricing_provider import (
@@ -36,8 +48,18 @@ __all__ = [
     "AnalyticsStorage",
     "get_analytics_storage",
     "is_tracking_enabled",
-    # Tracker
+    # Usage Tracker (spec-based)
     "UsageTracker",
+    # Feature Tracker (feature-based)
+    "FeatureUsageTracker",
+    "create_feature_tracker",
+    "FEATURE_ROADMAP",
+    "FEATURE_IDEATION",
+    "FEATURE_INSIGHTS",
+    "FEATURE_PR_REVIEW",
+    "FEATURE_ISSUE_TRIAGE",
+    "FEATURE_AUTOFIX",
+    "FEATURE_CHANGELOG",
     # ROI Tracker
     "ROITracker",
     "create_roi_tracker",

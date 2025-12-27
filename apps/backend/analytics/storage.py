@@ -132,6 +132,89 @@ CREATE TABLE IF NOT EXISTS spec_roi (
 );
 
 CREATE INDEX IF NOT EXISTS idx_spec_roi_project ON spec_roi(project_id);
+
+-- Feature sessions table (for roadmap, ideation, insights, github, changelog, etc.)
+-- Separate from conversations to avoid phase constraint and enable feature-specific tracking
+CREATE TABLE IF NOT EXISTS feature_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    feature_type TEXT NOT NULL,  -- roadmap, ideation, insights, pr_review, issue_triage, changelog, autofix
+    started_at TIMESTAMP NOT NULL,
+    ended_at TIMESTAMP,
+    total_cost_usd REAL DEFAULT 0.0,
+    total_input_tokens INTEGER DEFAULT 0,
+    total_output_tokens INTEGER DEFAULT 0,
+    model TEXT,
+    metadata TEXT,  -- JSON for feature-specific data
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_feature_sessions_project ON feature_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_feature_sessions_type ON feature_sessions(feature_type);
+CREATE INDEX IF NOT EXISTS idx_feature_sessions_started ON feature_sessions(started_at);
+
+-- Feature messages table (similar to messages but for feature sessions)
+CREATE TABLE IF NOT EXISTS feature_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    message_id TEXT UNIQUE NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    cost_usd REAL NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES feature_sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_feature_messages_session ON feature_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_feature_messages_timestamp ON feature_messages(timestamp);
+
+-- Feature totals (materialized view for feature usage)
+CREATE TABLE IF NOT EXISTS feature_totals (
+    project_id TEXT NOT NULL,
+    feature_type TEXT NOT NULL,
+    total_sessions INTEGER DEFAULT 0,
+    total_cost_usd REAL DEFAULT 0.0,
+    total_input_tokens INTEGER DEFAULT 0,
+    total_output_tokens INTEGER DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (project_id, feature_type)
+);
+
+-- Trigger to update feature_totals
+CREATE TRIGGER IF NOT EXISTS update_feature_totals_after_session
+AFTER UPDATE OF total_cost_usd, total_input_tokens, total_output_tokens ON feature_sessions
+FOR EACH ROW
+WHEN NEW.ended_at IS NOT NULL
+BEGIN
+    INSERT INTO feature_totals (
+        project_id,
+        feature_type,
+        total_sessions,
+        total_cost_usd,
+        total_input_tokens,
+        total_output_tokens,
+        last_updated
+    )
+    VALUES (
+        NEW.project_id,
+        NEW.feature_type,
+        1,
+        NEW.total_cost_usd,
+        NEW.total_input_tokens,
+        NEW.total_output_tokens,
+        CURRENT_TIMESTAMP
+    )
+    ON CONFLICT(project_id, feature_type) DO UPDATE SET
+        total_sessions = total_sessions + 1,
+        total_cost_usd = total_cost_usd + EXCLUDED.total_cost_usd,
+        total_input_tokens = total_input_tokens + EXCLUDED.total_input_tokens,
+        total_output_tokens = total_output_tokens + EXCLUDED.total_output_tokens,
+        last_updated = CURRENT_TIMESTAMP;
+END;
 """
 
 
@@ -598,6 +681,322 @@ class AnalyticsStorage:
     async def flush(self):
         """Flush any pending writes (currently no-op, writes are immediate)."""
         pass
+
+    # ========== Feature Session Methods ==========
+
+    async def create_feature_session(
+        self,
+        project_id: str,
+        feature_type: str,
+        started_at: datetime,
+        model: Optional[str] = None,
+        metadata: Optional[Dict] = None
+    ) -> int:
+        """Create new feature session record. Returns session_id."""
+        loop = asyncio.get_event_loop()
+
+        def _create():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT INTO feature_sessions (project_id, feature_type, started_at, model, metadata)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                project_id,
+                feature_type,
+                started_at.isoformat(),
+                model,
+                json.dumps(metadata) if metadata else None
+            ))
+
+            session_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            return session_id
+
+        return await loop.run_in_executor(None, _create)
+
+    async def record_feature_message(
+        self,
+        session_id: int,
+        message_id: str,
+        timestamp: datetime,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_tokens: int,
+        cache_creation_tokens: int,
+        cost_usd: float
+    ):
+        """Record individual feature message usage."""
+        loop = asyncio.get_event_loop()
+
+        def _record():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            try:
+                cursor.execute("""
+                    INSERT INTO feature_messages (
+                        session_id, message_id, timestamp,
+                        model, input_tokens, output_tokens,
+                        cache_read_tokens, cache_creation_tokens, cost_usd
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    session_id, message_id, timestamp.isoformat(),
+                    model, input_tokens, output_tokens,
+                    cache_read_tokens, cache_creation_tokens, cost_usd
+                ))
+
+                conn.commit()
+            except sqlite3.IntegrityError:
+                # Duplicate message_id (already tracked)
+                pass
+            finally:
+                conn.close()
+
+        await loop.run_in_executor(None, _record)
+
+    async def update_feature_session_totals(
+        self,
+        session_id: int,
+        ended_at: datetime,
+        total_cost_usd: float,
+        total_input_tokens: int,
+        total_output_tokens: int,
+        model: Optional[str] = None,
+        metadata: Optional[Dict] = None
+    ):
+        """Update feature session with final totals."""
+        loop = asyncio.get_event_loop()
+
+        def _update():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            if model and metadata:
+                cursor.execute("""
+                    UPDATE feature_sessions
+                    SET
+                        ended_at = ?,
+                        total_cost_usd = ?,
+                        total_input_tokens = ?,
+                        total_output_tokens = ?,
+                        model = ?,
+                        metadata = ?
+                    WHERE id = ?
+                """, (
+                    ended_at.isoformat(), total_cost_usd, total_input_tokens,
+                    total_output_tokens, model, json.dumps(metadata), session_id
+                ))
+            elif model:
+                cursor.execute("""
+                    UPDATE feature_sessions
+                    SET
+                        ended_at = ?,
+                        total_cost_usd = ?,
+                        total_input_tokens = ?,
+                        total_output_tokens = ?,
+                        model = ?
+                    WHERE id = ?
+                """, (ended_at.isoformat(), total_cost_usd, total_input_tokens, total_output_tokens, model, session_id))
+            elif metadata:
+                cursor.execute("""
+                    UPDATE feature_sessions
+                    SET
+                        ended_at = ?,
+                        total_cost_usd = ?,
+                        total_input_tokens = ?,
+                        total_output_tokens = ?,
+                        metadata = ?
+                    WHERE id = ?
+                """, (ended_at.isoformat(), total_cost_usd, total_input_tokens, total_output_tokens, json.dumps(metadata), session_id))
+            else:
+                cursor.execute("""
+                    UPDATE feature_sessions
+                    SET
+                        ended_at = ?,
+                        total_cost_usd = ?,
+                        total_input_tokens = ?,
+                        total_output_tokens = ?
+                    WHERE id = ?
+                """, (ended_at.isoformat(), total_cost_usd, total_input_tokens, total_output_tokens, session_id))
+
+            conn.commit()
+            conn.close()
+
+        await loop.run_in_executor(None, _update)
+
+    async def get_feature_totals(self, project_id: str, feature_type: Optional[str] = None) -> List[Dict]:
+        """Get aggregated feature totals for a project."""
+        loop = asyncio.get_event_loop()
+
+        def _get_totals():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            if feature_type:
+                cursor.execute("""
+                    SELECT * FROM feature_totals
+                    WHERE project_id = ? AND feature_type = ?
+                """, (project_id, feature_type))
+            else:
+                cursor.execute("""
+                    SELECT * FROM feature_totals
+                    WHERE project_id = ?
+                    ORDER BY feature_type
+                """, (project_id,))
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            return [dict(row) for row in rows]
+
+        return await loop.run_in_executor(None, _get_totals)
+
+    async def get_feature_sessions(
+        self,
+        project_id: str,
+        feature_type: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Dict]:
+        """Get feature sessions for a project."""
+        loop = asyncio.get_event_loop()
+
+        def _get_sessions():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            if feature_type:
+                cursor.execute("""
+                    SELECT * FROM feature_sessions
+                    WHERE project_id = ? AND feature_type = ?
+                    ORDER BY started_at DESC
+                    LIMIT ?
+                """, (project_id, feature_type, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM feature_sessions
+                    WHERE project_id = ?
+                    ORDER BY started_at DESC
+                    LIMIT ?
+                """, (project_id, limit))
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            result = []
+            for row in rows:
+                row_dict = dict(row)
+                # Parse metadata JSON if present
+                if row_dict.get('metadata'):
+                    try:
+                        row_dict['metadata'] = json.loads(row_dict['metadata'])
+                    except json.JSONDecodeError:
+                        pass
+                result.append(row_dict)
+            return result
+
+        return await loop.run_in_executor(None, _get_sessions)
+
+    async def get_all_feature_totals(self) -> List[Dict]:
+        """Get all feature totals across all projects."""
+        loop = asyncio.get_event_loop()
+
+        def _get_all():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT
+                    feature_type,
+                    SUM(total_sessions) as total_sessions,
+                    SUM(total_cost_usd) as total_cost_usd,
+                    SUM(total_input_tokens) as total_input_tokens,
+                    SUM(total_output_tokens) as total_output_tokens,
+                    MAX(last_updated) as last_updated
+                FROM feature_totals
+                GROUP BY feature_type
+                ORDER BY total_cost_usd DESC
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            return [dict(row) for row in rows]
+
+        return await loop.run_in_executor(None, _get_all)
+
+    async def export_feature_sessions_to_json(self, project_id: str, output_path: Path):
+        """Export feature sessions data to JSON file."""
+        loop = asyncio.get_event_loop()
+
+        def _export():
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Get all feature sessions for this project
+            cursor.execute("""
+                SELECT * FROM feature_sessions
+                WHERE project_id = ?
+                ORDER BY started_at DESC
+            """, (project_id,))
+
+            sessions = cursor.fetchall()
+
+            session_data = []
+            total_cost = 0.0
+
+            for sess in sessions:
+                sess_dict = dict(sess)
+                # Parse metadata
+                if sess_dict.get('metadata'):
+                    try:
+                        sess_dict['metadata'] = json.loads(sess_dict['metadata'])
+                    except json.JSONDecodeError:
+                        pass
+
+                # Get messages for this session
+                cursor.execute("""
+                    SELECT * FROM feature_messages
+                    WHERE session_id = ?
+                    ORDER BY timestamp
+                """, (sess['id'],))
+
+                messages = cursor.fetchall()
+                sess_dict['messages'] = [dict(msg) for msg in messages]
+                session_data.append(sess_dict)
+                total_cost += sess['total_cost_usd'] or 0.0
+
+            # Get totals
+            cursor.execute("""
+                SELECT * FROM feature_totals
+                WHERE project_id = ?
+            """, (project_id,))
+            totals = [dict(row) for row in cursor.fetchall()]
+
+            # Write JSON
+            json_data = {
+                "project_id": project_id,
+                "total_cost_usd": total_cost,
+                "total_sessions": len(session_data),
+                "updated_at": datetime.utcnow().isoformat(),
+                "sessions": session_data,
+                "totals_by_feature": totals
+            }
+
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Atomic write using temp file
+            temp_path = output_path.with_suffix('.json.tmp')
+            with open(temp_path, 'w') as f:
+                json.dump(json_data, f, indent=2)
+
+            # Atomic rename
+            temp_path.replace(output_path)
+
+            conn.close()
+
+        await loop.run_in_executor(None, _export)
 
 
 # Storage instances per database path

@@ -40,6 +40,17 @@ from debug import (
     debug_success,
 )
 
+# Import feature tracker for token tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_INSIGHTS,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
+
 
 def load_project_context(project_dir: str) -> str:
     """Load project context for the AI."""
@@ -176,6 +187,27 @@ Current question: {message}"""
         thinking_level=thinking_level,
     )
 
+    # Initialize feature tracker for token usage
+    tracker = None
+    if TRACKING_AVAILABLE and is_tracking_enabled():
+        project_id = project_path.name
+        db_path = str(project_path / ".auto-claude" / "analytics.db")
+        tracker = create_feature_tracker(
+            project_id=project_id,
+            feature_type=FEATURE_INSIGHTS,
+            db_path=db_path,
+            metadata={"model": model, "thinking_level": thinking_level}
+        )
+        debug("insights_runner", "Feature tracker initialized", project_id=project_id)
+
+    # Start tracking session if tracker is available
+    if tracker:
+        try:
+            await tracker.start_session()
+            debug("insights_runner", "Feature tracking session started")
+        except Exception as e:
+            debug_error("insights_runner", f"Failed to start tracking session: {e}")
+
     try:
         # Create Claude SDK client with appropriate settings for insights
         # Pass Azure Foundry env vars to SDK subprocess
@@ -210,6 +242,13 @@ Current question: {message}"""
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
                 debug_detailed("insights_runner", "Received message", msg_type=msg_type)
+
+                # Track message usage if tracker is available
+                if tracker and msg_type == "AssistantMessage":
+                    try:
+                        await tracker.track_message(msg)
+                    except Exception as e:
+                        debug_error("insights_runner", f"Failed to track message: {e}")
 
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
@@ -260,6 +299,13 @@ Current question: {message}"""
                         )
                         current_tool = None
 
+                # Track result message for final totals
+                if tracker and msg_type == "ResultMessage":
+                    try:
+                        await tracker.track_message(msg)
+                    except Exception as e:
+                        debug_error("insights_runner", f"Failed to track result: {e}")
+
             # Ensure we have a newline at the end
             if response_text and not response_text.endswith("\n"):
                 print()
@@ -270,11 +316,32 @@ Current question: {message}"""
                 response_length=len(response_text),
             )
 
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                    totals = tracker.get_totals()
+                    debug(
+                        "insights_runner",
+                        "Feature tracking finalized",
+                        total_cost_usd=totals.get("total_cost_usd", 0),
+                        total_input_tokens=totals.get("total_input_tokens", 0),
+                        total_output_tokens=totals.get("total_output_tokens", 0),
+                    )
+                except Exception as e:
+                    debug_error("insights_runner", f"Failed to finalize tracking: {e}")
+
     except Exception as e:
         print(f"Error using Claude SDK: {e}", file=sys.stderr)
         import traceback
 
         traceback.print_exc(file=sys.stderr)
+        # Still try to finalize tracking on error
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
         run_simple(project_dir, message, history)
 
 
