@@ -7,8 +7,8 @@ import { AgentEvents } from './agent-events';
 import { AgentProcessManager } from './agent-process';
 import { RoadmapConfig } from './types';
 import type { IdeationConfig, Idea } from '../../shared/types';
-import { MODEL_ID_MAP } from '../../shared/constants';
 import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from '../rate-limit-detector';
+import { resolveModelId } from '../utils/model-resolver';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { parsePythonCommand } from '../python-detector';
 import { transformIdeaFromSnakeCase, transformSessionFromSnakeCase } from '../ipc-handlers/ideation/transformers';
@@ -93,9 +93,11 @@ export class AgentQueueManager {
     }
 
     // Add model and thinking level from config
+    // Use resolveModelId to get correct model for Azure Foundry vs direct API
     if (config?.model) {
-      const modelId = MODEL_ID_MAP[config.model] || MODEL_ID_MAP['opus'];
+      const modelId = resolveModelId(config.model, 'opus');
       args.push('--model', modelId);
+      debugLog('[Agent Queue] Resolved roadmap model:', { shortName: config.model, resolvedId: modelId });
     }
     if (config?.thinkingLevel) {
       args.push('--thinking-level', config.thinkingLevel);
@@ -169,9 +171,11 @@ export class AgentQueueManager {
     }
 
     // Add model and thinking level from config
+    // Use resolveModelId to get correct model for Azure Foundry vs direct API
     if (config.model) {
-      const modelId = MODEL_ID_MAP[config.model] || MODEL_ID_MAP['opus'];
+      const modelId = resolveModelId(config.model, 'opus');
       args.push('--model', modelId);
+      debugLog('[Agent Queue] Resolved ideation model:', { shortName: config.model, resolvedId: modelId });
     }
     if (config.thinkingLevel) {
       args.push('--thinking-level', config.thinkingLevel);

@@ -11,8 +11,9 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { IPC_CHANNELS, MODEL_ID_MAP, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
+import { IPC_CHANNELS, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
 import { getGitHubConfig } from './utils';
+import { resolveModelId } from '../../utils/model-resolver';
 import { readSettingsFile } from '../../settings-utils';
 import { getAugmentedEnv } from '../../env-utils';
 import type { Project, AppSettings } from '../../../shared/types';
@@ -200,8 +201,8 @@ function getGitHubIssuesSettings(): { model: string; thinkingLevel: string } {
   const modelShort = featureModels.githubIssues ?? DEFAULT_FEATURE_MODELS.githubIssues;
   const thinkingLevel = featureThinking.githubIssues ?? DEFAULT_FEATURE_THINKING.githubIssues;
 
-  // Convert model short name to full model ID
-  const model = MODEL_ID_MAP[modelShort] ?? MODEL_ID_MAP['opus'];
+  // Convert model short name to full model ID (or Azure Foundry deployment name)
+  const model = resolveModelId(modelShort, 'opus');
 
   debugLog('GitHub Issues settings', { modelShort, model, thinkingLevel });
 

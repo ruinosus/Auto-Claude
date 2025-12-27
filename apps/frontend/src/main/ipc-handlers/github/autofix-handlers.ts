@@ -121,7 +121,7 @@ function getAutoFixConfig(project: Project): AutoFixConfig {
       labels: data.auto_fix_labels ?? ['auto-fix'],
       requireHumanApproval: data.require_human_approval ?? true,
       botToken: data.bot_token,
-      model: data.model ?? 'claude-sonnet-4-20250514',
+      model: data.model ?? 'sonnet',
       thinkingLevel: data.thinking_level ?? 'medium',
     };
   } catch {
@@ -132,7 +132,7 @@ function getAutoFixConfig(project: Project): AutoFixConfig {
     enabled: false,
     labels: ['auto-fix'],
     requireHumanApproval: true,
-    model: 'claude-sonnet-4-20250514',
+    model: 'sonnet',  // Use short name, resolved to full ID or Azure deployment name when needed
     thinkingLevel: 'medium',
   };
 }

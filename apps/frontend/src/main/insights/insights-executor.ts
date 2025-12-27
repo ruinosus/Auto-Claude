@@ -10,9 +10,9 @@ import type {
   InsightsToolUsage,
   InsightsModelConfig
 } from '../../shared/types';
-import { MODEL_ID_MAP } from '../../shared/constants';
 import { InsightsConfig } from './config';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
+import { resolveModelId } from '../utils/model-resolver';
 
 /**
  * Message processor result
@@ -111,10 +111,12 @@ export class InsightsExecutor extends EventEmitter {
     ];
 
     // Add model config if provided
+    // Use resolveModelId to get correct model for Azure Foundry vs direct API
     if (modelConfig) {
-      const modelId = MODEL_ID_MAP[modelConfig.model] || MODEL_ID_MAP['sonnet'];
+      const modelId = resolveModelId(modelConfig.model, 'sonnet');
       args.push('--model', modelId);
       args.push('--thinking-level', modelConfig.thinkingLevel);
+      console.warn('[Insights] Resolved model:', { shortName: modelConfig.model, resolvedId: modelId });
     }
 
     // Spawn Python process

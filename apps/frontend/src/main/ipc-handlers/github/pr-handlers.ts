@@ -12,8 +12,9 @@ import { ipcMain } from 'electron';
 import type { BrowserWindow } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { IPC_CHANNELS, MODEL_ID_MAP, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
+import { IPC_CHANNELS, DEFAULT_FEATURE_MODELS, DEFAULT_FEATURE_THINKING } from '../../../shared/constants';
 import { getGitHubConfig, githubFetch } from './utils';
+import { resolveModelId } from '../../utils/model-resolver';
 import { readSettingsFile } from '../../settings-utils';
 import { getAugmentedEnv } from '../../env-utils';
 import type { Project, AppSettings } from '../../../shared/types';
@@ -228,8 +229,8 @@ function getGitHubPRSettings(): { model: string; thinkingLevel: string } {
   const modelShort = featureModels.githubPrs ?? DEFAULT_FEATURE_MODELS.githubPrs;
   const thinkingLevel = featureThinking.githubPrs ?? DEFAULT_FEATURE_THINKING.githubPrs;
 
-  // Convert model short name to full model ID
-  const model = MODEL_ID_MAP[modelShort] ?? MODEL_ID_MAP['opus'];
+  // Convert model short name to full model ID (or Azure Foundry deployment name)
+  const model = resolveModelId(modelShort, 'opus');
 
   debugLog('GitHub PR settings', { modelShort, model, thinkingLevel });
 

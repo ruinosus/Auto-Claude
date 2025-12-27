@@ -15,11 +15,19 @@ export const AVAILABLE_MODELS = [
   { value: 'haiku', label: 'Claude Haiku 4.5' }
 ] as const;
 
-// Maps model shorthand to actual Claude model IDs
+// Maps model shorthand to actual Claude model IDs (for direct Anthropic API)
 export const MODEL_ID_MAP: Record<string, string> = {
   opus: 'claude-opus-4-5-20251101',
   sonnet: 'claude-sonnet-4-5-20250929',
   haiku: 'claude-haiku-4-5-20251001'
+} as const;
+
+// Maps model shorthand to Azure Foundry deployment names
+// Azure Foundry deployments use shorter names without date suffixes
+export const AZURE_FOUNDRY_MODEL_MAP: Record<string, string> = {
+  opus: 'claude-opus-4-5',
+  sonnet: 'claude-sonnet-4-5',
+  haiku: 'claude-haiku-4-5'
 } as const;
 
 // Maps thinking levels to budget tokens (null = no extended thinking)
