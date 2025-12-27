@@ -368,6 +368,8 @@ export const IPC_CHANNELS = {
   ANALYTICS_GET_DB_PATH: 'analytics:get-db-path',
   ANALYTICS_START_POLLING: 'analytics:start-polling',
   ANALYTICS_STOP_POLLING: 'analytics:stop-polling',
+  ANALYTICS_INIT_TRACKING: 'analytics:init-tracking',
+  ANALYTICS_GET_TRACKING_STATUS: 'analytics:get-tracking-status',
 
   // Analytics events (main -> renderer)
   ANALYTICS_DATA_UPDATE: 'analytics:data-update',

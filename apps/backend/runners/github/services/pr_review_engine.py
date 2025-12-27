@@ -10,7 +10,18 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_PR_REVIEW,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 try:
     from ..context_gatherer import PRContext
@@ -64,6 +75,18 @@ class PRReviewEngine:
         self.progress_callback = progress_callback
         self.prompt_manager = PromptManager()
         self.parser = ResponseParser()
+
+        # Initialize analytics tracker
+        self.tracker = None
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_PR_REVIEW,
+                db_path=db_path,
+                metadata={"model": config.model}
+            )
 
     def _report_progress(self, phase: str, progress: int, message: str, **kwargs):
         """Report progress if callback is set."""
@@ -233,6 +256,14 @@ class PRReviewEngine:
             agent_type="pr_reviewer",  # Read-only - no bash, no edits
         )
 
+        # Start tracking session
+        if self.tracker:
+            try:
+                self.tracker.update_metadata("pass", review_pass.value)
+                await self.tracker.start_session()
+            except Exception:
+                pass
+
         result_text = ""
         try:
             async with client:
@@ -240,10 +271,32 @@ class PRReviewEngine:
 
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
+
+                    # Track message for analytics
+                    if self.tracker and msg_type == "AssistantMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+
+                    # Track result message
+                    if self.tracker and msg_type == "ResultMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
+            # Finalize tracking
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
 
             if review_pass == ReviewPass.QUICK_SCAN:
                 return self.parser.parse_scan_result(result_text)
@@ -253,6 +306,13 @@ class PRReviewEngine:
         except Exception as e:
             import logging
             import traceback
+
+            # Still finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
 
             logger = logging.getLogger(__name__)
             error_msg = f"Review pass {review_pass.value} failed: {e}"
@@ -497,17 +557,50 @@ class PRReviewEngine:
             agent_type="pr_reviewer",  # Read-only - no bash, no edits
         )
 
+        # Start tracking session
+        if self.tracker:
+            try:
+                self.tracker.update_metadata("pass", "structural")
+                await self.tracker.start_session()
+            except Exception:
+                pass
+
         result_text = ""
         try:
             async with client:
                 await client.query(full_prompt)
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
+
+                    # Track message for analytics
+                    if self.tracker and msg_type == "AssistantMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+
+                    if self.tracker and msg_type == "ResultMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
         except Exception as e:
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
             print(f"[AI] Structural pass error: {e}", flush=True)
 
         return result_text
@@ -553,17 +646,50 @@ class PRReviewEngine:
             agent_type="pr_reviewer",  # Read-only - no bash, no edits
         )
 
+        # Start tracking session
+        if self.tracker:
+            try:
+                self.tracker.update_metadata("pass", "ai_triage")
+                await self.tracker.start_session()
+            except Exception:
+                pass
+
         result_text = ""
         try:
             async with client:
                 await client.query(full_prompt)
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
+
+                    # Track message for analytics
+                    if self.tracker and msg_type == "AssistantMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+
+                    if self.tracker and msg_type == "ResultMessage":
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
         except Exception as e:
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
             print(f"[AI] AI triage pass error: {e}", flush=True)
 
         return result_text

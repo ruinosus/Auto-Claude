@@ -11,7 +11,7 @@ from pathlib import Path
 from client import create_client
 from debug import debug, debug_error, debug_section, debug_success
 from init import init_auto_claude_dir
-from phase_config import get_thinking_budget
+from phase_config import get_thinking_budget, resolve_model_id
 from ui import Icons, box, icon, muted, print_section, print_status
 
 from .competitor_analyzer import CompetitorAnalyzer
@@ -27,14 +27,15 @@ class RoadmapOrchestrator:
         self,
         project_dir: Path,
         output_dir: Path | None = None,
-        model: str = "claude-opus-4-5-20251101",
+        model: str = "claude-sonnet-4-5-20250929",
         thinking_level: str = "medium",
         refresh: bool = False,
         enable_competitor_analysis: bool = False,
         refresh_competitor_analysis: bool = False,
     ):
         self.project_dir = Path(project_dir)
-        self.model = model
+        # Resolve model for Azure Foundry mode (maps to deployment names)
+        self.model = resolve_model_id(model)
         self.thinking_level = thinking_level
         self.thinking_budget = get_thinking_budget(thinking_level)
         self.refresh = refresh

@@ -8,7 +8,7 @@ import { TerminalManager } from './terminal-manager';
 import { pythonEnvManager } from './python-env-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
 import { initializeUsageMonitorForwarding } from './ipc-handlers/terminal-handlers';
-import { getAnalyticsService } from './ipc-handlers/analytics-handlers';
+import { getAnalyticsService, initializeTerminalTrackingOnStartup } from './ipc-handlers/analytics-handlers';
 import { initializeAppUpdater } from './app-updater';
 import { DEFAULT_APP_SETTINGS } from '../shared/constants';
 import { readSettingsFile } from './settings-utils';
@@ -171,6 +171,25 @@ app.whenReady().then(async () => {
   // Initialize MCP servers (auto-claude-tools)
   const { initializeMCPServers } = await import('./mcp-servers');
   initializeMCPServers();
+
+  // Initialize terminal tracking hooks (production-ready token tracking)
+  // This configures Claude Code hooks to track all terminal session tokens
+  try {
+    const settingsPath = join(app.getPath('userData'), 'settings.json');
+    let trackingSettings: { pythonPath?: string; autoBuildPath?: string } = {};
+    if (existsSync(settingsPath)) {
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+      trackingSettings = {
+        pythonPath: settings.pythonPath,
+        autoBuildPath: settings.autoBuildPath
+      };
+    }
+    await initializeTerminalTrackingOnStartup(trackingSettings);
+    console.warn('[main] Terminal tracking hooks initialized');
+  } catch (error) {
+    console.warn('[main] Failed to initialize terminal tracking hooks:', error);
+    // Don't throw - this shouldn't prevent app startup
+  }
 
   // Create window
   createWindow();

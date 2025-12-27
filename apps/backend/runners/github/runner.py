@@ -56,6 +56,10 @@ env_file = Path(__file__).parent.parent.parent / ".env"
 if env_file.exists():
     load_dotenv(env_file)
 
+# Clean up conflicting env vars (Foundry vs standard mode)
+from core.auth import cleanup_conflicting_env_vars
+cleanup_conflicting_env_vars()
+
 from debug import debug_error
 
 # Add github runner directory to path for direct imports

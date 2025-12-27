@@ -12,12 +12,24 @@ from pathlib import Path
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from core.auth import get_sdk_env_vars, require_auth_token
 
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_INSIGHTS,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
+
 
 async def summarize_phase_output(
     phase_name: str,
     phase_output: str,
     model: str = "claude-sonnet-4-5-20250929",
     target_words: int = 500,
+    project_dir: Path | None = None,
 ) -> str:
     """
     Summarize phase output to a concise summary for subsequent phases.
@@ -29,12 +41,28 @@ async def summarize_phase_output(
         phase_output: Full output content from the phase (file contents, decisions)
         model: Model to use for summarization (defaults to Sonnet for efficiency)
         target_words: Target summary length in words (~500-1000 recommended)
+        project_dir: Project directory for analytics tracking (optional)
 
     Returns:
         Concise summary of key findings, decisions, and insights from the phase
     """
     # Validate auth token
     require_auth_token()
+
+    # Initialize tracker
+    tracker = None
+    if TRACKING_AVAILABLE and is_tracking_enabled():
+        try:
+            project_id = project_dir.name if project_dir else Path.cwd().name
+            db_path = str((project_dir or Path.cwd()) / ".auto-claude" / "analytics.db")
+            tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_INSIGHTS,
+                db_path=db_path,
+                metadata={"model": model, "operation": "phase_compaction", "phase": phase_name}
+            )
+        except Exception:
+            tracker = None
 
     # Limit input size to avoid token overflow
     max_input_chars = 15000
@@ -73,16 +101,46 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
     )
 
     try:
+        # Start tracking session
+        if tracker:
+            try:
+                await tracker.start_session()
+            except Exception:
+                pass
+
         async with client:
             await client.query(prompt)
             response_text = ""
             async for msg in client.receive_response():
+                msg_type = type(msg).__name__
+
+                # Track message for analytics
+                if tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                    try:
+                        await tracker.track_message(msg)
+                    except Exception:
+                        pass
+
                 if hasattr(msg, "content"):
                     for block in msg.content:
                         if hasattr(block, "text"):
                             response_text += block.text
+
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                except Exception:
+                    pass
+
             return response_text.strip()
     except Exception as e:
+        # Finalize tracking on error
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
         # Fallback: return truncated raw output on error
         # This ensures we don't block the pipeline if summarization fails
         fallback = phase_output[:2000]

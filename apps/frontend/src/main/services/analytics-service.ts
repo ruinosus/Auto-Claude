@@ -391,6 +391,12 @@ export class AnalyticsService {
         WHERE type='table' AND name='feature_sessions'
       `).get() as { name: string } | undefined;
 
+      // Check if otel_sessions table exists (for Claude Code telemetry)
+      const otelTableExists = db.prepare(`
+        SELECT name FROM sqlite_master
+        WHERE type='table' AND name='otel_sessions'
+      `).get() as { name: string } | undefined;
+
       let featureUsage: FeatureUsageData[] = [];
       let featureTotalCost = 0;
       let featureTotalInputTokens = 0;
@@ -451,6 +457,54 @@ export class AnalyticsService {
           value: row.total_cost,
           label: row.feature_type,
         }));
+      }
+
+      // ========== OTEL SESSION DATA (Claude Code Telemetry) ==========
+      if (otelTableExists) {
+        // Get OTEL session totals
+        const otelTotals = db.prepare(`
+          SELECT
+            COUNT(*) as total_sessions,
+            COALESCE(SUM(total_cost_usd), 0) as total_cost,
+            COALESCE(SUM(total_input_tokens), 0) as total_input_tokens,
+            COALESCE(SUM(total_output_tokens), 0) as total_output_tokens,
+            COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+            COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+            MAX(last_seen) as last_used
+          FROM otel_sessions
+        `).get() as {
+          total_sessions: number;
+          total_cost: number;
+          total_input_tokens: number;
+          total_output_tokens: number;
+          total_cache_read_tokens: number;
+          total_cache_creation_tokens: number;
+          last_used: string | null;
+        };
+
+        if (otelTotals && otelTotals.total_sessions > 0) {
+          // Add OTEL data as "terminal_otel" feature type
+          featureUsage.push({
+            featureType: 'terminal_otel',
+            totalSessions: otelTotals.total_sessions,
+            totalCost: otelTotals.total_cost,
+            totalInputTokens: otelTotals.total_input_tokens,
+            totalOutputTokens: otelTotals.total_output_tokens,
+            lastUsed: otelTotals.last_used ? new Date(otelTotals.last_used) : null,
+          });
+
+          // Add to totals
+          featureTotalCost += otelTotals.total_cost;
+          featureTotalInputTokens += otelTotals.total_input_tokens;
+          featureTotalOutputTokens += otelTotals.total_output_tokens;
+
+          // Add to cost distribution
+          featureCostDistribution.push({
+            timestamp: new Date(),
+            value: otelTotals.total_cost,
+            label: 'terminal_otel',
+          });
+        }
       }
 
       // Transform conversations to ConversationAnalytics

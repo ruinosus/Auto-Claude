@@ -13,11 +13,27 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+# Add backend path for imports
+backend_path = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(backend_path))
+
+# Import feature tracker for token tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_ISSUE_TRIAGE,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError as e:
+    TRACKING_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +59,20 @@ class ClaudeBatchAnalyzer:
     def __init__(self, project_dir: Path | None = None):
         """Initialize Claude batch analyzer."""
         self.project_dir = project_dir or Path.cwd()
+        self.tracker = None
+
+        # Initialize feature tracker for token usage
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_ISSUE_TRIAGE,
+                db_path=db_path,
+                metadata={"component": "batch_analyzer"}
+            )
+            logger.info(f"[BATCH_ANALYZER] Feature tracker initialized for project: {project_id}")
+
         logger.info(
             f"[BATCH_ANALYZER] Initialized with project_dir: {self.project_dir}"
         )
@@ -149,6 +179,15 @@ Respond with JSON only:
                 f"[BATCH_ANALYZER] Analyzing {len(issues)} issues in single call"
             )
 
+            # Start tracking session if tracker is available
+            if self.tracker:
+                try:
+                    self.tracker.update_metadata("issues_count", len(issues))
+                    await self.tracker.start_session()
+                    logger.info("[BATCH_ANALYZER] Feature tracking session started")
+                except Exception as e:
+                    logger.error(f"[BATCH_ANALYZER] Failed to start tracking session: {e}")
+
             # Using Sonnet for better analysis (still just 1 call)
             client = ClaudeSDKClient(
                 options=ClaudeAgentOptions(
@@ -172,6 +211,14 @@ Respond with JSON only:
             # Parse JSON response
             result = self._parse_json_response(response_text)
 
+            # Finalize tracking
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                    logger.info("[BATCH_ANALYZER] Feature tracking session finalized")
+                except Exception as e:
+                    logger.error(f"[BATCH_ANALYZER] Failed to finalize tracking: {e}")
+
             if "batches" in result:
                 return result["batches"]
             else:
@@ -185,6 +232,14 @@ Respond with JSON only:
             import traceback
 
             traceback.print_exc()
+
+            # Finalize tracking even on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+
             return self._fallback_batches(issues)
 
     def _parse_json_response(self, response_text: str) -> dict[str, Any]:
@@ -233,6 +288,14 @@ Respond with JSON only:
 
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
+
+            # Track message for token usage
+            if self.tracker:
+                try:
+                    await self.tracker.track_message(msg)
+                except Exception as e:
+                    logger.error(f"[BATCH_ANALYZER] Failed to track message: {e}")
+
             if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                 for block in msg.content:
                     if type(block).__name__ == "TextBlock" and hasattr(block, "text"):

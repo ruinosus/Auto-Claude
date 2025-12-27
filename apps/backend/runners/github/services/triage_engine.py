@@ -8,6 +8,18 @@ Issue triage logic for detecting duplicates, spam, and feature creep.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
+
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_ISSUE_TRIAGE,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 try:
     from ..models import GitHubRunnerConfig, TriageCategory, TriageResult
@@ -35,6 +47,18 @@ class TriageEngine:
         self.progress_callback = progress_callback
         self.prompt_manager = PromptManager()
         self.parser = ResponseParser()
+
+        # Initialize analytics tracker
+        self.tracker = None
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_ISSUE_TRIAGE,
+                db_path=db_path,
+                metadata={"model": config.model}
+            )
 
     def _report_progress(self, phase: str, progress: int, message: str, **kwargs):
         """Report progress if callback is set."""
@@ -78,6 +102,14 @@ class TriageEngine:
             agent_type="qa_reviewer",
         )
 
+        # Start tracking session
+        if self.tracker:
+            try:
+                self.tracker.update_metadata("issue_number", issue["number"])
+                await self.tracker.start_session()
+            except Exception:
+                pass
+
         try:
             async with client:
                 await client.query(full_prompt)
@@ -85,16 +117,38 @@ class TriageEngine:
                 response_text = ""
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
+
+                    # Track message for analytics
+                    if self.tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 response_text += block.text
+
+                # Finalize tracking
+                if self.tracker:
+                    try:
+                        await self.tracker.finalize()
+                    except Exception:
+                        pass
 
                 return self.parser.parse_triage_result(
                     issue, response_text, self.config.repo
                 )
 
         except Exception as e:
+            # Finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+
             print(f"Triage error for #{issue['number']}: {e}")
             return TriageResult(
                 issue_number=issue["number"],

@@ -13,7 +13,18 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_PR_REVIEW,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 try:
     from ...core.client import create_client
@@ -128,6 +139,18 @@ class OrchestratorReviewer:
         self.total_tokens = 0
         self.MAX_TOTAL_BUDGET = 150_000
 
+        # Initialize analytics tracker
+        self.tracker = None
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_PR_REVIEW,
+                db_path=db_path,
+                metadata={"model": "claude-opus-4-5-20251101", "agent": "orchestrator"}
+            )
+
     def _report_progress(self, phase: str, progress: int, message: str, **kwargs):
         """Report progress if callback is set."""
         if self.progress_callback:
@@ -187,6 +210,14 @@ class OrchestratorReviewer:
                 max_thinking_tokens=10000,  # High budget for strategy
             )
 
+            # Start tracking session
+            if self.tracker:
+                try:
+                    self.tracker.update_metadata("pr_number", context.pr_number)
+                    await self.tracker.start_session()
+                except Exception:
+                    pass
+
             self._report_progress(
                 "orchestrating",
                 30,
@@ -209,6 +240,13 @@ class OrchestratorReviewer:
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
                     logger.debug(f"[Orchestrator] Received message type: {msg_type}")
+
+                    # Track message for analytics
+                    if self.tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
 
                     # Handle tool calls from orchestrator
                     if msg_type == "ToolUseBlock" or (
@@ -286,6 +324,13 @@ class OrchestratorReviewer:
             print(result_text, flush=True)
             print("[Orchestrator] ===== FULL OUTPUT END =====", flush=True)
 
+            # Finalize tracking
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+
             self._report_progress(
                 "finalizing",
                 80,
@@ -356,6 +401,13 @@ class OrchestratorReviewer:
             return result
 
         except Exception as e:
+            # Finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+
             logger.error(f"[Orchestrator] Review failed: {e}", exc_info=True)
             result = PRReviewResult(
                 pr_number=context.pr_number,

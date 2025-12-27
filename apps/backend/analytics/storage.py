@@ -215,6 +215,45 @@ BEGIN
         total_output_tokens = total_output_tokens + EXCLUDED.total_output_tokens,
         last_updated = CURRENT_TIMESTAMP;
 END;
+
+-- OTEL sessions table (for Claude Code telemetry via OpenTelemetry)
+-- Tracks terminal sessions with real-time token usage from OTEL api_request events
+CREATE TABLE IF NOT EXISTS otel_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT UNIQUE NOT NULL,  -- Claude Code session ID from OTEL
+    model TEXT,
+    total_input_tokens INTEGER DEFAULT 0,
+    total_output_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    total_cost_usd REAL DEFAULT 0.0,
+    request_count INTEGER DEFAULT 0,
+    first_seen TIMESTAMP NOT NULL,
+    last_seen TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_otel_sessions_session ON otel_sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_otel_sessions_first_seen ON otel_sessions(first_seen);
+
+-- OTEL requests table (individual API requests from Claude Code)
+CREATE TABLE IF NOT EXISTS otel_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    otel_session_id INTEGER NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_creation_tokens INTEGER DEFAULT 0,
+    cost_usd REAL NOT NULL,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (otel_session_id) REFERENCES otel_sessions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_otel_requests_session ON otel_requests(otel_session_id);
+CREATE INDEX IF NOT EXISTS idx_otel_requests_timestamp ON otel_requests(timestamp);
 """
 
 
@@ -1024,3 +1063,128 @@ def is_tracking_enabled() -> bool:
     """Check if token tracking is enabled (opt-out)."""
     import os
     return os.getenv('DISABLE_TOKEN_TRACKING', 'false').lower() != 'true'
+
+
+# Add OTEL session methods to AnalyticsStorage
+# These are added here to avoid modifying the class body too much
+
+async def _upsert_terminal_session(
+    self,
+    session_id: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int,
+    cache_creation_tokens: int,
+    cost_usd: float,
+    started_at: datetime,
+    ended_at: datetime,
+    request_count: int = 1
+):
+    """
+    Upsert OTEL terminal session (for Claude Code telemetry).
+
+    Creates a new session or updates existing one with accumulated totals.
+    """
+    loop = asyncio.get_event_loop()
+
+    def _upsert():
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Check if session exists
+        cursor.execute(
+            "SELECT id, total_input_tokens, total_output_tokens, cache_read_tokens, "
+            "cache_creation_tokens, total_cost_usd, request_count FROM otel_sessions WHERE session_id = ?",
+            (session_id,)
+        )
+        existing = cursor.fetchone()
+
+        if existing:
+            # Update existing session with accumulated totals
+            cursor.execute("""
+                UPDATE otel_sessions
+                SET
+                    model = COALESCE(?, model),
+                    total_input_tokens = total_input_tokens + ?,
+                    total_output_tokens = total_output_tokens + ?,
+                    cache_read_tokens = cache_read_tokens + ?,
+                    cache_creation_tokens = cache_creation_tokens + ?,
+                    total_cost_usd = total_cost_usd + ?,
+                    request_count = request_count + ?,
+                    last_seen = ?
+                WHERE session_id = ?
+            """, (
+                model, input_tokens, output_tokens, cache_read_tokens,
+                cache_creation_tokens, cost_usd, request_count,
+                ended_at.isoformat(), session_id
+            ))
+        else:
+            # Create new session
+            cursor.execute("""
+                INSERT INTO otel_sessions (
+                    session_id, model, total_input_tokens, total_output_tokens,
+                    cache_read_tokens, cache_creation_tokens, total_cost_usd,
+                    request_count, first_seen, last_seen
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                session_id, model, input_tokens, output_tokens,
+                cache_read_tokens, cache_creation_tokens, cost_usd,
+                request_count, started_at.isoformat(), ended_at.isoformat()
+            ))
+
+        conn.commit()
+        conn.close()
+
+    await loop.run_in_executor(None, _upsert)
+
+
+async def _get_otel_sessions(self, limit: int = 50) -> List[Dict]:
+    """Get recent OTEL sessions."""
+    loop = asyncio.get_event_loop()
+
+    def _get():
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM otel_sessions
+            ORDER BY last_seen DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    return await loop.run_in_executor(None, _get)
+
+
+async def _get_otel_totals(self) -> Dict:
+    """Get aggregated OTEL session totals."""
+    loop = asyncio.get_event_loop()
+
+    def _get():
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_sessions,
+                COALESCE(SUM(total_input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(total_output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+                COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+                COALESCE(SUM(total_cost_usd), 0) as total_cost_usd,
+                COALESCE(SUM(request_count), 0) as total_requests
+            FROM otel_sessions
+        """)
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else {}
+
+    return await loop.run_in_executor(None, _get)
+
+
+# Monkey-patch the methods onto AnalyticsStorage
+AnalyticsStorage.upsert_terminal_session = _upsert_terminal_session
+AnalyticsStorage.get_otel_sessions = _get_otel_sessions
+AnalyticsStorage.get_otel_totals = _get_otel_totals

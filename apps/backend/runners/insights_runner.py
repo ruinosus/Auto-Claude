@@ -22,6 +22,10 @@ env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
     load_dotenv(env_file)
 
+# Clean up conflicting env vars (Foundry vs standard mode)
+from core.auth import cleanup_conflicting_env_vars
+cleanup_conflicting_env_vars()
+
 try:
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
@@ -32,6 +36,7 @@ except ImportError:
     ClaudeSDKClient = None
 
 from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
+from phase_config import resolve_model_id
 from debug import (
     debug,
     debug_detailed,
@@ -147,6 +152,9 @@ async def run_with_sdk(
     thinking_level: str = "medium",
 ) -> None:
     """Run the chat using Claude SDK with streaming."""
+    # Resolve model for Azure Foundry mode (maps to deployment names)
+    model = resolve_model_id(model)
+
     if not SDK_AVAILABLE:
         print("Claude SDK not available, falling back to simple mode", file=sys.stderr)
         run_simple(project_dir, message, history)

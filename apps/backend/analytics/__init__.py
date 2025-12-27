@@ -26,6 +26,8 @@ from .feature_tracker import (
     FEATURE_ISSUE_TRIAGE,
     FEATURE_AUTOFIX,
     FEATURE_CHANGELOG,
+    FEATURE_AI_ANALYZER,
+    FEATURE_TERMINAL,
 )
 
 from .roi_tracker import ROITracker, create_roi_tracker
@@ -60,6 +62,8 @@ __all__ = [
     "FEATURE_ISSUE_TRIAGE",
     "FEATURE_AUTOFIX",
     "FEATURE_CHANGELOG",
+    "FEATURE_AI_ANALYZER",
+    "FEATURE_TERMINAL",
     # ROI Tracker
     "ROITracker",
     "create_roi_tracker",

@@ -2,9 +2,13 @@
 Auto Claude project initialization utilities.
 
 Handles first-time setup of .auto-claude directory and ensures proper gitignore configuration.
+Also configures Claude Code hooks for terminal token tracking.
 """
 
 from pathlib import Path
+
+# Terminal tracking hooks configuration
+_terminal_tracking_initialized = False
 
 
 def ensure_gitignore_entry(project_dir: Path, entry: str = ".auto-claude/") -> bool:
@@ -109,3 +113,74 @@ def get_auto_claude_dir(project_dir: Path, ensure_exists: bool = True) -> Path:
         return auto_claude_dir
 
     return Path(project_dir) / ".auto-claude"
+
+
+def ensure_terminal_tracking_hooks() -> bool:
+    """
+    Ensure Claude Code hooks are configured for terminal token tracking.
+
+    This is called automatically during application initialization to ensure
+    all terminal sessions are tracked. This is NOT optional - it's part of
+    the production-ready tracking system.
+
+    Returns:
+        True if hooks are properly configured
+    """
+    global _terminal_tracking_initialized
+
+    if _terminal_tracking_initialized:
+        return True
+
+    try:
+        from hooks.auto_configure import ensure_terminal_tracking
+        result = ensure_terminal_tracking()
+        _terminal_tracking_initialized = result
+        return result
+    except ImportError:
+        # Hooks module not available - this shouldn't happen in production
+        return False
+
+
+def init_app() -> dict:
+    """
+    Initialize the Auto Claude application.
+
+    This is the main initialization function that should be called on app startup.
+    It configures all necessary components including terminal token tracking.
+
+    Returns:
+        dict with initialization status
+    """
+    status = {
+        "terminal_tracking": False,
+        "analytics_enabled": False,
+    }
+
+    # Configure terminal tracking hooks
+    status["terminal_tracking"] = ensure_terminal_tracking_hooks()
+
+    # Check if analytics is enabled
+    try:
+        from analytics import is_tracking_enabled
+        status["analytics_enabled"] = is_tracking_enabled()
+    except ImportError:
+        pass
+
+    return status
+
+
+def get_terminal_tracking_status() -> dict:
+    """
+    Get the current status of terminal tracking configuration.
+
+    Returns:
+        dict with detailed status information
+    """
+    try:
+        from hooks.auto_configure import get_tracking_status
+        return get_tracking_status()
+    except ImportError:
+        return {
+            "error": "hooks module not available",
+            "hook_installed": False
+        }

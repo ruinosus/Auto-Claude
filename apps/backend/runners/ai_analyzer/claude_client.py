@@ -3,8 +3,27 @@ Claude SDK client wrapper for AI analysis.
 """
 
 import json
+import logging
+import sys
 from pathlib import Path
 from typing import Any
+
+# Add backend path for imports
+backend_path = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(backend_path))
+
+logger = logging.getLogger(__name__)
+
+# Import feature tracker for token tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_AI_ANALYZER,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError as e:
+    TRACKING_AVAILABLE = False
 
 try:
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
@@ -34,6 +53,20 @@ class ClaudeAnalysisClient:
             )
 
         self.project_dir = project_dir
+        self.tracker = None
+
+        # Initialize feature tracker for token usage
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_AI_ANALYZER,
+                db_path=db_path,
+                metadata={"model": self.DEFAULT_MODEL}
+            )
+            logger.info(f"[AI_ANALYZER] Feature tracker initialized for project: {project_id}")
+
         self._validate_oauth_token()
 
     def _validate_oauth_token(self) -> None:
@@ -60,12 +93,39 @@ class ClaudeAnalysisClient:
         """
         settings_file = self._create_settings_file()
 
+        # Start tracking session if tracker is available
+        if self.tracker:
+            try:
+                await self.tracker.start_session()
+                logger.info("[AI_ANALYZER] Feature tracking session started")
+            except Exception as e:
+                logger.error(f"[AI_ANALYZER] Failed to start tracking session: {e}")
+
         try:
             client = self._create_client(settings_file)
 
             async with client:
                 await client.query(prompt)
-                return await self._collect_response(client)
+                result = await self._collect_response(client)
+
+            # Finalize tracking
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                    logger.info("[AI_ANALYZER] Feature tracking session finalized")
+                except Exception as e:
+                    logger.error(f"[AI_ANALYZER] Failed to finalize tracking: {e}")
+
+            return result
+
+        except Exception as e:
+            # Finalize tracking even on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+            raise
 
         finally:
             # Cleanup settings file
@@ -142,6 +202,13 @@ class ClaudeAnalysisClient:
 
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
+
+            # Track message for token usage
+            if self.tracker:
+                try:
+                    await self.tracker.track_message(msg)
+                except Exception as e:
+                    logger.error(f"[AI_ANALYZER] Failed to track message: {e}")
 
             if msg_type == "AssistantMessage":
                 for content in msg.content:

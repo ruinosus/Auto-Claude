@@ -13,7 +13,19 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
+
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_INSIGHTS,  # Use INSIGHTS for merge resolution
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 if TYPE_CHECKING:
     from .resolver import AIResolver
@@ -64,7 +76,30 @@ def create_claude_resolver() -> AIResolver:
                 )
             )
 
+            # Initialize tracker for this merge resolution
+            tracker = None
+            if TRACKING_AVAILABLE and is_tracking_enabled():
+                try:
+                    # Use current directory as project ID for merge resolution
+                    project_id = Path.cwd().name
+                    db_path = str(Path.cwd() / ".auto-claude" / "analytics.db")
+                    tracker = create_feature_tracker(
+                        project_id=project_id,
+                        feature_type=FEATURE_INSIGHTS,
+                        db_path=db_path,
+                        metadata={"model": "sonnet", "operation": "merge_resolution"}
+                    )
+                except Exception:
+                    tracker = None
+
             try:
+                # Start tracking session
+                if tracker:
+                    try:
+                        await tracker.start_session()
+                    except Exception:
+                        pass
+
                 # Use async context manager to handle connect/disconnect
                 # This is the standard pattern used throughout the codebase
                 async with client:
@@ -73,15 +108,36 @@ def create_claude_resolver() -> AIResolver:
                     response_text = ""
                     async for msg in client.receive_response():
                         msg_type = type(msg).__name__
+
+                        # Track message for analytics
+                        if tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                            try:
+                                await tracker.track_message(msg)
+                            except Exception:
+                                pass
+
                         if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                             for block in msg.content:
                                 if hasattr(block, "text"):
                                     response_text += block.text
 
+                    # Finalize tracking
+                    if tracker:
+                        try:
+                            await tracker.finalize()
+                        except Exception:
+                            pass
+
                     logger.info(f"AI merge response: {len(response_text)} chars")
                     return response_text
 
             except Exception as e:
+                # Finalize tracking on error
+                if tracker:
+                    try:
+                        await tracker.finalize()
+                    except Exception:
+                        pass
                 logger.error(f"Claude SDK call failed: {e}")
                 print(f"    [ERROR] Claude SDK error: {e}", file=sys.stderr)
                 return ""

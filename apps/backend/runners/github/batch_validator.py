@@ -10,11 +10,27 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# Add backend path for imports
+backend_path = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(backend_path))
+
 logger = logging.getLogger(__name__)
+
+# Import feature tracker for token tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_PR_REVIEW,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError as e:
+    TRACKING_AVAILABLE = False
 
 # Check for Claude SDK availability
 try:
@@ -121,6 +137,19 @@ class BatchValidator:
         self.model = model
         self.thinking_budget = thinking_budget
         self.project_dir = project_dir or Path.cwd()
+        self.tracker = None
+
+        # Initialize feature tracker for token usage
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_PR_REVIEW,
+                db_path=db_path,
+                metadata={"component": "batch_validator", "model": model}
+            )
+            logger.info(f"[BATCH_VALIDATOR] Feature tracker initialized for project: {project_id}")
 
         if not CLAUDE_SDK_AVAILABLE:
             logger.warning(
@@ -195,6 +224,16 @@ class BatchValidator:
         )
 
         try:
+            # Start tracking session if tracker is available
+            if self.tracker:
+                try:
+                    self.tracker.update_metadata("batch_id", batch_id)
+                    self.tracker.update_metadata("issues_count", len(issues))
+                    await self.tracker.start_session()
+                    logger.info("[BATCH_VALIDATOR] Feature tracking session started")
+                except Exception as e:
+                    logger.error(f"[BATCH_VALIDATOR] Failed to start tracking session: {e}")
+
             # Create settings for minimal permissions (no tools needed)
             settings = {
                 "permissions": {
@@ -229,6 +268,14 @@ class BatchValidator:
                 # Parse JSON response
                 result_json = self._parse_json_response(result_text)
 
+                # Finalize tracking
+                if self.tracker:
+                    try:
+                        await self.tracker.finalize()
+                        logger.info("[BATCH_VALIDATOR] Feature tracking session finalized")
+                    except Exception as e:
+                        logger.error(f"[BATCH_VALIDATOR] Failed to finalize tracking: {e}")
+
                 return BatchValidationResult(
                     batch_id=batch_id,
                     is_valid=result_json.get("is_valid", True),
@@ -245,6 +292,14 @@ class BatchValidator:
 
         except Exception as e:
             logger.error(f"Batch validation failed: {e}")
+
+            # Finalize tracking even on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+
             # On error, assume valid to not block the flow
             return BatchValidationResult(
                 batch_id=batch_id,
@@ -261,6 +316,13 @@ class BatchValidator:
 
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
+
+            # Track message for token usage
+            if self.tracker:
+                try:
+                    await self.tracker.track_message(msg)
+                except Exception as e:
+                    logger.error(f"[BATCH_VALIDATOR] Failed to track message: {e}")
 
             if msg_type == "AssistantMessage":
                 for content in msg.content:

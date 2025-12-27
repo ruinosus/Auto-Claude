@@ -21,24 +21,9 @@ AUTH_TOKEN_ENV_VARS = [
     "ANTHROPIC_AUTH_TOKEN",  # CCR/proxy token (for enterprise setups)
 ]
 
-# Environment variables to pass through to SDK subprocess
-SDK_ENV_VARS = [
-    "ANTHROPIC_BASE_URL",
-    "ANTHROPIC_AUTH_TOKEN",
-    # Azure Foundry configuration
-    "CLAUDE_CODE_USE_FOUNDRY",
-    "ANTHROPIC_FOUNDRY_API_KEY",
-    "ANTHROPIC_FOUNDRY_BASE_URL",
-    "ANTHROPIC_FOUNDRY_RESOURCE",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    # General settings
-    "NO_PROXY",
-    "DISABLE_TELEMETRY",
-    "DISABLE_COST_WARNINGS",
-    "API_TIMEOUT_MS",
-]
+# NOTE: SDK environment variables are now handled in get_sdk_env_vars()
+# based on the authentication mode (Foundry vs Standard) to prevent
+# the "baseURL and resource are mutually exclusive" error.
 
 
 def get_token_from_keychain() -> str | None:
@@ -168,21 +153,136 @@ def require_auth_token() -> str:
     return token
 
 
+def is_foundry_mode() -> bool:
+    """
+    Check if Azure Foundry authentication mode is enabled.
+
+    Returns:
+        True if CLAUDE_CODE_USE_FOUNDRY is set to '1' or 'true'
+    """
+    foundry = os.environ.get("CLAUDE_CODE_USE_FOUNDRY", "")
+    return foundry in ("1", "true", "True")
+
+
+def cleanup_conflicting_env_vars() -> None:
+    """
+    Remove conflicting environment variables based on authentication mode.
+
+    The Claude Agent SDK raises "baseURL and resource are mutually exclusive" when:
+    1. Both ANTHROPIC_BASE_URL and ANTHROPIC_FOUNDRY_RESOURCE are set
+    2. Both ANTHROPIC_FOUNDRY_BASE_URL and ANTHROPIC_FOUNDRY_RESOURCE are set
+
+    Per Azure Foundry docs, you should use EITHER:
+    - ANTHROPIC_FOUNDRY_RESOURCE (preferred - Azure generates the URL)
+    - ANTHROPIC_FOUNDRY_BASE_URL (alternative - you specify the full URL)
+
+    This function should be called AFTER load_dotenv() to clean up conflicts.
+    """
+    if is_foundry_mode():
+        # In Foundry mode, remove ANTHROPIC_BASE_URL to prevent conflict
+        if "ANTHROPIC_BASE_URL" in os.environ:
+            del os.environ["ANTHROPIC_BASE_URL"]
+
+        # Also handle Foundry-internal conflict:
+        # ANTHROPIC_FOUNDRY_BASE_URL and ANTHROPIC_FOUNDRY_RESOURCE are mutually exclusive
+        # Prefer RESOURCE (simpler) over BASE_URL (explicit) if both are set
+        has_resource = bool(os.environ.get("ANTHROPIC_FOUNDRY_RESOURCE"))
+        has_base_url = bool(os.environ.get("ANTHROPIC_FOUNDRY_BASE_URL"))
+
+        if has_resource and has_base_url:
+            # Remove BASE_URL, keep RESOURCE (it's the recommended option)
+            del os.environ["ANTHROPIC_FOUNDRY_BASE_URL"]
+
+        # CRITICAL: If Foundry mode is enabled but neither RESOURCE nor BASE_URL is set,
+        # disable Foundry mode to prevent the error:
+        # "Must provide one of the `baseURL` or `resource` arguments"
+        if not has_resource and not has_base_url:
+            # Disable Foundry mode if not properly configured
+            if "CLAUDE_CODE_USE_FOUNDRY" in os.environ:
+                del os.environ["CLAUDE_CODE_USE_FOUNDRY"]
+    else:
+        # In standard mode, remove Foundry-specific vars
+        foundry_vars = [
+            "CLAUDE_CODE_USE_FOUNDRY",
+            "ANTHROPIC_FOUNDRY_API_KEY",
+            "ANTHROPIC_FOUNDRY_BASE_URL",
+            "ANTHROPIC_FOUNDRY_RESOURCE",
+        ]
+        for var in foundry_vars:
+            if var in os.environ:
+                del os.environ[var]
+
+
 def get_sdk_env_vars() -> dict[str, str]:
     """
     Get environment variables to pass to SDK.
 
-    Collects relevant env vars (ANTHROPIC_BASE_URL, etc.) that should
-    be passed through to the claude-agent-sdk subprocess.
+    Collects relevant env vars based on the authentication mode.
+    IMPORTANT: baseURL (ANTHROPIC_BASE_URL) and resource (ANTHROPIC_FOUNDRY_RESOURCE)
+    are mutually exclusive in the Claude Agent SDK. This function ensures only
+    the correct set of vars is passed based on the selected mode.
+
+    When CLAUDE_CODE_USE_FOUNDRY=1:
+      - Uses ANTHROPIC_FOUNDRY_* vars (Azure Foundry mode)
+      - Excludes ANTHROPIC_BASE_URL to avoid conflict
+
+    When CLAUDE_CODE_USE_FOUNDRY is not set:
+      - Uses ANTHROPIC_BASE_URL if set
+      - Excludes Foundry-specific vars
 
     Returns:
         Dict of env var name -> value for non-empty vars
     """
     env = {}
-    for var in SDK_ENV_VARS:
+
+    # Determine which mode we're in
+    foundry_mode = is_foundry_mode()
+
+    # Define which vars to include based on mode
+    if foundry_mode:
+        # Azure Foundry mode - use Foundry vars, exclude ANTHROPIC_BASE_URL
+        # NOTE: ANTHROPIC_FOUNDRY_BASE_URL and ANTHROPIC_FOUNDRY_RESOURCE are
+        # mutually exclusive. Only include one (prefer RESOURCE if both exist).
+        has_resource = bool(os.environ.get("ANTHROPIC_FOUNDRY_RESOURCE"))
+        has_base_url = bool(os.environ.get("ANTHROPIC_FOUNDRY_BASE_URL"))
+
+        allowed_vars = [
+            "ANTHROPIC_AUTH_TOKEN",
+            "CLAUDE_CODE_USE_FOUNDRY",
+            "ANTHROPIC_FOUNDRY_API_KEY",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "NO_PROXY",
+            "DISABLE_TELEMETRY",
+            "DISABLE_COST_WARNINGS",
+            "API_TIMEOUT_MS",
+        ]
+
+        # Add ONLY ONE of these (they are mutually exclusive)
+        if has_resource:
+            allowed_vars.append("ANTHROPIC_FOUNDRY_RESOURCE")
+        elif has_base_url:
+            allowed_vars.append("ANTHROPIC_FOUNDRY_BASE_URL")
+    else:
+        # Standard mode - use ANTHROPIC_BASE_URL, exclude Foundry vars
+        allowed_vars = [
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "NO_PROXY",
+            "DISABLE_TELEMETRY",
+            "DISABLE_COST_WARNINGS",
+            "API_TIMEOUT_MS",
+        ]
+
+    for var in allowed_vars:
         value = os.environ.get(var)
         if value:
             env[var] = value
+
     return env
 
 

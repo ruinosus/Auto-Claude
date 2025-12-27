@@ -14,7 +14,7 @@ _PARENT_DIR = Path(__file__).parent.parent
 if str(_PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(_PARENT_DIR))
 
-from core.auth import get_auth_token, get_auth_token_source
+from core.auth import cleanup_conflicting_env_vars, get_auth_token, get_auth_token_source
 from dotenv import load_dotenv
 from graphiti_config import get_graphiti_status
 from linear_integration import LinearManager
@@ -29,7 +29,7 @@ from ui import (
 )
 
 # Configuration
-DEFAULT_MODEL = "claude-opus-4-5-20251101"
+DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 
 def setup_environment() -> Path:
@@ -50,6 +50,9 @@ def setup_environment() -> Path:
         load_dotenv(env_file)
     elif dev_env_file.exists():
         load_dotenv(dev_env_file)
+
+    # Clean up conflicting env vars (Foundry vs standard mode)
+    cleanup_conflicting_env_vars()
 
     return script_dir
 

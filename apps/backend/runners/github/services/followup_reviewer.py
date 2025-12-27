@@ -21,7 +21,18 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
+
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_PR_REVIEW,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 if TYPE_CHECKING:
     from ..models import FollowupReviewContext, GitHubRunnerConfig
@@ -94,6 +105,18 @@ class FollowupReviewer:
         self.progress_callback = progress_callback
         self.use_ai = use_ai
         self.prompt_manager = PromptManager()
+
+        # Initialize analytics tracker
+        self.tracker = None
+        if TRACKING_AVAILABLE and is_tracking_enabled():
+            project_id = self.project_dir.name
+            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
+            self.tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_PR_REVIEW,
+                db_path=db_path,
+                metadata={"model": config.model, "reviewer_type": "followup"}
+            )
 
     def _report_progress(
         self, phase: str, progress: int, message: str, pr_number: int
@@ -637,6 +660,14 @@ Please analyze this follow-up review context and provide your response in the JS
                 )
             )
 
+            # Start tracking session
+            if self.tracker:
+                try:
+                    self.tracker.update_metadata("pr_number", context.pr_number)
+                    await self.tracker.start_session()
+                except Exception:
+                    pass
+
             response_text = ""
             async with client:
                 await client.query(user_message)
@@ -644,6 +675,14 @@ Please analyze this follow-up review context and provide your response in the JS
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
                     logger.debug(f"AI response message type: {msg_type}")
+
+                    # Track message for analytics
+                    if self.tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                        try:
+                            await self.tracker.track_message(msg)
+                        except Exception:
+                            pass
+
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
                             block_type = type(block).__name__
@@ -654,6 +693,13 @@ Please analyze this follow-up review context and provide your response in the JS
                                 # Skip thinking blocks - we only want the final text
                                 logger.debug("  (skipping thinking block)")
 
+            # Finalize tracking
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
+
             if not response_text:
                 logger.warning("AI returned empty response (no text blocks found)")
                 return None
@@ -662,11 +708,22 @@ Please analyze this follow-up review context and provide your response in the JS
             return self._parse_ai_response(response_text)
 
         except ValueError as e:
-            # OAuth token not found
+            # OAuth token not found - finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
             logger.warning(f"No OAuth token available for AI review: {e}")
             print("AI review failed: No OAuth token found", flush=True)
             return None
         except Exception as e:
+            # Finalize tracking on error
+            if self.tracker:
+                try:
+                    await self.tracker.finalize()
+                except Exception:
+                    pass
             logger.error(f"AI review failed: {e}")
             return None
 

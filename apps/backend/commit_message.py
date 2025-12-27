@@ -20,6 +20,17 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_INSIGHTS,  # Use INSIGHTS for commit message generation
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
+
 if TYPE_CHECKING:
     pass
 
@@ -186,7 +197,7 @@ Fixes #N (if applicable)"""
     return prompt
 
 
-async def _call_claude_haiku(prompt: str) -> str:
+async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> str:
     """Call Claude Haiku with low thinking for fast commit message generation."""
     from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 
@@ -202,6 +213,21 @@ async def _call_claude_haiku(prompt: str) -> str:
         logger.warning("claude_agent_sdk not installed")
         return ""
 
+    # Initialize tracker
+    tracker = None
+    if TRACKING_AVAILABLE and is_tracking_enabled():
+        try:
+            project_id = project_dir.name if project_dir else Path.cwd().name
+            db_path = str((project_dir or Path.cwd()) / ".auto-claude" / "analytics.db")
+            tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_INSIGHTS,
+                db_path=db_path,
+                metadata={"model": "claude-haiku-4-5-20251001", "operation": "commit_message"}
+            )
+        except Exception:
+            tracker = None
+
     client = ClaudeSDKClient(
         options=ClaudeAgentOptions(
             model="claude-haiku-4-5-20251001",
@@ -214,21 +240,49 @@ async def _call_claude_haiku(prompt: str) -> str:
     )
 
     try:
+        # Start tracking session
+        if tracker:
+            try:
+                await tracker.start_session()
+            except Exception:
+                pass
+
         async with client:
             await client.query(prompt)
 
             response_text = ""
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
+
+                # Track message for analytics
+                if tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                    try:
+                        await tracker.track_message(msg)
+                    except Exception:
+                        pass
+
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
                         if hasattr(block, "text"):
                             response_text += block.text
 
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                except Exception:
+                    pass
+
             logger.info(f"Generated commit message: {len(response_text)} chars")
             return response_text.strip()
 
     except Exception as e:
+        # Finalize tracking on error
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
         logger.error(f"Claude SDK call failed: {e}")
         print(f"    [WARN] Commit message generation failed: {e}", file=sys.stderr)
         return ""
@@ -289,10 +343,10 @@ def generate_commit_message_sync(
 
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 result = pool.submit(
-                    lambda: asyncio.run(_call_claude_haiku(prompt))
+                    lambda: asyncio.run(_call_claude_haiku(prompt, project_dir))
                 ).result()
         else:
-            result = asyncio.run(_call_claude_haiku(prompt))
+            result = asyncio.run(_call_claude_haiku(prompt, project_dir))
 
         if result:
             return result
@@ -354,7 +408,7 @@ async def generate_commit_message(
 
     # Call Claude
     try:
-        result = await _call_claude_haiku(prompt)
+        result = await _call_claude_haiku(prompt, project_dir)
         if result:
             return result
     except Exception as e:

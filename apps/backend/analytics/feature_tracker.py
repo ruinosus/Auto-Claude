@@ -23,6 +23,8 @@ FEATURE_PR_REVIEW = 'pr_review'
 FEATURE_ISSUE_TRIAGE = 'issue_triage'
 FEATURE_AUTOFIX = 'autofix'
 FEATURE_CHANGELOG = 'changelog'
+FEATURE_AI_ANALYZER = 'ai_analyzer'
+FEATURE_TERMINAL = 'terminal'
 
 
 class FeatureUsageTracker:
@@ -198,12 +200,30 @@ class FeatureUsageTracker:
         if not self.session_id or self.session_id < 0:
             return
 
-        total_cost = getattr(message, 'total_cost_usd', None) or self.total_cost_usd
+        # Extract totals from ResultMessage (these are the authoritative values)
+        result_cost = getattr(message, 'total_cost_usd', 0) or 0
+        result_usage = getattr(message, 'usage', {}) or {}
+
+        if isinstance(result_usage, dict):
+            result_input = result_usage.get('input_tokens', 0) or 0
+            result_output = result_usage.get('output_tokens', 0) or 0
+        else:
+            result_input = getattr(result_usage, 'input_tokens', 0) or 0
+            result_output = getattr(result_usage, 'output_tokens', 0) or 0
+
+        # Use ResultMessage values if they're higher (they include all SDK overhead)
+        # Otherwise use our tracked totals
+        if result_cost > self.total_cost_usd:
+            self.total_cost_usd = result_cost
+        if result_input > self.total_input_tokens:
+            self.total_input_tokens = result_input
+        if result_output > self.total_output_tokens:
+            self.total_output_tokens = result_output
 
         await self.storage.update_feature_session_totals(
             session_id=self.session_id,
             ended_at=datetime.utcnow(),
-            total_cost_usd=total_cost,
+            total_cost_usd=self.total_cost_usd,
             total_input_tokens=self.total_input_tokens,
             total_output_tokens=self.total_output_tokens,
             model=self.primary_model,

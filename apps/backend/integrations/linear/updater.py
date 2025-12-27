@@ -29,6 +29,17 @@ from typing import Optional
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_INSIGHTS,  # Use INSIGHTS for Linear updates
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
+
 # Linear status constants (matching Valma AI team setup)
 STATUS_TODO = "Todo"
 STATUS_IN_PROGRESS = "In Progress"
@@ -149,18 +160,43 @@ def _create_linear_client() -> ClaudeSDKClient:
     )
 
 
-async def _run_linear_agent(prompt: str) -> str | None:
+async def _run_linear_agent(prompt: str, spec_dir: Path | None = None) -> str | None:
     """
     Run a focused mini-agent for a Linear operation.
 
     Args:
         prompt: The focused prompt for the Linear operation
+        spec_dir: Spec directory for analytics tracking (optional)
 
     Returns:
         The response text, or None if failed
     """
+    # Initialize tracker
+    tracker = None
+    if TRACKING_AVAILABLE and is_tracking_enabled():
+        try:
+            # Use spec_dir parent as project directory, or cwd
+            project_dir = spec_dir.parent.parent if spec_dir else Path.cwd()
+            project_id = project_dir.name
+            db_path = str(project_dir / ".auto-claude" / "analytics.db")
+            tracker = create_feature_tracker(
+                project_id=project_id,
+                feature_type=FEATURE_INSIGHTS,
+                db_path=db_path,
+                metadata={"model": "claude-haiku-4-5", "operation": "linear_update"}
+            )
+        except Exception:
+            tracker = None
+
     try:
         client = _create_linear_client()
+
+        # Start tracking session
+        if tracker:
+            try:
+                await tracker.start_session()
+            except Exception:
+                pass
 
         async with client:
             await client.query(prompt)
@@ -168,15 +204,36 @@ async def _run_linear_agent(prompt: str) -> str | None:
             response_text = ""
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
+
+                # Track message for analytics
+                if tracker and msg_type in ("AssistantMessage", "ResultMessage"):
+                    try:
+                        await tracker.track_message(msg)
+                    except Exception:
+                        pass
+
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
                         block_type = type(block).__name__
                         if block_type == "TextBlock" and hasattr(block, "text"):
                             response_text += block.text
 
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                except Exception:
+                    pass
+
             return response_text
 
     except Exception as e:
+        # Finalize tracking on error
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
         print(f"Linear update failed: {e}")
         return None
 
@@ -226,7 +283,7 @@ TASK_ID: [the issue ID]
 TEAM_ID: [the team ID]
 """
 
-    response = await _run_linear_agent(prompt)
+    response = await _run_linear_agent(prompt, spec_dir)
     if not response:
         return None
 
@@ -295,7 +352,7 @@ async def update_linear_status(
 Confirm when done.
 """
 
-    response = await _run_linear_agent(prompt)
+    response = await _run_linear_agent(prompt, spec_dir)
     if response:
         state.status = new_status
         state.save(spec_dir)
@@ -339,7 +396,7 @@ Use mcp__linear-server__create_comment with:
 Confirm when done.
 """
 
-    response = await _run_linear_agent(prompt)
+    response = await _run_linear_agent(prompt, spec_dir)
     if response:
         print(f"Added comment to Linear task {state.task_id}")
         return True

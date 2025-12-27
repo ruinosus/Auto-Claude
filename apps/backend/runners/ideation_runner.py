@@ -33,6 +33,10 @@ env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
     load_dotenv(env_file)
 
+# Clean up conflicting env vars (Foundry vs standard mode)
+from core.auth import cleanup_conflicting_env_vars
+cleanup_conflicting_env_vars()
+
 # Import from refactored modules
 from ideation import (
     IdeationConfig,
@@ -94,8 +98,8 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="claude-opus-4-5-20251101",
-        help="Model to use (default: claude-opus-4-5-20251101)",
+        default="claude-sonnet-4-5-20250929",
+        help="Model to use (default: claude-sonnet-4-5-20250929)",
     )
     parser.add_argument(
         "--thinking-level",

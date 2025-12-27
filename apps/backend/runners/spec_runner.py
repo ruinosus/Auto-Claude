@@ -91,6 +91,10 @@ if env_file.exists():
 elif dev_env_file.exists():
     load_dotenv(dev_env_file)
 
+# Clean up conflicting env vars (Foundry vs standard mode)
+from core.auth import cleanup_conflicting_env_vars
+cleanup_conflicting_env_vars()
+
 from debug import debug, debug_error, debug_section, debug_success
 from phase_config import resolve_model_id
 from review import ReviewState

@@ -94,18 +94,45 @@ def resolve_model_id(model: str) -> str:
     Resolve a model shorthand (haiku, sonnet, opus) to a full model ID.
     If the model is already a full ID, return it unchanged.
 
+    When in Azure Foundry mode (CLAUDE_CODE_USE_FOUNDRY=1), the model name
+    is mapped to the deployment name from ANTHROPIC_DEFAULT_*_MODEL env vars.
+
     Args:
         model: Model shorthand or full ID
 
     Returns:
-        Full Claude model ID
+        Full Claude model ID (or Azure deployment name in Foundry mode)
     """
-    # Check if it's a shorthand
-    if model in MODEL_ID_MAP:
-        return MODEL_ID_MAP[model]
+    import os
 
-    # Already a full model ID
-    return model
+    # Check if it's a shorthand first
+    if model in MODEL_ID_MAP:
+        resolved = MODEL_ID_MAP[model]
+    else:
+        resolved = model
+
+    # In Azure Foundry mode, use deployment names from env vars
+    # This is required because Azure deployments use shorter names (e.g., "claude-opus-4-5")
+    # instead of full model IDs with date stamps (e.g., "claude-opus-4-5-20251101")
+    foundry_mode = os.environ.get("CLAUDE_CODE_USE_FOUNDRY", "") in ("1", "true", "True")
+    if foundry_mode:
+        resolved_lower = resolved.lower()
+
+        # Map to Azure Foundry deployment names
+        if "opus" in resolved_lower:
+            fallback = os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
+            if fallback:
+                return fallback
+        elif "sonnet" in resolved_lower:
+            fallback = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL")
+            if fallback:
+                return fallback
+        elif "haiku" in resolved_lower:
+            fallback = os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+            if fallback:
+                return fallback
+
+    return resolved
 
 
 def get_thinking_budget(thinking_level: str) -> int | None:

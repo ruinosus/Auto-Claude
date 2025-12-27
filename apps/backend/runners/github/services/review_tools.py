@@ -13,6 +13,18 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+
+# Analytics tracking
+try:
+    from analytics import (
+        create_feature_tracker,
+        FEATURE_PR_REVIEW,
+        is_tracking_enabled,
+    )
+    TRACKING_AVAILABLE = True
+except ImportError:
+    TRACKING_AVAILABLE = False
 
 try:
     from ...analysis.test_discovery import TestDiscovery
@@ -26,6 +38,32 @@ except (ImportError, ValueError, SystemError):
     from models import PRReviewFinding, ReviewCategory, ReviewSeverity
 
 logger = logging.getLogger(__name__)
+
+
+def _create_tracker(project_dir: Path, model: str, subagent_type: str):
+    """Create a feature tracker for subagent calls."""
+    if not TRACKING_AVAILABLE or not is_tracking_enabled():
+        return None
+    try:
+        project_id = project_dir.name
+        db_path = str(project_dir / ".auto-claude" / "analytics.db")
+        return create_feature_tracker(
+            project_id=project_id,
+            feature_type=FEATURE_PR_REVIEW,
+            db_path=db_path,
+            metadata={"model": model, "subagent": subagent_type}
+        )
+    except Exception:
+        return None
+
+
+async def _track_session(tracker, msg):
+    """Track a message if tracker is available."""
+    if tracker:
+        try:
+            await tracker.track_message(msg)
+        except Exception:
+            pass
 
 
 # Map AI-generated category names to valid ReviewCategory enum values
@@ -161,6 +199,14 @@ async def spawn_security_review(
             agent_type="pr_reviewer",  # Read-only - no bash, no edits
         )
 
+        # Create tracker for this subagent
+        tracker = _create_tracker(project_root, model, "security_review")
+        if tracker:
+            try:
+                await tracker.start_session()
+            except Exception:
+                pass
+
         # Run review session
         result_text = ""
         async with client:
@@ -168,10 +214,19 @@ async def spawn_security_review(
 
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
+                if msg_type in ("AssistantMessage", "ResultMessage"):
+                    await _track_session(tracker, msg)
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
                         if hasattr(block, "text"):
                             result_text += block.text
+
+        # Finalize tracking
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
 
         # Parse findings
         findings = _parse_findings_from_response(result_text, source="security_agent")
@@ -245,16 +300,33 @@ async def spawn_quality_review(
             agent_type="pr_reviewer",  # Read-only - no bash, no edits
         )
 
+        # Create tracker for this subagent
+        tracker = _create_tracker(project_root, model, "quality_review")
+        if tracker:
+            try:
+                await tracker.start_session()
+            except Exception:
+                pass
+
         result_text = ""
         async with client:
             await client.query(full_prompt)
 
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
+                if msg_type in ("AssistantMessage", "ResultMessage"):
+                    await _track_session(tracker, msg)
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
                         if hasattr(block, "text"):
                             result_text += block.text
+
+        # Finalize tracking
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
 
         findings = _parse_findings_from_response(result_text, source="quality_agent")
         logger.info(f"[Orchestrator] Quality review complete: {len(findings)} findings")
@@ -338,16 +410,33 @@ Output findings in JSON format:
             agent_type="pr_reviewer",  # Read-only - no bash, no edits
         )
 
+        # Create tracker for this subagent
+        tracker = _create_tracker(project_root, model, "deep_analysis")
+        if tracker:
+            try:
+                await tracker.start_session()
+            except Exception:
+                pass
+
         result_text = ""
         async with client:
             await client.query(full_prompt)
 
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
+                if msg_type in ("AssistantMessage", "ResultMessage"):
+                    await _track_session(tracker, msg)
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
                         if hasattr(block, "text"):
                             result_text += block.text
+
+        # Finalize tracking
+        if tracker:
+            try:
+                await tracker.finalize()
+            except Exception:
+                pass
 
         findings = _parse_findings_from_response(result_text, source="deep_analysis")
         logger.info(f"[Orchestrator] Deep analysis complete: {len(findings)} findings")
