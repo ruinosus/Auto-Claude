@@ -19,6 +19,7 @@ export * from './app-update';
 export * from './skills';
 export * from './mcp';
 export * from './roi';
+export * from './cli';
 
 // IPC types (must be last to use types from other modules)
 export * from './ipc';

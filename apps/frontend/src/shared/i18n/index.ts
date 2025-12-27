@@ -10,6 +10,7 @@ import enWelcome from './locales/en/welcome.json';
 import enOnboarding from './locales/en/onboarding.json';
 import enDialogs from './locales/en/dialogs.json';
 import enAnalytics from './locales/en/analytics.json';
+import enTaskReview from './locales/en/taskReview.json';
 
 // Import French translation resources
 import frCommon from './locales/fr/common.json';
@@ -20,6 +21,7 @@ import frWelcome from './locales/fr/welcome.json';
 import frOnboarding from './locales/fr/onboarding.json';
 import frDialogs from './locales/fr/dialogs.json';
 import frAnalytics from './locales/fr/analytics.json';
+import frTaskReview from './locales/fr/taskReview.json';
 
 export const defaultNS = 'common';
 
@@ -32,7 +34,8 @@ export const resources = {
     welcome: enWelcome,
     onboarding: enOnboarding,
     dialogs: enDialogs,
-    analytics: enAnalytics
+    analytics: enAnalytics,
+    taskReview: enTaskReview
   },
   fr: {
     common: frCommon,
@@ -42,7 +45,8 @@ export const resources = {
     welcome: frWelcome,
     onboarding: frOnboarding,
     dialogs: frDialogs,
-    analytics: frAnalytics
+    analytics: frAnalytics,
+    taskReview: frTaskReview
   }
 } as const;
 
@@ -53,7 +57,7 @@ i18n
     lng: 'en', // Default language (will be overridden by settings)
     fallbackLng: 'en',
     defaultNS,
-    ns: ['common', 'navigation', 'settings', 'tasks', 'welcome', 'onboarding', 'dialogs', 'analytics'],
+    ns: ['common', 'navigation', 'settings', 'tasks', 'welcome', 'onboarding', 'dialogs', 'analytics', 'taskReview'],
     interpolation: {
       escapeValue: false // React already escapes values
     },
