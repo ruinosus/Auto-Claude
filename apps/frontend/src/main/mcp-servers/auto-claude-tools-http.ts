@@ -9,7 +9,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express from 'express';
-import type { Request as ExpressRequest, Response as ExpressResponse, Application } from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express-serve-static-core';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -215,7 +215,7 @@ export function createAutoClaudeToolsServer(): McpServer {
 /**
  * Start HTTP server for MCP
  */
-export function startAutoClaudeToolsHttpServer(): express.Application {
+export function startAutoClaudeToolsHttpServer(): ReturnType<typeof express> {
   const app = express();
   app.use(express.json());
 
@@ -223,7 +223,7 @@ export function startAutoClaudeToolsHttpServer(): express.Application {
   const transports: Record<string, StreamableHTTPServerTransport> = {};
 
   // Handle MCP requests
-  app.post('/mcp', async (req: Request, res: Response) => {
+  app.post('/mcp', async (req: ExpressRequest, res: ExpressResponse) => {
     const sessionId = req.headers['mcp-session-id'] as string | undefined;
     let transport: StreamableHTTPServerTransport;
 
@@ -253,11 +253,16 @@ export function startAutoClaudeToolsHttpServer(): express.Application {
       await server.connect(transport);
     }
 
-    await transport.handleRequest(req, res, req.body);
+    // Cast to IncomingMessage/ServerResponse for MCP SDK compatibility
+    await transport.handleRequest(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      req.body
+    );
   });
 
   // Health check endpoint
-  app.get('/health', (_req: Request, res: Response) => {
+  app.get('/health', (_req: ExpressRequest, res: ExpressResponse) => {
     res.json({
       status: 'healthy',
       server: 'auto-claude-tools-http',

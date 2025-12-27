@@ -24,6 +24,7 @@ import { validateServerConfig } from './server-validator';
 export interface GenerationResult {
   success: boolean;
   serverId?: string;
+  serverPath?: string;
   error?: string;
 }
 

@@ -159,17 +159,22 @@ export async function ensureDirectory(dirPath: string): Promise<void> {
  * Write multiple files to a directory
  *
  * @param directory - The target directory
- * @param files - Map of filename to content
+ * @param files - Array of file objects with filename and content
  */
 export async function writeAllServerFiles(
   directory: string,
-  files: Map<string, string>
+  files: Array<{ filename: string; content: string }>
 ): Promise<void> {
   const fsPromises = await import('fs/promises');
   await ensureDirectory(directory);
 
-  for (const [filename, content] of files) {
+  for (const { filename, content } of files) {
     const filePath = path.join(directory, filename);
+    // Create subdirectories if needed (for nested paths like src/package/server.py)
+    const fileDir = path.dirname(filePath);
+    if (fileDir !== directory) {
+      await ensureDirectory(fileDir);
+    }
     await fsPromises.writeFile(filePath, content, 'utf-8');
   }
 }

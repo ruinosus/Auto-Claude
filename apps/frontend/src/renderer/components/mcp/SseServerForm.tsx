@@ -206,7 +206,7 @@ export function SseServerForm({ initialValues, onSubmit, onCancel }: SseServerFo
                 value={authValue}
                 onChange={e => setAuthValue(e.target.value)}
                 placeholder="Enter your key or token"
-                required={authType !== 'none'}
+                required
                 className="pr-10"
               />
               <Button

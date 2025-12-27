@@ -71,10 +71,10 @@ export async function connectToServer(serverId: string): Promise<void> {
       const transport = new StdioClientTransport({
         command: config.command,
         args: config.args,
-    env: {
-      ...process.env,
-      ...config.env
-    }
+    env: Object.fromEntries(
+      Object.entries({ ...process.env, ...config.env })
+        .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    )
   });
 
   // Create client

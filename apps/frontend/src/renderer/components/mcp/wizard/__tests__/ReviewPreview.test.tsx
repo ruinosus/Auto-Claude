@@ -133,7 +133,7 @@ describe('ReviewPreview', () => {
   });
 
   it('should show loading state when generating', async () => {
-    const slowGenerate = vi.fn(() => new Promise(resolve => setTimeout(resolve, 100)));
+    const slowGenerate = vi.fn((): Promise<void> => new Promise(resolve => setTimeout(resolve, 100)));
 
     render(
       <ReviewPreview

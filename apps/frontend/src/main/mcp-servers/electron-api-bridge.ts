@@ -7,7 +7,8 @@
  * The STDIO server calls this API to get data from Electron.
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request as ExpressRequest, Response as ExpressResponse } from 'express-serve-static-core';
 import { ipcMain } from 'electron';
 
 const API_PORT = process.env.ELECTRON_API_PORT || 9824;
@@ -132,12 +133,12 @@ async function searchCode(
 /**
  * Start API bridge server
  */
-export function startElectronApiBridge(): express.Application {
+export function startElectronApiBridge(): ReturnType<typeof express> {
   const app = express();
   app.use(express.json());
 
   // Endpoint: Get build progress
-  app.get('/api/build-progress', async (req: Request, res: Response) => {
+  app.get('/api/build-progress', async (req: ExpressRequest, res: ExpressResponse) => {
     try {
       const { specId } = req.query;
 
@@ -157,7 +158,7 @@ export function startElectronApiBridge(): express.Application {
   });
 
   // Endpoint: Get project context
-  app.get('/api/context', async (req: Request, res: Response) => {
+  app.get('/api/context', async (req: ExpressRequest, res: ExpressResponse) => {
     try {
       const { projectPath, includeMemory } = req.query;
 
@@ -176,7 +177,7 @@ export function startElectronApiBridge(): express.Application {
   });
 
   // Endpoint: Search code
-  app.get('/api/search-code', async (req: Request, res: Response) => {
+  app.get('/api/search-code', async (req: ExpressRequest, res: ExpressResponse) => {
     try {
       const { query, filePattern, caseSensitive, maxResults } = req.query;
 
@@ -202,7 +203,7 @@ export function startElectronApiBridge(): express.Application {
   });
 
   // Health check
-  app.get('/api/health', (_req: Request, res: Response) => {
+  app.get('/api/health', (_req: ExpressRequest, res: ExpressResponse) => {
     res.json({
       status: 'healthy',
       service: 'electron-api-bridge',

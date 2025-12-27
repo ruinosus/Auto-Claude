@@ -285,14 +285,14 @@ describe('Integration: Registry Update After Generation', () => {
     expect(mockEvent.sender.send).toHaveBeenCalled();
 
     const progressCalls = mockEvent.sender.send.mock.calls.filter(
-      call => call[0] === 'mcp:generation-progress'
+      (call: [string, unknown]) => call[0] === 'mcp:generation-progress'
     );
 
     expect(progressCalls.length).toBeGreaterThan(0);
 
     // Check that we got a completion event
     const completeCalls = progressCalls.filter(
-      call => call[1].step === 'complete'
+      (call: [string, { step: string }]) => call[1].step === 'complete'
     );
 
     expect(completeCalls.length).toBeGreaterThan(0);

@@ -90,7 +90,7 @@ describe('useAnalyticsData', () => {
   });
 
   it('should not poll when dbPath is null', () => {
-    const { unmount } = renderHook(() => useAnalyticsData(null, 1000));
+    const { unmount } = renderHook(() => useAnalyticsData(null));
 
     expect(useAnalyticsStore.getState().data).toBeNull();
 
@@ -98,7 +98,7 @@ describe('useAnalyticsData', () => {
   });
 
   it('should fetch data on mount', async () => {
-    const { unmount } = renderHook(() => useAnalyticsData(tempDbPath, 1000));
+    const { unmount } = renderHook(() => useAnalyticsData(tempDbPath));
 
     // Wait for initial fetch
     await vi.waitFor(() => {
@@ -120,7 +120,7 @@ describe('useAnalyticsData', () => {
   it('should poll database at specified interval', async () => {
     vi.useFakeTimers();
 
-    const { unmount } = renderHook(() => useAnalyticsData(tempDbPath, 100));
+    const { unmount } = renderHook(() => useAnalyticsData(tempDbPath));
 
     // Initial fetch
     await vi.waitFor(() => {
@@ -157,7 +157,7 @@ describe('useAnalyticsData', () => {
   it('should stop polling on unmount', async () => {
     vi.useFakeTimers();
 
-    const { unmount } = renderHook(() => useAnalyticsData(tempDbPath, 100));
+    const { unmount } = renderHook(() => useAnalyticsData(tempDbPath));
 
     await vi.waitFor(() => {
       return useAnalyticsStore.getState().data !== null;
@@ -187,7 +187,7 @@ describe('useAnalyticsData', () => {
   it('should handle database errors gracefully', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    const { unmount } = renderHook(() => useAnalyticsData('/invalid/path/to/db.db', 1000));
+    const { unmount } = renderHook(() => useAnalyticsData('/invalid/path/to/db.db'));
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Failed to fetch analytics data:',

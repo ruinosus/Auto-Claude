@@ -297,10 +297,10 @@ export class MCPManager {
       command: config.command,
       args: resolvedArgs,
       cwd: config.cwd,
-      env: {
-        ...process.env,
-        ...resolvedEnv
-      }
+      env: Object.fromEntries(
+        Object.entries({ ...process.env, ...resolvedEnv })
+          .filter((entry): entry is [string, string] => entry[1] !== undefined)
+      )
     });
   }
 

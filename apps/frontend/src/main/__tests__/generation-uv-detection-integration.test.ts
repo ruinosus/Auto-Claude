@@ -172,7 +172,7 @@ describe('Integration: uv Installation Detection', () => {
     expect(mockEvent.sender.send).toHaveBeenCalled();
 
     const errorCalls = mockEvent.sender.send.mock.calls.filter(
-      call => call[0] === 'mcp:generation-progress' && call[1].step === 'error'
+      (call: [string, { step: string }]) => call[0] === 'mcp:generation-progress' && call[1].step === 'error'
     );
 
     expect(errorCalls.length).toBeGreaterThan(0);
