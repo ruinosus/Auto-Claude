@@ -7,11 +7,18 @@ with local caching and graceful fallback to .env configuration.
 
 import os
 import json
-import aiohttp
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass
+
+# Optional aiohttp import - pricing will use fallback if not available
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    aiohttp = None
+    AIOHTTP_AVAILABLE = False
 
 
 @dataclass
@@ -95,6 +102,10 @@ class ModelsPricingProvider:
 
     async def _fetch_from_api(self) -> Optional[Dict]:
         """Fetch pricing data from models.dev API."""
+        if not AIOHTTP_AVAILABLE:
+            # aiohttp not installed, skip API fetch
+            return None
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.API_URL, timeout=aiohttp.ClientTimeout(total=10)) as response:
