@@ -50,6 +50,7 @@ export interface ProjectAPI {
   updateProjectEnv: (projectId: string, config: Partial<ProjectEnvConfig>) => Promise<IPCResult>;
   checkClaudeAuth: (projectId: string) => Promise<IPCResult<ClaudeAuthResult>>;
   invokeClaudeSetup: (projectId: string) => Promise<IPCResult<ClaudeAuthResult>>;
+  testAzureFoundryConnection: (apiKey: string, baseUrl: string) => Promise<IPCResult<{ success: boolean; message: string; latencyMs?: number }>>;
 
   // Dialog Operations
   selectDirectory: () => Promise<string | null>;
@@ -206,6 +207,9 @@ export const createProjectAPI = (): ProjectAPI => ({
 
   invokeClaudeSetup: (projectId: string): Promise<IPCResult<ClaudeAuthResult>> =>
     ipcRenderer.invoke(IPC_CHANNELS.ENV_INVOKE_CLAUDE_SETUP, projectId),
+
+  testAzureFoundryConnection: (apiKey: string, baseUrl: string): Promise<IPCResult<{ success: boolean; message: string; latencyMs?: number }>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.ENV_TEST_AZURE_FOUNDRY, apiKey, baseUrl),
 
   // Dialog Operations
   selectDirectory: (): Promise<string | null> =>

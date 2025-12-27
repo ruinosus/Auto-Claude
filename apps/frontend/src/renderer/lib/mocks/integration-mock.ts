@@ -60,6 +60,14 @@ export const integrationMock = {
     }
   }),
 
+  testAzureFoundryConnection: async () => ({
+    success: true,
+    data: {
+      success: false,
+      message: 'Not available in browser mock'
+    }
+  }),
+
   // Linear Integration Operations
   getLinearTeams: async () => ({
     success: true,

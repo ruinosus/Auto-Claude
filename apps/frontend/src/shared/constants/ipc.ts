@@ -147,6 +147,7 @@ export const IPC_CHANNELS = {
   ENV_UPDATE: 'env:update',
   ENV_CHECK_CLAUDE_AUTH: 'env:checkClaudeAuth',
   ENV_INVOKE_CLAUDE_SETUP: 'env:invokeClaudeSetup',
+  ENV_TEST_AZURE_FOUNDRY: 'env:testAzureFoundry',
 
   // Ideation operations
   IDEATION_GET: 'ideation:get',

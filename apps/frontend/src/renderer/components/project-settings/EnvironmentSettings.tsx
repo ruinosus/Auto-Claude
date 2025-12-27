@@ -9,12 +9,21 @@ import {
   Check,
   Star,
   Settings,
-  Users
+  Users,
+  Cloud,
+  Server,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
+import { Input } from '../ui/input';
 import { cn } from '../../lib/utils';
 import type { ProjectEnvConfig, ClaudeProfile } from '../../../shared/types';
+
+type AuthMode = 'oauth' | 'azure-foundry' | 'auth-token';
 
 interface EnvironmentSettingsProps {
   envConfig: ProjectEnvConfig | null;
@@ -40,6 +49,7 @@ export function EnvironmentSettings({
   envConfig,
   isLoadingEnv,
   envError,
+  updateEnvConfig,
   isCheckingClaudeAuth,
   claudeAuthStatus,
   handleClaudeSetup,
@@ -50,6 +60,26 @@ export function EnvironmentSettings({
   const [claudeProfiles, setClaudeProfiles] = useState<ClaudeProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+
+  // Auth mode state
+  const [authMode, setAuthMode] = useState<AuthMode>('oauth');
+
+  // Azure Foundry fields
+  const [azureApiKey, setAzureApiKey] = useState('');
+  const [azureBaseUrl, setAzureBaseUrl] = useState('');
+  const [azureResource, setAzureResource] = useState('');
+  const [showAzureApiKey, setShowAzureApiKey] = useState(false);
+
+  // Auth Token fields
+  const [authToken, setAuthToken] = useState('');
+  const [showAuthToken, setShowAuthToken] = useState(false);
+
+  // Validation
+  const [azureUrlError, setAzureUrlError] = useState<string | null>(null);
+
+  // Connection test state
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     const loadProfiles = async () => {
@@ -69,8 +99,120 @@ export function EnvironmentSettings({
     loadProfiles();
   }, []);
 
+  // Sync local state with envConfig
+  useEffect(() => {
+    if (envConfig) {
+      setAuthMode(envConfig.authMode || 'oauth');
+      setAzureApiKey(envConfig.azureFoundryApiKey || '');
+      setAzureBaseUrl(envConfig.azureFoundryBaseUrl || '');
+      setAzureResource(envConfig.azureFoundryResource || '');
+      setAuthToken(envConfig.anthropicAuthToken || '');
+    }
+  }, [envConfig]);
+
   const activeProfile = claudeProfiles.find(p => p.id === activeProfileId);
   const hasAuthenticatedProfiles = claudeProfiles.some(p => p.oauthToken);
+
+  // Validate Azure Base URL
+  const validateAzureUrl = (url: string): boolean => {
+    if (!url) {
+      setAzureUrlError(null);
+      return true;
+    }
+    if (!url.endsWith('/anthropic')) {
+      setAzureUrlError('Base URL must end with /anthropic');
+      return false;
+    }
+    try {
+      new URL(url);
+      setAzureUrlError(null);
+      return true;
+    } catch {
+      setAzureUrlError('Invalid URL format');
+      return false;
+    }
+  };
+
+  // Handle auth mode change
+  const handleAuthModeChange = (mode: AuthMode) => {
+    setAuthMode(mode);
+    updateEnvConfig({ authMode: mode });
+  };
+
+  // Handle Azure Foundry field updates
+  const handleAzureApiKeyChange = (value: string) => {
+    setAzureApiKey(value);
+    updateEnvConfig({ azureFoundryApiKey: value });
+  };
+
+  const handleAzureBaseUrlChange = (value: string) => {
+    setAzureBaseUrl(value);
+    validateAzureUrl(value);
+    updateEnvConfig({ azureFoundryBaseUrl: value });
+  };
+
+  const handleAzureResourceChange = (value: string) => {
+    setAzureResource(value);
+    updateEnvConfig({ azureFoundryResource: value });
+  };
+
+  // Handle Auth Token update
+  const handleAuthTokenChange = (value: string) => {
+    setAuthToken(value);
+    updateEnvConfig({ anthropicAuthToken: value });
+  };
+
+  // Check if Azure Foundry is configured
+  const isAzureConfigured = azureApiKey && azureBaseUrl && !azureUrlError;
+
+  // Check if Auth Token is configured
+  const isAuthTokenConfigured = !!authToken;
+
+  // Test Azure Foundry connection
+  const handleTestAzureConnection = async () => {
+    if (!azureApiKey || !azureBaseUrl) return;
+
+    setIsTestingConnection(true);
+    setConnectionTestResult(null);
+
+    try {
+      const result = await window.electronAPI.testAzureFoundryConnection(azureApiKey, azureBaseUrl);
+      if (result.success && result.data) {
+        setConnectionTestResult({
+          success: result.data.success,
+          message: result.data.message
+        });
+      } else {
+        setConnectionTestResult({
+          success: false,
+          message: result.error || 'Connection test failed'
+        });
+      }
+    } catch (error) {
+      setConnectionTestResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Connection test failed'
+      });
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  // Get overall auth status based on mode
+  const getAuthStatusForMode = (): 'configured' | 'not_configured' => {
+    switch (authMode) {
+      case 'oauth':
+        return claudeAuthStatus === 'authenticated' ? 'configured' : 'not_configured';
+      case 'azure-foundry':
+        return isAzureConfigured ? 'configured' : 'not_configured';
+      case 'auth-token':
+        return isAuthTokenConfigured ? 'configured' : 'not_configured';
+      default:
+        return 'not_configured';
+    }
+  };
+
+  const currentAuthStatus = getAuthStatusForMode();
 
   return (
     <section className="space-y-3">
@@ -81,12 +223,12 @@ export function EnvironmentSettings({
         <div className="flex items-center gap-2">
           <Key className="h-4 w-4" />
           Claude Authentication
-          {claudeAuthStatus === 'authenticated' && (
+          {currentAuthStatus === 'configured' && (
             <span className="px-2 py-0.5 text-xs bg-success/10 text-success rounded-full">
               Connected
             </span>
           )}
-          {claudeAuthStatus === 'not_authenticated' && (
+          {currentAuthStatus === 'not_configured' && (
             <span className="px-2 py-0.5 text-xs bg-warning/10 text-warning rounded-full">
               Not Connected
             </span>
@@ -108,133 +250,376 @@ export function EnvironmentSettings({
             </div>
           ) : envConfig ? (
             <>
-              {/* Inheritance Info */}
-              <div className="rounded-lg border border-info/30 bg-info/5 p-3">
-                <div className="flex items-start gap-3">
-                  <Globe className="h-5 w-5 text-info mt-0.5 shrink-0" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      Using Global Authentication
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Claude authentication is managed in{' '}
-                      <span className="font-medium text-info">Settings → Integrations</span>.
-                      All projects share the same Claude accounts.
-                    </p>
-                  </div>
+              {/* Auth Mode Selector */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Authentication Mode</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {/* OAuth Option */}
+                  <button
+                    onClick={() => handleAuthModeChange('oauth')}
+                    className={cn(
+                      "flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all",
+                      authMode === 'oauth'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <Users className={cn("h-5 w-5", authMode === 'oauth' ? "text-primary" : "text-muted-foreground")} />
+                    <span className={cn("text-xs font-medium", authMode === 'oauth' ? "text-primary" : "text-muted-foreground")}>
+                      Claude OAuth
+                    </span>
+                    {authMode === 'oauth' && hasAuthenticatedProfiles && (
+                      <CheckCircle2 className="h-3 w-3 text-success" />
+                    )}
+                  </button>
+
+                  {/* Azure Foundry Option */}
+                  <button
+                    onClick={() => handleAuthModeChange('azure-foundry')}
+                    className={cn(
+                      "flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all",
+                      authMode === 'azure-foundry'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <Cloud className={cn("h-5 w-5", authMode === 'azure-foundry' ? "text-primary" : "text-muted-foreground")} />
+                    <span className={cn("text-xs font-medium", authMode === 'azure-foundry' ? "text-primary" : "text-muted-foreground")}>
+                      Azure Foundry
+                    </span>
+                    {authMode === 'azure-foundry' && isAzureConfigured && (
+                      <CheckCircle2 className="h-3 w-3 text-success" />
+                    )}
+                  </button>
+
+                  {/* Auth Token Option */}
+                  <button
+                    onClick={() => handleAuthModeChange('auth-token')}
+                    className={cn(
+                      "flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all",
+                      authMode === 'auth-token'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50"
+                    )}
+                  >
+                    <Server className={cn("h-5 w-5", authMode === 'auth-token' ? "text-primary" : "text-muted-foreground")} />
+                    <span className={cn("text-xs font-medium", authMode === 'auth-token' ? "text-primary" : "text-muted-foreground")}>
+                      Auth Token
+                    </span>
+                    {authMode === 'auth-token' && isAuthTokenConfigured && (
+                      <CheckCircle2 className="h-3 w-3 text-success" />
+                    )}
+                  </button>
                 </div>
               </div>
 
-              {/* Active Account Display */}
-              {hasAuthenticatedProfiles ? (
-                <div className="rounded-lg border border-border bg-muted/30 p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        <Label className="text-sm font-medium text-foreground">Active Account</Label>
+              {/* OAuth Mode Content */}
+              {authMode === 'oauth' && (
+                <>
+                  {/* Inheritance Info */}
+                  <div className="rounded-lg border border-info/30 bg-info/5 p-3">
+                    <div className="flex items-start gap-3">
+                      <Globe className="h-5 w-5 text-info mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          Using Global Authentication
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Claude authentication is managed in{' '}
+                          <span className="font-medium text-info">Settings → Integrations</span>.
+                          All projects share the same Claude accounts.
+                        </p>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleClaudeSetup}
-                      disabled={isCheckingClaudeAuth}
-                    >
-                      {isCheckingClaudeAuth ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <>
-                          <ExternalLink className="h-4 w-4 mr-2" />
-                          Re-authenticate
-                        </>
-                      )}
-                    </Button>
                   </div>
 
-                  {activeProfile ? (
-                    <div className="mt-3 flex items-center gap-3">
-                      <div className={cn(
-                        "h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0",
-                        "bg-primary text-primary-foreground"
-                      )}>
-                        {activeProfile.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-foreground">{activeProfile.name}</span>
-                          <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <Star className="h-3 w-3" />
-                            Active
-                          </span>
-                          {(activeProfile.oauthToken || (activeProfile.isDefault && activeProfile.configDir)) ? (
-                            <span className="text-xs bg-success/20 text-success px-1.5 py-0.5 rounded flex items-center gap-1">
-                              <Check className="h-3 w-3" />
-                              Authenticated
-                            </span>
-                          ) : (
-                            <span className="text-xs bg-warning/20 text-warning px-1.5 py-0.5 rounded">
-                              Needs Auth
-                            </span>
-                          )}
+                  {/* Active Account Display */}
+                  {hasAuthenticatedProfiles ? (
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            <Label className="text-sm font-medium text-foreground">Active Account</Label>
+                          </div>
                         </div>
-                        {activeProfile.email && (
-                          <span className="text-xs text-muted-foreground">{activeProfile.email}</span>
-                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleClaudeSetup}
+                          disabled={isCheckingClaudeAuth}
+                        >
+                          {isCheckingClaudeAuth ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Re-authenticate
+                            </>
+                          )}
+                        </Button>
                       </div>
-                    </div>
-                  ) : claudeProfiles.length > 0 ? (
-                    <p className="text-xs text-warning mt-2">
-                      No active account selected. Go to Settings → Integrations to select an account.
-                    </p>
-                  ) : null}
 
-                  {/* Show other authenticated accounts */}
-                  {claudeProfiles.filter(p => p.id !== activeProfileId && p.oauthToken).length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border/50">
-                      <p className="text-xs text-muted-foreground mb-2">
-                        Other authenticated accounts (used for rate limit fallback):
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {claudeProfiles
-                          .filter(p => p.id !== activeProfileId && p.oauthToken)
-                          .map(profile => (
-                            <div
-                              key={profile.id}
-                              className="flex items-center gap-1.5 text-xs bg-muted px-2 py-1 rounded"
-                            >
-                              <div className="h-4 w-4 rounded-full bg-muted-foreground/30 flex items-center justify-center text-[10px]">
-                                {profile.name.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="text-muted-foreground">{profile.name}</span>
+                      {activeProfile ? (
+                        <div className="mt-3 flex items-center gap-3">
+                          <div className={cn(
+                            "h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0",
+                            "bg-primary text-primary-foreground"
+                          )}>
+                            {activeProfile.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-foreground">{activeProfile.name}</span>
+                              <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded flex items-center gap-1">
+                                <Star className="h-3 w-3" />
+                                Active
+                              </span>
+                              {(activeProfile.oauthToken || (activeProfile.isDefault && activeProfile.configDir)) ? (
+                                <span className="text-xs bg-success/20 text-success px-1.5 py-0.5 rounded flex items-center gap-1">
+                                  <Check className="h-3 w-3" />
+                                  Authenticated
+                                </span>
+                              ) : (
+                                <span className="text-xs bg-warning/20 text-warning px-1.5 py-0.5 rounded">
+                                  Needs Auth
+                                </span>
+                              )}
                             </div>
-                          ))
-                        }
+                            {activeProfile.email && (
+                              <span className="text-xs text-muted-foreground">{activeProfile.email}</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : claudeProfiles.length > 0 ? (
+                        <p className="text-xs text-warning mt-2">
+                          No active account selected. Go to Settings → Integrations to select an account.
+                        </p>
+                      ) : null}
+
+                      {/* Show other authenticated accounts */}
+                      {claudeProfiles.filter(p => p.id !== activeProfileId && p.oauthToken).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Other authenticated accounts (used for rate limit fallback):
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {claudeProfiles
+                              .filter(p => p.id !== activeProfileId && p.oauthToken)
+                              .map(profile => (
+                                <div
+                                  key={profile.id}
+                                  className="flex items-center gap-1.5 text-xs bg-muted px-2 py-1 rounded"
+                                >
+                                  <div className="h-4 w-4 rounded-full bg-muted-foreground/30 flex items-center justify-center text-[10px]">
+                                    {profile.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <span className="text-muted-foreground">{profile.name}</span>
+                                </div>
+                              ))
+                            }
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* No accounts configured */
+                    <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
+                      <div className="flex flex-col items-center text-center">
+                        <Users className="h-8 w-8 text-warning mb-2" />
+                        <p className="text-sm font-medium text-foreground">No Claude Accounts Configured</p>
+                        <p className="text-xs text-muted-foreground mt-1 mb-3">
+                          Add a Claude account in the global settings to use Auto-Build.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            // Emit event to open app settings at Integrations
+                            window.dispatchEvent(new CustomEvent('open-app-settings', { detail: 'integrations' }));
+                          }}
+                        >
+                          <Settings className="h-4 w-4 mr-2" />
+                          Open Integrations Settings
+                        </Button>
                       </div>
                     </div>
                   )}
-                </div>
-              ) : (
-                /* No accounts configured */
-                <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
-                  <div className="flex flex-col items-center text-center">
-                    <Users className="h-8 w-8 text-warning mb-2" />
-                    <p className="text-sm font-medium text-foreground">No Claude Accounts Configured</p>
-                    <p className="text-xs text-muted-foreground mt-1 mb-3">
-                      Add a Claude account in the global settings to use Auto-Build.
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        // Emit event to open app settings at Integrations
-                        window.dispatchEvent(new CustomEvent('open-app-settings', { detail: 'integrations' }));
-                      }}
-                    >
-                      <Settings className="h-4 w-4 mr-2" />
-                      Open Integrations Settings
-                    </Button>
+                </>
+              )}
+
+              {/* Azure Foundry Mode Content */}
+              {authMode === 'azure-foundry' && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-info/30 bg-info/5 p-3">
+                    <div className="flex items-start gap-3">
+                      <Cloud className="h-5 w-5 text-info mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          Azure Foundry Enterprise
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Use Claude models through your Azure Foundry deployment.
+                          Configure your API key and endpoint below.
+                        </p>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* API Key */}
+                  <div className="space-y-2">
+                    <Label htmlFor="azure-api-key" className="text-sm">API Key</Label>
+                    <div className="relative">
+                      <Input
+                        id="azure-api-key"
+                        type={showAzureApiKey ? 'text' : 'password'}
+                        value={azureApiKey}
+                        onChange={(e) => handleAzureApiKeyChange(e.target.value)}
+                        placeholder="Enter your Azure Foundry API key"
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAzureApiKey(!showAzureApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showAzureApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Base URL */}
+                  <div className="space-y-2">
+                    <Label htmlFor="azure-base-url" className="text-sm">Base URL</Label>
+                    <Input
+                      id="azure-base-url"
+                      type="text"
+                      value={azureBaseUrl}
+                      onChange={(e) => handleAzureBaseUrlChange(e.target.value)}
+                      placeholder="https://your-resource.openai.azure.com/anthropic"
+                      className={azureUrlError ? 'border-destructive' : ''}
+                    />
+                    {azureUrlError && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {azureUrlError}
+                      </p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Must end with <code className="bg-muted px-1 rounded">/anthropic</code>
+                    </p>
+                  </div>
+
+                  {/* Resource Name */}
+                  <div className="space-y-2">
+                    <Label htmlFor="azure-resource" className="text-sm">Resource Name</Label>
+                    <Input
+                      id="azure-resource"
+                      type="text"
+                      value={azureResource}
+                      onChange={(e) => handleAzureResourceChange(e.target.value)}
+                      placeholder="your-azure-resource-name"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Your Azure resource name (the first part of your endpoint URL)
+                    </p>
+                  </div>
+
+                  {/* Test Connection Button */}
+                  <div className="space-y-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleTestAzureConnection}
+                      disabled={!azureApiKey || !azureBaseUrl || !!azureUrlError || isTestingConnection}
+                    >
+                      {isTestingConnection ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Testing Connection...
+                        </>
+                      ) : (
+                        <>
+                          <Globe className="h-4 w-4 mr-2" />
+                          Test Connection
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Connection Test Result */}
+                    {connectionTestResult && (
+                      <div className={cn(
+                        "flex items-center gap-2 text-sm p-2 rounded-md",
+                        connectionTestResult.success
+                          ? "bg-success/10 text-success"
+                          : "bg-destructive/10 text-destructive"
+                      )}>
+                        {connectionTestResult.success ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <AlertCircle className="h-4 w-4 shrink-0" />
+                        )}
+                        <span className="text-xs">{connectionTestResult.message}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status */}
+                  {isAzureConfigured && (
+                    <div className="flex items-center gap-2 text-sm text-success">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Azure Foundry configured
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Auth Token Mode Content */}
+              {authMode === 'auth-token' && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-info/30 bg-info/5 p-3">
+                    <div className="flex items-start gap-3">
+                      <Server className="h-5 w-5 text-info mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">
+                          Auth Token (Proxy/CCR)
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Use an authentication token for on-premises or proxy deployments.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Auth Token */}
+                  <div className="space-y-2">
+                    <Label htmlFor="auth-token" className="text-sm">Authentication Token</Label>
+                    <div className="relative">
+                      <Input
+                        id="auth-token"
+                        type={showAuthToken ? 'text' : 'password'}
+                        value={authToken}
+                        onChange={(e) => handleAuthTokenChange(e.target.value)}
+                        placeholder="sk-zcf-x-..."
+                        className="pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAuthToken(!showAuthToken)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showAuthToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  {isAuthTokenConfigured && (
+                    <div className="flex items-center gap-2 text-sm text-success">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Auth token configured
+                    </div>
+                  )}
                 </div>
               )}
             </>

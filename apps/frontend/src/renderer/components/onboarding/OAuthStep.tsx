@@ -636,6 +636,23 @@ export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
                 </CardContent>
               </Card>
             )}
+
+            {/* Enterprise authentication info */}
+            <Card className="border border-info/30 bg-info/5">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <Info className="h-5 w-5 text-info shrink-0 mt-0.5" />
+                  <div className="text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground mb-1">Using Azure Foundry or Enterprise?</p>
+                    <p>
+                      Skip this step and configure your authentication per-project in{' '}
+                      <span className="font-medium text-info">Project Settings → Claude Authentication</span>.
+                      You can choose between OAuth, Azure Foundry, or Auth Token.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 

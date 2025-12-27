@@ -567,4 +567,30 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
     }
   );
 
+  // Test Azure Foundry connection
+  ipcMain.handle(
+    IPC_CHANNELS.ENV_TEST_AZURE_FOUNDRY,
+    async (_, apiKey: string, baseUrl: string): Promise<IPCResult<{ success: boolean; message: string; latencyMs?: number }>> => {
+      try {
+        // Import the validation function
+        const { validateAzureFoundryConnection } = await import('../api-validation-service');
+        const result = await validateAzureFoundryConnection(apiKey, baseUrl);
+
+        return {
+          success: true,
+          data: {
+            success: result.success,
+            message: result.message,
+            latencyMs: result.details?.latencyMs
+          }
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to test Azure Foundry connection'
+        };
+      }
+    }
+  );
+
 }

@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
-import type { IPCResult, TaskStartOptions, TaskStatus } from '../../../shared/types';
+import type { IPCResult, TaskStartOptions, TaskStatus, Project } from '../../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { spawnSync } from 'child_process';
@@ -9,6 +9,91 @@ import { fileWatcher } from '../../file-watcher';
 import { findTaskAndProject } from './shared';
 import { checkGitStatus } from '../../project-initializer';
 import { getClaudeProfileManager } from '../../claude-profile-manager';
+import { parseEnvFile } from '../utils';
+
+/**
+ * Check if project has valid authentication based on auth mode.
+ * Supports: oauth (default), azure-foundry, auth-token
+ */
+function hasValidProjectAuth(project: Project): { valid: boolean; mode: string; error?: string } {
+  // Read the project's .env file to determine auth mode
+  if (!project.autoBuildPath) {
+    return { valid: false, mode: 'unknown', error: 'Project not initialized' };
+  }
+
+  const envPath = path.join(project.path, project.autoBuildPath, '.env');
+  let vars: Record<string, string> = {};
+
+  if (existsSync(envPath)) {
+    try {
+      const content = readFileSync(envPath, 'utf-8');
+      vars = parseEnvFile(content);
+    } catch {
+      // Continue with empty vars
+    }
+  }
+
+  // Get auth mode (default to 'oauth')
+  const authMode = vars['CLAUDE_AUTH_MODE'] || 'oauth';
+
+  switch (authMode) {
+    case 'azure-foundry': {
+      // Check Azure Foundry credentials
+      const hasApiKey = !!vars['ANTHROPIC_FOUNDRY_API_KEY'];
+      const hasBaseUrl = !!vars['ANTHROPIC_FOUNDRY_BASE_URL'];
+
+      if (!hasApiKey || !hasBaseUrl) {
+        return {
+          valid: false,
+          mode: 'azure-foundry',
+          error: 'Azure Foundry authentication required. Please configure your API key and Base URL in Project Settings > Claude Authentication.'
+        };
+      }
+
+      // Validate Base URL format
+      const baseUrl = vars['ANTHROPIC_FOUNDRY_BASE_URL'];
+      if (!baseUrl.endsWith('/anthropic')) {
+        return {
+          valid: false,
+          mode: 'azure-foundry',
+          error: 'Azure Foundry Base URL must end with /anthropic. Please update in Project Settings > Claude Authentication.'
+        };
+      }
+
+      return { valid: true, mode: 'azure-foundry' };
+    }
+
+    case 'auth-token': {
+      // Check Auth Token
+      const hasToken = !!vars['ANTHROPIC_AUTH_TOKEN'];
+
+      if (!hasToken) {
+        return {
+          valid: false,
+          mode: 'auth-token',
+          error: 'Auth Token required. Please configure your token in Project Settings > Claude Authentication.'
+        };
+      }
+
+      return { valid: true, mode: 'auth-token' };
+    }
+
+    case 'oauth':
+    default: {
+      // Use existing profile manager check for OAuth
+      const profileManager = getClaudeProfileManager();
+      if (!profileManager.hasValidAuth()) {
+        return {
+          valid: false,
+          mode: 'oauth',
+          error: 'Claude authentication required. Please go to Settings > Claude Profiles and authenticate your account, or set an OAuth token.'
+        };
+      }
+
+      return { valid: true, mode: 'oauth' };
+    }
+  }
+}
 
 /**
  * Helper function to check subtask completion status
@@ -84,16 +169,18 @@ export function registerTaskExecutionHandlers(
       }
 
       // Check authentication - Claude requires valid auth to run tasks
-      const profileManager = getClaudeProfileManager();
-      if (!profileManager.hasValidAuth()) {
-        console.warn('[TASK_START] No valid authentication for active profile');
+      // Supports: OAuth (profile-based), Azure Foundry, Auth Token
+      const authCheck = hasValidProjectAuth(project);
+      if (!authCheck.valid) {
+        console.warn(`[TASK_START] No valid authentication (mode: ${authCheck.mode})`);
         mainWindow.webContents.send(
           IPC_CHANNELS.TASK_ERROR,
           taskId,
-          'Claude authentication required. Please go to Settings > Claude Profiles and authenticate your account, or set an OAuth token.'
+          authCheck.error || 'Authentication required.'
         );
         return;
       }
+      console.log(`[TASK_START] Using auth mode: ${authCheck.mode}`);
 
       console.warn('[TASK_START] Found task:', task.specId, 'status:', task.status, 'subtasks:', task.subtasks.length);
 
@@ -457,17 +544,18 @@ export function registerTaskExecutionHandlers(
           }
 
           // Check authentication before auto-starting
-          const profileManager = getClaudeProfileManager();
-          if (!profileManager.hasValidAuth()) {
-            console.warn('[TASK_UPDATE_STATUS] No valid authentication for active profile');
+          // Supports: OAuth (profile-based), Azure Foundry, Auth Token
+          const authCheckForUpdate = hasValidProjectAuth(project);
+          if (!authCheckForUpdate.valid) {
+            console.warn(`[TASK_UPDATE_STATUS] No valid authentication (mode: ${authCheckForUpdate.mode})`);
             if (mainWindow) {
               mainWindow.webContents.send(
                 IPC_CHANNELS.TASK_ERROR,
                 taskId,
-                'Claude authentication required. Please go to Settings > Claude Profiles and authenticate your account, or set an OAuth token.'
+                authCheckForUpdate.error || 'Authentication required.'
               );
             }
-            return { success: false, error: 'Claude authentication required' };
+            return { success: false, error: authCheckForUpdate.error || 'Authentication required' };
           }
 
           console.warn('[TASK_UPDATE_STATUS] Auto-starting task:', taskId);
@@ -717,9 +805,10 @@ export function registerTaskExecutionHandlers(
           }
 
           // Check authentication before auto-restarting
-          const profileManager = getClaudeProfileManager();
-          if (!profileManager.hasValidAuth()) {
-            console.warn('[Recovery] Auth check failed, cannot auto-restart task');
+          // Supports: OAuth (profile-based), Azure Foundry, Auth Token
+          const authCheckForRecovery = hasValidProjectAuth(project);
+          if (!authCheckForRecovery.valid) {
+            console.warn(`[Recovery] Auth check failed (mode: ${authCheckForRecovery.mode}), cannot auto-restart task`);
             // Recovery succeeded but we can't restart without auth
             return {
               success: true,
@@ -727,7 +816,7 @@ export function registerTaskExecutionHandlers(
                 taskId,
                 recovered: true,
                 newStatus,
-                message: 'Task recovered but cannot restart: Claude authentication required. Please go to Settings > Claude Profiles and authenticate your account.',
+                message: `Task recovered but cannot restart: ${authCheckForRecovery.error}`,
                 autoRestarted: false
               }
             };
