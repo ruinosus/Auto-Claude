@@ -249,66 +249,111 @@ function findBackendDir(): string | undefined {
 }
 
 /**
+ * Default Azure Foundry model deployment names.
+ * Azure Foundry deployments use shorter names without the full version date suffix.
+ * These are used as fallback when backend .env cannot be loaded.
+ */
+const AZURE_FOUNDRY_DEFAULT_MODELS: Record<string, string> = {
+  'ANTHROPIC_DEFAULT_SONNET_MODEL': 'claude-sonnet-4-5',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL': 'claude-haiku-4-5',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL': 'claude-opus-4-5'
+};
+
+/**
+ * Check if a URL looks like an Azure Foundry endpoint
+ */
+function isAzureFoundryUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.includes('.azure.com') ||
+           hostname.includes('azure') ||
+           hostname.includes('foundry');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Load Azure Foundry configuration from backend .env file
+ * @param proxyBaseUrl - Optional proxy base URL to check if Azure Foundry mode
  * @returns Object with all Azure Foundry environment variables
  */
-function loadBackendAzureFoundryConfig(): Record<string, string> {
+function loadBackendAzureFoundryConfig(proxyBaseUrl?: string): Record<string, string> {
   const backendDir = findBackendDir();
+  let config: Record<string, string> = {};
+
   if (!backendDir) {
     debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend directory not found');
-    return {};
+  } else {
+    const backendEnvPath = path.join(backendDir, '.env');
+
+    if (!fs.existsSync(backendEnvPath)) {
+      debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend .env not found at:', backendEnvPath);
+    } else {
+      try {
+        const envContent = fs.readFileSync(backendEnvPath, 'utf-8');
+        const vars = parseEnvFile(envContent);
+
+        // Extract all Azure Foundry related variables
+        const azureFoundryVars = [
+          'CLAUDE_CODE_USE_FOUNDRY',
+          'ANTHROPIC_FOUNDRY_API_KEY',
+          'ANTHROPIC_FOUNDRY_BASE_URL',
+          'ANTHROPIC_FOUNDRY_RESOURCE',
+          'ANTHROPIC_BASE_URL',
+          'ANTHROPIC_API_KEY',
+          'ANTHROPIC_AUTH_TOKEN',
+          'ANTHROPIC_DEFAULT_SONNET_MODEL',
+          'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+          'ANTHROPIC_DEFAULT_OPUS_MODEL'
+        ];
+
+        for (const varName of azureFoundryVars) {
+          if (vars[varName]) {
+            config[varName] = vars[varName];
+          }
+        }
+
+        if (Object.keys(config).length > 0) {
+          debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Loaded Azure Foundry config:', {
+            hasFoundryFlag: !!config['CLAUDE_CODE_USE_FOUNDRY'],
+            hasApiKey: !!config['ANTHROPIC_FOUNDRY_API_KEY'],
+            hasBaseUrl: !!config['ANTHROPIC_BASE_URL'],
+            modelOverrides: {
+              sonnet: !!config['ANTHROPIC_DEFAULT_SONNET_MODEL'],
+              haiku: !!config['ANTHROPIC_DEFAULT_HAIKU_MODEL'],
+              opus: !!config['ANTHROPIC_DEFAULT_OPUS_MODEL']
+            }
+          });
+        }
+      } catch (error) {
+        debugError('[ClaudeIntegration:loadBackendAzureFoundryConfig] Failed to load backend .env:', error);
+      }
+    }
   }
 
-  const backendEnvPath = path.join(backendDir, '.env');
+  // CRITICAL: If in Azure Foundry mode but no model overrides were loaded,
+  // use default Azure Foundry deployment names to prevent "deployment not found" errors.
+  // Azure Foundry deployments use names like "claude-opus-4-5" instead of "claude-opus-4-5-20251101".
+  const isAzureMode = proxyBaseUrl && isAzureFoundryUrl(proxyBaseUrl);
+  const hasModelOverrides = config['ANTHROPIC_DEFAULT_SONNET_MODEL'] ||
+                            config['ANTHROPIC_DEFAULT_HAIKU_MODEL'] ||
+                            config['ANTHROPIC_DEFAULT_OPUS_MODEL'];
 
-  if (!fs.existsSync(backendEnvPath)) {
-    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend .env not found at:', backendEnvPath);
-    return {};
-  }
+  if (isAzureMode && !hasModelOverrides) {
+    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Azure Foundry detected but no model overrides found - using defaults');
 
-  try {
-    const envContent = fs.readFileSync(backendEnvPath, 'utf-8');
-    const vars = parseEnvFile(envContent);
-    const config: Record<string, string> = {};
-
-    // Extract all Azure Foundry related variables
-    const azureFoundryVars = [
-      'CLAUDE_CODE_USE_FOUNDRY',
-      'ANTHROPIC_FOUNDRY_API_KEY',
-      'ANTHROPIC_FOUNDRY_BASE_URL',
-      'ANTHROPIC_FOUNDRY_RESOURCE',
-      'ANTHROPIC_BASE_URL',
-      'ANTHROPIC_API_KEY',
-      'ANTHROPIC_AUTH_TOKEN',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL'
-    ];
-
-    for (const varName of azureFoundryVars) {
-      if (vars[varName]) {
-        config[varName] = vars[varName];
+    // Add default model mappings for Azure Foundry
+    for (const [key, value] of Object.entries(AZURE_FOUNDRY_DEFAULT_MODELS)) {
+      if (!config[key]) {
+        config[key] = value;
       }
     }
 
-    if (Object.keys(config).length > 0) {
-      debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Loaded Azure Foundry config:', {
-        hasFoundryFlag: !!config['CLAUDE_CODE_USE_FOUNDRY'],
-        hasApiKey: !!config['ANTHROPIC_FOUNDRY_API_KEY'],
-        hasBaseUrl: !!config['ANTHROPIC_BASE_URL'],
-        modelOverrides: {
-          sonnet: !!config['ANTHROPIC_DEFAULT_SONNET_MODEL'],
-          haiku: !!config['ANTHROPIC_DEFAULT_HAIKU_MODEL'],
-          opus: !!config['ANTHROPIC_DEFAULT_OPUS_MODEL']
-        }
-      });
-    }
-
-    return config;
-  } catch (error) {
-    debugError('[ClaudeIntegration:loadBackendAzureFoundryConfig] Failed to load backend .env:', error);
-    return {};
+    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Applied default Azure Foundry models:', AZURE_FOUNDRY_DEFAULT_MODELS);
   }
+
+  return config;
 }
 
 /**
@@ -348,7 +393,8 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     envVars.push(`export ANTHROPIC_AUTH_TOKEN="${apiKey}"`);
 
     // Load and export ALL Azure Foundry config from backend .env
-    const backendConfig = loadBackendAzureFoundryConfig();
+    // Pass baseUrl to enable fallback to default Azure Foundry model names
+    const backendConfig = loadBackendAzureFoundryConfig(baseUrl);
     for (const [key, value] of Object.entries(backendConfig)) {
       // Skip if already exported from profile, or if mutually exclusive with base URL
       if (key === 'ANTHROPIC_BASE_URL' ||

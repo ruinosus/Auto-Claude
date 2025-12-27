@@ -276,10 +276,26 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     console.warn('[getProfileEnv] Using proxy mode for profile:', profile.name, {
       baseUrl: profile.proxyBaseUrl
     });
-    return {
+
+    const env: Record<string, string> = {
       ANTHROPIC_BASE_URL: profile.proxyBaseUrl,
       ANTHROPIC_AUTH_TOKEN: profile.proxyApiKey
     };
+
+    // Check if Azure Foundry mode - add default model deployment names
+    // Azure Foundry deployments use names like "claude-opus-4-5" not "claude-opus-4-5-20251101"
+    const isAzureFoundry = profile.proxyBaseUrl.includes('.azure.com') ||
+                           profile.proxyBaseUrl.includes('azure') ||
+                           profile.proxyBaseUrl.includes('foundry');
+
+    if (isAzureFoundry) {
+      console.warn('[getProfileEnv] Azure Foundry detected - adding model overrides');
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5';
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5';
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-5';
+    }
+
+    return env;
   }
 
   // Priority 2: OAuth token (instant switching, no browser auth needed)
