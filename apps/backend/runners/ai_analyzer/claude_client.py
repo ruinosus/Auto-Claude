@@ -42,6 +42,12 @@ class ClaudeAnalysisClient:
 
         require_auth_token()  # Raises ValueError if no token found
 
+    def _get_sdk_env(self) -> dict:
+        """Get SDK environment variables for Azure Foundry support."""
+        from core.auth import get_sdk_env_vars
+
+        return get_sdk_env_vars()
+
     async def run_analysis_query(self, prompt: str) -> str:
         """
         Run a Claude query for analysis.
@@ -116,6 +122,7 @@ class ClaudeAnalysisClient:
                 max_turns=self.MAX_TURNS,
                 cwd=str(self.project_dir.resolve()),
                 settings=str(settings_file.resolve()),
+                env=self._get_sdk_env(),  # Pass Azure Foundry env vars
             )
         )
 

@@ -1408,6 +1408,7 @@ async def _merge_file_with_ai_async(
             # Call Claude Haiku for fast merge
             try:
                 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+                from core.auth import get_sdk_env_vars
             except ImportError:
                 return ParallelMergeResult(
                     file_path=task.file_path,
@@ -1423,6 +1424,7 @@ async def _merge_file_with_ai_async(
                     allowed_tools=[],
                     max_turns=1,
                     max_thinking_tokens=1024,  # Low thinking for speed
+                    env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
                 )
             )
 

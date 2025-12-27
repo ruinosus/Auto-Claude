@@ -31,7 +31,7 @@ def create_claude_resolver() -> AIResolver:
         Configured AIResolver instance
     """
     # Import here to avoid circular dependency
-    from core.auth import ensure_claude_code_oauth_token, get_auth_token
+    from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 
     from .resolver import AIResolver
 
@@ -50,6 +50,7 @@ def create_claude_resolver() -> AIResolver:
 
     def call_claude(system: str, user: str) -> str:
         """Call Claude using the Agent SDK for merge resolution."""
+        sdk_env = get_sdk_env_vars()  # Capture env vars in closure
 
         async def _run_merge() -> str:
             # Create a minimal client for merge resolution
@@ -59,6 +60,7 @@ def create_claude_resolver() -> AIResolver:
                     system_prompt=system,
                     allowed_tools=[],  # No tools needed for merge
                     max_turns=1,
+                    env=sdk_env,  # Pass Azure Foundry env vars
                 )
             )
 

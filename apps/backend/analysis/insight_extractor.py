@@ -30,7 +30,7 @@ except ImportError:
     ClaudeAgentOptions = None
     ClaudeSDKClient = None
 
-from core.auth import ensure_claude_code_oauth_token, get_auth_token
+from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 
 # Default model for insight extraction (fast and cheap)
 DEFAULT_EXTRACTION_MODEL = "claude-3-5-haiku-latest"
@@ -378,6 +378,7 @@ async def run_insight_extraction(
                 allowed_tools=[],  # No tools needed for extraction
                 max_turns=1,  # Single turn extraction
                 cwd=cwd,
+                env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
             )
         )
 

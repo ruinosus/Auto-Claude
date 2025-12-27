@@ -89,7 +89,7 @@ class ClaudeBatchAnalyzer:
 
             backend_path = Path(__file__).parent.parent.parent
             sys.path.insert(0, str(backend_path))
-            from core.auth import ensure_claude_code_oauth_token
+            from core.auth import ensure_claude_code_oauth_token, get_sdk_env_vars
         except ImportError as e:
             logger.error(f"claude-agent-sdk not available: {e}")
             # Fallback: each issue is its own batch
@@ -157,6 +157,7 @@ Respond with JSON only:
                     allowed_tools=[],
                     max_turns=1,
                     cwd=str(self.project_dir.resolve()),
+                    env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
                 )
             )
 

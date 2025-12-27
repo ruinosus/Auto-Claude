@@ -19,10 +19,12 @@ logger = logging.getLogger(__name__)
 # Check for Claude SDK availability
 try:
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+    from core.auth import get_sdk_env_vars
 
     CLAUDE_SDK_AVAILABLE = True
 except (ImportError, ValueError, SystemError):
     CLAUDE_SDK_AVAILABLE = False
+    get_sdk_env_vars = lambda: {}  # Fallback
 
 # Default model and thinking configuration
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -216,6 +218,7 @@ class BatchValidator:
                         cwd=str(self.project_dir.resolve()),
                         settings=str(settings_file.resolve()),
                         max_thinking_tokens=self.thinking_budget,  # Extended thinking
+                        env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
                     )
                 )
 

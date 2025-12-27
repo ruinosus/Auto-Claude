@@ -188,7 +188,7 @@ Fixes #N (if applicable)"""
 
 async def _call_claude_haiku(prompt: str) -> str:
     """Call Claude Haiku with low thinking for fast commit message generation."""
-    from core.auth import ensure_claude_code_oauth_token, get_auth_token
+    from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 
     if not get_auth_token():
         logger.warning("No authentication token found")
@@ -209,6 +209,7 @@ async def _call_claude_haiku(prompt: str) -> str:
             allowed_tools=[],
             max_turns=1,
             max_thinking_tokens=1024,  # Low thinking for speed
+            env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
         )
     )
 

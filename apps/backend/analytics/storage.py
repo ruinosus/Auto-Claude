@@ -600,19 +600,25 @@ class AnalyticsStorage:
         pass
 
 
-# Singleton instance
-_storage: Optional[AnalyticsStorage] = None
+# Storage instances per database path
+_storage_instances: Dict[str, AnalyticsStorage] = {}
 
 
 def get_analytics_storage(db_path: Optional[str] = None) -> AnalyticsStorage:
-    """Get global analytics storage instance."""
-    global _storage
-    if _storage is None:
-        if db_path:
-            _storage = AnalyticsStorage(db_path)
-        else:
-            _storage = AnalyticsStorage()
-    return _storage
+    """Get analytics storage instance for a specific database path.
+
+    Each unique db_path gets its own storage instance.
+    This fixes the bug where all projects were sharing the same storage.
+    """
+    global _storage_instances
+
+    # Use default path if none specified
+    effective_path = db_path or ".auto-claude/analytics.db"
+
+    if effective_path not in _storage_instances:
+        _storage_instances[effective_path] = AnalyticsStorage(effective_path)
+
+    return _storage_instances[effective_path]
 
 
 def is_tracking_enabled() -> bool:

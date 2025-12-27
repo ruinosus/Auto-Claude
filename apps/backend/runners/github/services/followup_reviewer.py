@@ -622,6 +622,7 @@ Please analyze this follow-up review context and provide your response in the JS
             # Use ClaudeSDKClient directly for simple message calls
             # (no agent tools needed, just a single query/response)
             from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+            from core.auth import get_sdk_env_vars
 
             model = self.config.model or "claude-sonnet-4-5-20250929"
 
@@ -632,6 +633,7 @@ Please analyze this follow-up review context and provide your response in the JS
                     allowed_tools=[],
                     max_turns=1,
                     max_thinking_tokens=2048,
+                    env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
                 )
             )
 
