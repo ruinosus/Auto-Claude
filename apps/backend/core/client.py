@@ -354,6 +354,8 @@ def create_client(
             ),
             allowed_tools=allowed_tools_list,
             mcp_servers=mcp_servers,
+            # Load Skills from user (~/.claude/skills/) and project (.claude/skills/) directories
+            setting_sources=["user", "project"],
             hooks={
                 "PreToolUse": [
                     HookMatcher(matcher="Bash", hooks=[bash_security_hook]),

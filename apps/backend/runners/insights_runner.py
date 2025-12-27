@@ -188,7 +188,10 @@ Current question: {message}"""
                     "Read",
                     "Glob",
                     "Grep",
+                    "Skill",  # Enable Skills for insights generation
                 ],
+                # Load Skills from user and project directories
+                setting_sources=["user", "project"],
                 max_turns=30,  # Allow sufficient turns for codebase exploration
                 cwd=str(project_path),
                 env=sdk_env,  # Pass ANTHROPIC_BASE_URL, Azure Foundry vars, etc.

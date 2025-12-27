@@ -16,7 +16,8 @@ import {
   Wrench,
   Info,
   Brain,
-  Cpu
+  Cpu,
+  Zap
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
@@ -306,6 +307,8 @@ function LogEntry({ entry }: LogEntryProps) {
         return { icon: FileCode, label: 'Writing', color: 'text-cyan-500 bg-cyan-500/10' };
       case 'Bash':
         return { icon: Terminal, label: 'Running', color: 'text-orange-500 bg-orange-500/10' };
+      case 'Skill':
+        return { icon: Zap, label: 'Using skill', color: 'text-yellow-500 bg-yellow-500/10' };
       default:
         return { icon: Wrench, label: toolName, color: 'text-muted-foreground bg-muted' };
     }

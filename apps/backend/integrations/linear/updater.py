@@ -46,6 +46,7 @@ LINEAR_TOOLS = [
     "mcp__linear-server__update_issue",
     "mcp__linear-server__create_comment",
     "mcp__linear-server__list_issue_statuses",
+    "Skill",  # Enable Skills for Linear operations
 ]
 
 
@@ -140,6 +141,8 @@ def _create_linear_client() -> ClaudeSDKClient:
                     "headers": {"Authorization": f"Bearer {linear_api_key}"},
                 }
             },
+            # Load Skills from user and project directories
+            setting_sources=["user", "project"],
             max_turns=10,  # Should complete in 1-3 turns
             env=sdk_env,  # Pass ANTHROPIC_BASE_URL etc. to subprocess
         )

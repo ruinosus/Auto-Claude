@@ -18,7 +18,7 @@ class ClaudeAnalysisClient:
     """Wrapper for Claude SDK client with analysis-specific configuration."""
 
     DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
-    ALLOWED_TOOLS = ["Read", "Glob", "Grep"]
+    ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Skill"]  # Enable Skills for analysis
     MAX_TURNS = 50
 
     def __init__(self, project_dir: Path):
@@ -119,6 +119,8 @@ class ClaudeAnalysisClient:
                 model=self.DEFAULT_MODEL,
                 system_prompt=system_prompt,
                 allowed_tools=self.ALLOWED_TOOLS,
+                # Load Skills from user and project directories
+                setting_sources=["user", "project"],
                 max_turns=self.MAX_TURNS,
                 cwd=str(self.project_dir.resolve()),
                 settings=str(settings_file.resolve()),

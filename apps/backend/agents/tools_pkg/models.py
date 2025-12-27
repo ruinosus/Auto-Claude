@@ -19,6 +19,10 @@ TOOL_RECORD_GOTCHA = "mcp__auto-claude__record_gotcha"
 TOOL_GET_SESSION_CONTEXT = "mcp__auto-claude__get_session_context"
 TOOL_UPDATE_QA_STATUS = "mcp__auto-claude__update_qa_status"
 
+# Claude Agent SDK built-in Skill tool
+# Allows agents to invoke Skills from ~/.claude/skills/ and {project}/.claude/skills/
+SKILL_TOOL = "Skill"
+
 # Puppeteer MCP tools for web browser automation
 # Used for web frontend validation (non-Electron web apps)
 PUPPETEER_TOOLS = [

@@ -15,6 +15,7 @@ from .models import (
     BASE_WRITE_TOOLS,
     ELECTRON_TOOLS,
     PUPPETEER_TOOLS,
+    SKILL_TOOL,
     TOOL_GET_BUILD_PROGRESS,
     TOOL_GET_SESSION_CONTEXT,
     TOOL_RECORD_DISCOVERY,
@@ -50,9 +51,10 @@ def get_allowed_tools(
         List of allowed tool names
     """
     # Auto-claude tool mappings by agent type
+    # SKILL_TOOL enables agents to invoke Skills from ~/.claude/skills/ and project skills
     tool_mappings = {
         "planner": {
-            "base": BASE_READ_TOOLS + BASE_WRITE_TOOLS,
+            "base": BASE_READ_TOOLS + BASE_WRITE_TOOLS + [SKILL_TOOL],
             "auto_claude": [
                 TOOL_GET_BUILD_PROGRESS,
                 TOOL_GET_SESSION_CONTEXT,
@@ -60,7 +62,7 @@ def get_allowed_tools(
             ],
         },
         "coder": {
-            "base": BASE_READ_TOOLS + BASE_WRITE_TOOLS,
+            "base": BASE_READ_TOOLS + BASE_WRITE_TOOLS + [SKILL_TOOL],
             "auto_claude": [
                 TOOL_UPDATE_SUBTASK_STATUS,
                 TOOL_GET_BUILD_PROGRESS,
@@ -70,7 +72,7 @@ def get_allowed_tools(
             ],
         },
         "qa_reviewer": {
-            "base": BASE_READ_TOOLS + ["Bash"],  # Can run tests but not edit
+            "base": BASE_READ_TOOLS + ["Bash", SKILL_TOOL],  # Can run tests but not edit
             "auto_claude": [
                 TOOL_GET_BUILD_PROGRESS,
                 TOOL_UPDATE_QA_STATUS,
@@ -80,11 +82,11 @@ def get_allowed_tools(
         "pr_reviewer": {
             # PR reviewers can ONLY read - no bash, no edits, no writes
             # This prevents the agent from switching branches or making changes
-            "base": BASE_READ_TOOLS,
+            "base": BASE_READ_TOOLS + [SKILL_TOOL],
             "auto_claude": [],  # No auto-claude tools needed for PR review
         },
         "qa_fixer": {
-            "base": BASE_READ_TOOLS + BASE_WRITE_TOOLS,
+            "base": BASE_READ_TOOLS + BASE_WRITE_TOOLS + [SKILL_TOOL],
             "auto_claude": [
                 TOOL_UPDATE_SUBTASK_STATUS,
                 TOOL_GET_BUILD_PROGRESS,
