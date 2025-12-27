@@ -29,7 +29,7 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
     setActiveTab(initialTab);
   }, [initialTab]);
 
-  // Fetch analytics DB path from Electron
+  // Fetch analytics DB path and budget from Electron
   useEffect(() => {
     if (!projectId) {
       setIsLoadingPath(false);
@@ -38,24 +38,48 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
     }
 
     setIsLoadingPath(true);
-    window.electronAPI
-      .getAnalyticsDbPath(projectId)
-      .then((result) => {
-        if (result.success) {
-          setDbPath(result.data ?? null);
+
+    // Fetch both DB path and saved budget in parallel
+    Promise.all([
+      window.electronAPI.getAnalyticsDbPath(projectId),
+      window.electronAPI.getBudget(projectId)
+    ])
+      .then(([dbPathResult, budgetResult]) => {
+        if (dbPathResult.success) {
+          setDbPath(dbPathResult.data ?? null);
         } else {
-          console.error('Failed to get analytics DB path:', result.error);
+          console.error('Failed to get analytics DB path:', dbPathResult.error);
           setDbPath(null);
+        }
+
+        if (budgetResult.success && budgetResult.data !== undefined) {
+          setBudgetLimit(budgetResult.data);
         }
       })
       .catch((error) => {
-        console.error('Error fetching analytics DB path:', error);
+        console.error('Error fetching analytics data:', error);
         setDbPath(null);
       })
       .finally(() => {
         setIsLoadingPath(false);
       });
   }, [projectId]);
+
+  // Save budget when it changes
+  const handleBudgetChange = (newBudget: number) => {
+    if (!projectId) return;
+
+    setBudgetLimit(newBudget);
+    window.electronAPI.saveBudget(projectId, newBudget)
+      .then((result) => {
+        if (!result.success) {
+          console.error('Failed to save budget:', result.error);
+        }
+      })
+      .catch((error) => {
+        console.error('Error saving budget:', error);
+      });
+  };
 
   // Start polling (polling interval is now handled by analytics service in main process)
   useAnalyticsData(dbPath);
@@ -118,26 +142,11 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
     }, {} as Record<string, { spec_id: string; input_tokens: number; output_tokens: number }>)
   ).map(([_, value]) => value);
 
-  // Transform data for ModelDistributionChart
-  const modelDistribution = Object.entries(
-    data.conversations.reduce((acc, conv) => {
-      // For now, use phase as a proxy for model (TODO: add model field to ConversationAnalytics)
-      const model = conv.phase || 'unknown';
-      acc[model] = (acc[model] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>)
-  ).map(([model, count]) => {
-    const total = data.conversations.length;
-    return {
-      model,
-      count,
-      percentage: (count / total) * 100
-    };
-  });
+  // Get model distribution from chartData (calculated in AnalyticsService)
+  const modelDistribution = data.chartData.modelDistribution || [];
 
-  // Transform data for SessionDurationChart
-  // For now, use empty array (TODO: calculate durations from conversations)
-  const sessionDurationData: Array<{ phase: string; avg_duration_seconds: number }> = [];
+  // Get session duration from chartData (calculated in AnalyticsService)
+  const sessionDurationData = data.chartData.sessionDuration || [];
 
   // Calculate budget progress
   const budgetProgress = budgetLimit ? (data.totalCost / budgetLimit) * 100 : undefined;
@@ -191,7 +200,7 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
               <BudgetManager
                 currentCost={data.totalCost}
                 budgetLimit={budgetLimit}
-                onBudgetChange={setBudgetLimit}
+                onBudgetChange={handleBudgetChange}
               />
             </div>
           </TabsContent>

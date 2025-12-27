@@ -371,6 +371,10 @@ export const IPC_CHANNELS = {
   // Analytics events (main -> renderer)
   ANALYTICS_DATA_UPDATE: 'analytics:data-update',
 
+  // Budget operations
+  BUDGET_GET: 'budget:get',
+  BUDGET_SAVE: 'budget:save',
+
   // ROI operations
   ROI_GET_SETTINGS: 'roi:getSettings',
   ROI_SAVE_SETTINGS: 'roi:saveSettings',

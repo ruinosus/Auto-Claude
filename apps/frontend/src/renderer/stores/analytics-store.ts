@@ -13,6 +13,8 @@ export interface ConversationAnalytics {
   tokens: TokenUsage;
   timestamp: Date;
   phase: string;
+  model: string;
+  durationSeconds: number | null;
 }
 
 export interface ChartDataPoint {
@@ -21,10 +23,23 @@ export interface ChartDataPoint {
   label?: string;
 }
 
+export interface SessionDurationData {
+  phase: string;
+  avg_duration_seconds: number;
+}
+
+export interface ModelDistributionData {
+  model: string;
+  count: number;
+  percentage: number;
+}
+
 export interface ChartData {
   costOverTime: ChartDataPoint[];
   tokensOverTime: ChartDataPoint[];
   sessionActivity: ChartDataPoint[];
+  sessionDuration: SessionDurationData[];
+  modelDistribution: ModelDistributionData[];
 }
 
 export interface AnalyticsData {

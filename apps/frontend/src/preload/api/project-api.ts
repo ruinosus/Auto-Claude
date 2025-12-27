@@ -139,6 +139,10 @@ export interface ProjectAPI {
   startAnalyticsPolling: (dbPath: string) => void;
   stopAnalyticsPolling: () => void;
   onAnalyticsDataUpdate: (callback: (data: any) => void) => () => void;
+
+  // Budget Operations
+  getBudget: (projectId: string) => Promise<IPCResult<number | undefined>>;
+  saveBudget: (projectId: string, budget: number | null) => Promise<IPCResult>;
 }
 
 export const createProjectAPI = (): ProjectAPI => ({
@@ -310,5 +314,12 @@ export const createProjectAPI = (): ProjectAPI => ({
     const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.ANALYTICS_DATA_UPDATE, listener);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.ANALYTICS_DATA_UPDATE, listener);
-  }
+  },
+
+  // Budget Operations
+  getBudget: (projectId: string): Promise<IPCResult<number | undefined>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.BUDGET_GET, projectId),
+
+  saveBudget: (projectId: string, budget: number | null): Promise<IPCResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.BUDGET_SAVE, projectId, budget)
 });
