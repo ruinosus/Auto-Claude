@@ -289,10 +289,17 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
                            profile.proxyBaseUrl.includes('foundry');
 
     if (isAzureFoundry) {
-      console.warn('[getProfileEnv] Azure Foundry detected - adding model overrides');
+      // CRITICAL: Set Azure Foundry deployment names
+      // Azure deployments use names like "claude-opus-4-5" instead of full IDs like "claude-opus-4-5-20251101"
       env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5';
       env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5';
       env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-5';
+
+      console.warn('[getProfileEnv] Azure Foundry detected - model overrides set:', {
+        sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
+        haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+        opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL
+      });
     }
 
     return env;

@@ -352,8 +352,30 @@ export class ClaudeProfileManager {
     if (profile?.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
       env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
       env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;
+
+      // CRITICAL: Add Azure Foundry model deployment name overrides
+      // Azure Foundry deployments use names like "claude-opus-4-5" instead of full IDs like "claude-opus-4-5-20251101"
+      // Without these overrides, Claude CLI will use the full model ID which doesn't exist as a deployment
+      const isAzureFoundry = profile.proxyBaseUrl.includes('.azure.com') ||
+                             profile.proxyBaseUrl.includes('azure') ||
+                             profile.proxyBaseUrl.includes('foundry');
+
+      if (isAzureFoundry) {
+        env.CLAUDE_CODE_USE_FOUNDRY = '1';
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5';
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5';
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-5';
+
+        console.warn('[ClaudeProfileManager] Azure Foundry detected - model overrides set:', {
+          sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
+          haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+          opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL
+        });
+      }
+
       console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name, {
-        baseUrl: profile.proxyBaseUrl
+        baseUrl: profile.proxyBaseUrl,
+        isAzureFoundry
       });
       return env;
     }

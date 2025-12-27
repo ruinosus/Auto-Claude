@@ -54,6 +54,19 @@ export async function createTerminal(
       debugLog('[TerminalLifecycle] Injecting OAuth token from active profile');
     }
 
+    // Log Azure Foundry env vars if present
+    if (profileEnv.ANTHROPIC_DEFAULT_OPUS_MODEL) {
+      console.warn('[TerminalLifecycle] Injecting Azure Foundry env vars:', {
+        baseUrl: profileEnv.ANTHROPIC_BASE_URL,
+        hasAuthToken: !!profileEnv.ANTHROPIC_AUTH_TOKEN,
+        models: {
+          sonnet: profileEnv.ANTHROPIC_DEFAULT_SONNET_MODEL,
+          haiku: profileEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+          opus: profileEnv.ANTHROPIC_DEFAULT_OPUS_MODEL
+        }
+      });
+    }
+
     const ptyProcess = PtyManager.spawnPtyProcess(
       cwd || os.homedir(),
       cols,

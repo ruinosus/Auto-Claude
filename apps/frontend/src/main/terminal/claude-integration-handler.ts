@@ -392,22 +392,44 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     envVars.push(`export ANTHROPIC_BASE_URL="${baseUrl}"`);
     envVars.push(`export ANTHROPIC_AUTH_TOKEN="${apiKey}"`);
 
-    // Load and export ALL Azure Foundry config from backend .env
+    // CRITICAL: Export model overrides from profileEnv first (these are always available)
+    // This ensures Azure Foundry deployment names are used even when backend .env can't be loaded
+    // The model overrides are set in getProfileEnv() when Azure Foundry is detected
+    const modelOverrideKeys = [
+      'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL'
+    ];
+
+    for (const key of modelOverrideKeys) {
+      if (profileEnv[key]) {
+        envVars.push(`export ${key}="${profileEnv[key]}"`);
+        console.warn(`[ClaudeIntegration:buildTerminalEnvVars] Exporting model override: ${key}=${profileEnv[key]}`);
+      }
+    }
+
+    // Also try to load additional config from backend .env (for extra vars like CLAUDE_CODE_USE_FOUNDRY)
     // Pass baseUrl to enable fallback to default Azure Foundry model names
     const backendConfig = loadBackendAzureFoundryConfig(baseUrl);
     for (const [key, value] of Object.entries(backendConfig)) {
-      // Skip if already exported from profile, or if mutually exclusive with base URL
+      // Skip if already exported from profileEnv, or if mutually exclusive with base URL
       if (key === 'ANTHROPIC_BASE_URL' ||
           key === 'ANTHROPIC_AUTH_TOKEN' ||
-          key === 'ANTHROPIC_FOUNDRY_RESOURCE') {
+          key === 'ANTHROPIC_FOUNDRY_RESOURCE' ||
+          modelOverrideKeys.includes(key)) {
         continue;
       }
       envVars.push(`export ${key}="${value}"`);
     }
 
-    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry profile env vars:', {
+    console.warn('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry env vars exported:', {
       hasApiKey: !!apiKey,
       hasBaseUrl: !!baseUrl,
+      modelOverrides: {
+        sonnet: profileEnv.ANTHROPIC_DEFAULT_SONNET_MODEL,
+        haiku: profileEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL,
+        opus: profileEnv.ANTHROPIC_DEFAULT_OPUS_MODEL
+      },
       backendConfigVars: Object.keys(backendConfig)
     });
 
