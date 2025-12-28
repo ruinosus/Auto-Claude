@@ -8,6 +8,17 @@ import type {
   ToolDetectionResult
 } from '../../shared/types';
 
+export interface AzureFoundryConfig {
+  apiKey: string;
+  baseUrl: string;
+  resourceName?: string;
+}
+
+export interface AzureFoundryValidationResult {
+  success: boolean;
+  error?: string;
+}
+
 export interface SettingsAPI {
   // App Settings
   getSettings: () => Promise<IPCResult<AppSettings>>;
@@ -27,6 +38,9 @@ export interface SettingsAPI {
   getSourceEnv: () => Promise<IPCResult<SourceEnvConfig>>;
   updateSourceEnv: (config: { claudeOAuthToken?: string }) => Promise<IPCResult>;
   checkSourceToken: () => Promise<IPCResult<SourceEnvCheckResult>>;
+
+  // Azure Foundry
+  validateAzureFoundryConfig: (config: AzureFoundryConfig) => Promise<AzureFoundryValidationResult>;
 }
 
 export const createSettingsAPI = (): SettingsAPI => ({
@@ -57,5 +71,9 @@ export const createSettingsAPI = (): SettingsAPI => ({
     ipcRenderer.invoke(IPC_CHANNELS.AUTOBUILD_SOURCE_ENV_UPDATE, config),
 
   checkSourceToken: (): Promise<IPCResult<SourceEnvCheckResult>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.AUTOBUILD_SOURCE_ENV_CHECK_TOKEN)
+    ipcRenderer.invoke(IPC_CHANNELS.AUTOBUILD_SOURCE_ENV_CHECK_TOKEN),
+
+  // Azure Foundry
+  validateAzureFoundryConfig: (config: AzureFoundryConfig): Promise<AzureFoundryValidationResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_VALIDATE_AZURE_FOUNDRY, config)
 });

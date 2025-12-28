@@ -11,7 +11,8 @@ import {
   Info,
   LogIn,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Cloud
 } from 'lucide-react';
 import {
   Dialog,
@@ -30,7 +31,7 @@ import {
   TooltipTrigger
 } from './ui/tooltip';
 import { cn } from '../lib/utils';
-import type { ClaudeProfile } from '../../shared/types';
+import type { ClaudeProfile, AppSettings } from '../../shared/types';
 
 interface EnvConfigModalProps {
   open: boolean;
@@ -39,15 +40,18 @@ interface EnvConfigModalProps {
   title?: string;
   description?: string;
   projectId?: string;
+  /** Force a specific auth mode, overriding app settings */
+  forceAuthMode?: 'oauth' | 'azure-foundry' | 'auth-token';
 }
 
 export function EnvConfigModal({
   open,
   onOpenChange,
   onConfigured,
-  title = 'Claude Authentication Required',
-  description = 'A Claude Code OAuth token is required to use AI features like Ideation and Roadmap generation.',
-  projectId
+  title,
+  description,
+  projectId,
+  forceAuthMode
 }: EnvConfigModalProps) {
   const [token, setToken] = useState('');
   const [showToken, setShowToken] = useState(false);
@@ -69,7 +73,30 @@ export function EnvConfigModal({
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(true);
 
-  // Load Claude profiles and check token status when modal opens
+  // Auth mode state - determined by app settings or forceAuthMode prop
+  const [authMode, setAuthMode] = useState<'oauth' | 'azure-foundry' | 'auth-token'>('oauth');
+
+  // Azure Foundry state
+  const [azureApiKey, setAzureApiKey] = useState('');
+  const [azureBaseUrl, setAzureBaseUrl] = useState('');
+  const [showAzureApiKey, setShowAzureApiKey] = useState(false);
+  const [isValidatingAzure, setIsValidatingAzure] = useState(false);
+  const [hasAzureConfig, setHasAzureConfig] = useState(false);
+
+  // Determine display title and description based on auth mode
+  const displayTitle = title || (authMode === 'azure-foundry'
+    ? 'Azure Foundry Configuration Required'
+    : authMode === 'auth-token'
+    ? 'Auth Token Required'
+    : 'Claude Authentication Required');
+
+  const displayDescription = description || (authMode === 'azure-foundry'
+    ? 'Azure Foundry credentials are required to use AI features like Ideation and Roadmap generation.'
+    : authMode === 'auth-token'
+    ? 'An authentication token is required to use AI features.'
+    : 'A Claude Code OAuth token is required to use AI features like Ideation and Roadmap generation.');
+
+  // Load settings and check auth status when modal opens
   useEffect(() => {
     const loadData = async () => {
       if (!open) return;
@@ -80,35 +107,57 @@ export function EnvConfigModal({
       setSuccess(false);
 
       try {
-        // Load both token status and Claude profiles in parallel
-        const [tokenResult, profilesResult] = await Promise.all([
-          window.electronAPI.checkSourceToken(),
-          window.electronAPI.getClaudeProfiles()
-        ]);
-
-        // Handle token status
-        if (tokenResult.success && tokenResult.data) {
-          setSourcePath(tokenResult.data.sourcePath || null);
-          setHasExistingToken(tokenResult.data.hasToken);
-
-          if (tokenResult.data.hasToken) {
-            // Token exists, show success state
-            setSuccess(true);
-          }
+        // First, determine auth mode from app settings or forceAuthMode prop
+        if (forceAuthMode) {
+          setAuthMode(forceAuthMode);
         } else {
-          setError(tokenResult.error || 'Failed to check token status');
+          const settingsResult = await window.electronAPI.getSettings();
+          if (settingsResult.success && settingsResult.data) {
+            const settings = settingsResult.data as AppSettings;
+            setAuthMode(settings.defaultAuthMode || 'oauth');
+
+            // Pre-fill Azure config if available
+            if (settings.azureFoundryBaseUrl) {
+              setAzureBaseUrl(settings.azureFoundryBaseUrl);
+            }
+            if (settings.azureFoundryApiKey) {
+              setHasAzureConfig(true);
+              setSuccess(true);
+            }
+          }
         }
 
-        // Handle Claude profiles
-        if (profilesResult.success && profilesResult.data) {
-          const authenticatedProfiles = profilesResult.data.profiles.filter(
-            (p: ClaudeProfile) => p.oauthToken || (p.isDefault && p.configDir)
-          );
-          setClaudeProfiles(authenticatedProfiles);
+        // For OAuth mode, load token status and profiles
+        if (authMode === 'oauth' || !forceAuthMode) {
+          const [tokenResult, profilesResult] = await Promise.all([
+            window.electronAPI.checkSourceToken(),
+            window.electronAPI.getClaudeProfiles()
+          ]);
 
-          // Auto-select first authenticated profile
-          if (authenticatedProfiles.length > 0 && !selectedProfileId) {
-            setSelectedProfileId(authenticatedProfiles[0].id);
+          // Handle token status
+          if (tokenResult.success && tokenResult.data) {
+            setSourcePath(tokenResult.data.sourcePath || null);
+            setHasExistingToken(tokenResult.data.hasToken);
+
+            if (tokenResult.data.hasToken && authMode === 'oauth') {
+              // Token exists, show success state for OAuth mode
+              setSuccess(true);
+            }
+          } else if (authMode === 'oauth') {
+            setError(tokenResult.error || 'Failed to check token status');
+          }
+
+          // Handle Claude profiles
+          if (profilesResult.success && profilesResult.data) {
+            const authenticatedProfiles = profilesResult.data.profiles.filter(
+              (p: ClaudeProfile) => p.oauthToken || (p.isDefault && p.configDir)
+            );
+            setClaudeProfiles(authenticatedProfiles);
+
+            // Auto-select first authenticated profile
+            if (authenticatedProfiles.length > 0 && !selectedProfileId) {
+              setSelectedProfileId(authenticatedProfiles[0].id);
+            }
           }
         }
       } catch (err) {
@@ -120,7 +169,7 @@ export function EnvConfigModal({
     };
 
     loadData();
-  }, [open]);
+  }, [open, forceAuthMode, authMode, selectedProfileId]);
 
   // Listen for OAuth token from terminal
   useEffect(() => {
@@ -251,9 +300,71 @@ export function EnvConfigModal({
     window.open('https://docs.anthropic.com/en/docs/claude-code', '_blank');
   };
 
+  // Azure Foundry handlers
+  const handleValidateAzure = async () => {
+    if (!azureApiKey.trim() || !azureBaseUrl.trim()) {
+      setError('Please enter both API key and base URL');
+      return;
+    }
+
+    setIsValidatingAzure(true);
+    setError(null);
+
+    try {
+      const result = await window.electronAPI.validateAzureFoundryConfig({
+        apiKey: azureApiKey.trim(),
+        baseUrl: azureBaseUrl.trim()
+      });
+
+      if (result.success) {
+        // Validation passed, save the config
+        await handleSaveAzure();
+      } else {
+        setError(result.error || 'Validation failed. Please check your credentials.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Validation failed');
+    } finally {
+      setIsValidatingAzure(false);
+    }
+  };
+
+  const handleSaveAzure = async () => {
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      // Save Azure Foundry config to app settings
+      const result = await window.electronAPI.saveSettings({
+        azureFoundryApiKey: azureApiKey.trim(),
+        azureFoundryBaseUrl: azureBaseUrl.trim(),
+        defaultAuthMode: 'azure-foundry'
+      });
+
+      if (result?.success) {
+        setSuccess(true);
+        setHasAzureConfig(true);
+
+        // Notify parent that configuration is complete
+        setTimeout(() => {
+          onConfigured?.();
+          onOpenChange(false);
+        }, 1500);
+      } else {
+        setError(result?.error || 'Failed to save configuration');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleClose = () => {
-    if (!isSaving) {
+    if (!isSaving && !isValidatingAzure) {
       setToken('');
+      setAzureApiKey('');
+      setAzureBaseUrl('');
       setError(null);
       setSuccess(false);
       onOpenChange(false);
@@ -265,10 +376,14 @@ export function EnvConfigModal({
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-foreground">
-            <Key className="h-5 w-5" />
-            {title}
+            {authMode === 'azure-foundry' ? (
+              <Cloud className="h-5 w-5" />
+            ) : (
+              <Key className="h-5 w-5" />
+            )}
+            {displayTitle}
           </DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription>{displayDescription}</DialogDescription>
         </DialogHeader>
 
         {/* Loading state */}
@@ -285,7 +400,9 @@ export function EnvConfigModal({
               <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-medium text-success">
-                  Token configured successfully
+                  {authMode === 'azure-foundry'
+                    ? 'Azure Foundry configured successfully'
+                    : 'Token configured successfully'}
                 </p>
                 <p className="text-xs text-success/80 mt-1">
                   You can now use AI features like Ideation and Roadmap generation.
@@ -306,6 +423,115 @@ export function EnvConfigModal({
               </div>
             )}
 
+            {/* Azure Foundry Configuration */}
+            {authMode === 'azure-foundry' && (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-info/10 border border-info/30 p-4">
+                  <div className="flex items-start gap-3">
+                    <Info className="h-5 w-5 text-info shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-foreground font-medium mb-1">
+                        Azure Foundry Authentication
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Enter your Azure Foundry credentials to access Claude models through Azure.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Azure API Key */}
+                <div className="space-y-2">
+                  <Label htmlFor="azure-api-key" className="text-sm font-medium text-foreground">
+                    API Key *
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="azure-api-key"
+                      type={showAzureApiKey ? 'text' : 'password'}
+                      value={azureApiKey}
+                      onChange={(e) => setAzureApiKey(e.target.value)}
+                      placeholder="Enter your Azure API key..."
+                      className="pr-10"
+                      disabled={isSaving || isValidatingAzure}
+                    />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => setShowAzureApiKey(!showAzureApiKey)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showAzureApiKey ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {showAzureApiKey ? 'Hide API key' : 'Show API key'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+
+                {/* Azure Base URL */}
+                <div className="space-y-2">
+                  <Label htmlFor="azure-base-url" className="text-sm font-medium text-foreground">
+                    Base URL *
+                  </Label>
+                  <Input
+                    id="azure-base-url"
+                    type="text"
+                    value={azureBaseUrl}
+                    onChange={(e) => setAzureBaseUrl(e.target.value)}
+                    placeholder="https://your-resource.services.ai.azure.com"
+                    disabled={isSaving || isValidatingAzure}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Azure Foundry endpoint URL (e.g., https://your-resource.services.ai.azure.com)
+                  </p>
+                </div>
+
+                {/* Existing config info */}
+                {hasAzureConfig && (
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-sm text-muted-foreground">
+                      Azure Foundry is already configured. Enter new credentials to update.
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleValidateAzure}
+                  disabled={!azureApiKey.trim() || !azureBaseUrl.trim() || isSaving || isValidatingAzure}
+                  className="w-full"
+                  size="lg"
+                >
+                  {isValidatingAzure ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Validating...
+                    </>
+                  ) : isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Cloud className="mr-2 h-5 w-5" />
+                      Validate & Save
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+
+            {/* OAuth Configuration */}
+            {authMode === 'oauth' && (
+              <>
             {/* Option 1: Use existing authenticated profile */}
             {!isLoadingProfiles && claudeProfiles.length > 0 && (
               <div className="space-y-3">
@@ -561,14 +787,16 @@ export function EnvConfigModal({
                 </p>
               </div>
             )}
+              </>
+            )}
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={isSaving || isAuthenticating}>
+          <Button variant="outline" onClick={handleClose} disabled={isSaving || isAuthenticating || isValidatingAzure}>
             {success ? 'Close' : 'Cancel'}
           </Button>
-          {!success && showManualEntry && token.trim() && (
+          {!success && authMode === 'oauth' && showManualEntry && token.trim() && (
             <Button onClick={handleSave} disabled={isSaving || isAuthenticating}>
               {isSaving ? (
                 <>

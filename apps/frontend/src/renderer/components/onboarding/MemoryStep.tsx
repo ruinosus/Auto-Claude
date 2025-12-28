@@ -51,6 +51,7 @@ interface MemoryConfig {
   // Azure OpenAI
   azureOpenaiApiKey: string;
   azureOpenaiBaseUrl: string;
+  azureOpenaiLlmDeployment: string;
   azureOpenaiEmbeddingDeployment: string;
   // Voyage
   voyageApiKey: string;
@@ -79,7 +80,8 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
     openaiApiKey: settings.globalOpenAIApiKey || '',
     azureOpenaiApiKey: '',
     azureOpenaiBaseUrl: '',
-    azureOpenaiEmbeddingDeployment: '',
+    azureOpenaiLlmDeployment: 'gpt-4o',
+    azureOpenaiEmbeddingDeployment: 'text-embedding-3-small',
     voyageApiKey: '',
     googleApiKey: settings.globalGoogleApiKey || '',
     ollamaBaseUrl: settings.ollamaBaseUrl || 'http://localhost:11434',
@@ -143,6 +145,7 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
       // Save the API keys to global settings
       const settingsToSave: Record<string, string | undefined> = {};
 
+      // Common providers
       if (config.openaiApiKey.trim()) {
         settingsToSave.globalOpenAIApiKey = config.openaiApiKey.trim();
       }
@@ -152,6 +155,25 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
       if (config.ollamaBaseUrl.trim()) {
         settingsToSave.ollamaBaseUrl = config.ollamaBaseUrl.trim();
       }
+
+      // Azure OpenAI settings (stored globally for memory)
+      if (config.embeddingProvider === 'azure_openai') {
+        if (config.azureOpenaiApiKey.trim()) {
+          settingsToSave.azureOpenaiApiKey = config.azureOpenaiApiKey.trim();
+        }
+        if (config.azureOpenaiBaseUrl.trim()) {
+          settingsToSave.azureOpenaiBaseUrl = config.azureOpenaiBaseUrl.trim();
+        }
+        if (config.azureOpenaiLlmDeployment.trim()) {
+          settingsToSave.azureOpenaiLlmDeployment = config.azureOpenaiLlmDeployment.trim();
+        }
+        if (config.azureOpenaiEmbeddingDeployment.trim()) {
+          settingsToSave.azureOpenaiEmbeddingDeployment = config.azureOpenaiEmbeddingDeployment.trim();
+        }
+      }
+
+      // Save embedding provider preference
+      settingsToSave.graphitiEmbeddingProvider = config.embeddingProvider;
 
       const result = await window.electronAPI.saveSettings(settingsToSave);
 
@@ -312,6 +334,9 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
       return (
         <div className="space-y-3 p-3 rounded-md bg-muted/50">
           <p className="text-sm font-medium text-foreground">Azure OpenAI Settings</p>
+          <p className="text-xs text-muted-foreground">
+            Configure your Azure OpenAI endpoint for memory (entity extraction + embeddings)
+          </p>
           <div className="space-y-2">
             <Label htmlFor="azure-key" className="text-xs text-muted-foreground">API Key</Label>
             <div className="relative">
@@ -340,22 +365,36 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
               type="text"
               value={config.azureOpenaiBaseUrl}
               onChange={(e) => setConfig(prev => ({ ...prev, azureOpenaiBaseUrl: e.target.value }))}
-              placeholder="https://your-resource.openai.azure.com"
+              placeholder="https://your-resource.openai.azure.com/"
               className="font-mono text-sm"
               disabled={isSaving}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="azure-embedding-deployment" className="text-xs text-muted-foreground">Embedding Deployment Name</Label>
-            <Input
-              id="azure-embedding-deployment"
-              type="text"
-              value={config.azureOpenaiEmbeddingDeployment}
-              onChange={(e) => setConfig(prev => ({ ...prev, azureOpenaiEmbeddingDeployment: e.target.value }))}
-              placeholder="text-embedding-ada-002"
-              className="font-mono text-sm"
-              disabled={isSaving}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="azure-llm-deployment" className="text-xs text-muted-foreground">LLM Deployment (for entity extraction)</Label>
+              <Input
+                id="azure-llm-deployment"
+                type="text"
+                value={config.azureOpenaiLlmDeployment}
+                onChange={(e) => setConfig(prev => ({ ...prev, azureOpenaiLlmDeployment: e.target.value }))}
+                placeholder="gpt-4o"
+                className="font-mono text-sm"
+                disabled={isSaving}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="azure-embedding-deployment" className="text-xs text-muted-foreground">Embedding Deployment</Label>
+              <Input
+                id="azure-embedding-deployment"
+                type="text"
+                value={config.azureOpenaiEmbeddingDeployment}
+                onChange={(e) => setConfig(prev => ({ ...prev, azureOpenaiEmbeddingDeployment: e.target.value }))}
+                placeholder="text-embedding-3-small"
+                className="font-mono text-sm"
+                disabled={isSaving}
+              />
+            </div>
           </div>
         </div>
       );

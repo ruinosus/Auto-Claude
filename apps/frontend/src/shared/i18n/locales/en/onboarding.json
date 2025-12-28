@@ -63,8 +63,58 @@
   },
   "steps": {
     "welcome": "Welcome",
-    "auth": "Auth",
+    "authMode": "Auth Mode",
+    "auth": "OAuth",
+    "azureFoundry": "Azure",
+    "authToken": "Token",
     "memory": "Memory",
     "done": "Done"
+  },
+  "authMode": {
+    "title": "Choose Authentication Method",
+    "description": "Select how you want to authenticate with Claude",
+    "options": {
+      "oauth": {
+        "title": "Claude OAuth",
+        "description": "Use your personal Claude account with OAuth authentication. Supports multiple accounts with automatic rate limit switching."
+      },
+      "azureFoundry": {
+        "title": "Azure Foundry",
+        "description": "Use Azure OpenAI with Anthropic models via Azure Foundry. Requires API key and endpoint configuration."
+      },
+      "authToken": {
+        "title": "Auth Token",
+        "description": "Use a direct Anthropic API token or proxy authentication. For CCR (Claude Code Router) or custom setups."
+      }
+    },
+    "recommended": "Recommended",
+    "enterprise": "Enterprise",
+    "changeHint": "You can change this later in Project Settings for each project individually."
+  },
+  "azureFoundry": {
+    "title": "Configure Azure Foundry",
+    "description": "Enter your Azure OpenAI credentials for Anthropic model access",
+    "infoTitle": "About Azure Foundry",
+    "infoDescription": "Azure Foundry provides access to Claude models through Azure OpenAI Service. You'll need your Azure OpenAI endpoint and API key.",
+    "learnMore": "Learn more about Azure OpenAI",
+    "fields": {
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "Enter your Azure OpenAI API key",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://your-resource.openai.azure.com/anthropic",
+      "baseUrlHelp": "Your Azure OpenAI endpoint. The /anthropic suffix will be added automatically if needed.",
+      "resourceName": "Resource Name (optional)",
+      "resourceNamePlaceholder": "your-resource-name",
+      "resourceNameHelp": "The name of your Azure OpenAI resource (extracted from URL if not provided)."
+    },
+    "validation": {
+      "validate": "Validate Connection",
+      "validating": "Validating...",
+      "validated": "Validated",
+      "success": "Connection successful",
+      "successMessage": "Azure Foundry configuration validated. You can now continue.",
+      "invalidUrl": "Base URL should be an Azure OpenAI endpoint (e.g., https://your-resource.openai.azure.com)",
+      "failed": "Validation failed. Please check your credentials."
+    }
   }
 }

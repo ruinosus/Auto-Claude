@@ -210,6 +210,124 @@ export function registerSettingsHandlers(
   );
 
   // ============================================
+  // Azure Foundry Validation
+  // ============================================
+
+  ipcMain.handle(
+    IPC_CHANNELS.SETTINGS_VALIDATE_AZURE_FOUNDRY,
+    async (_, config: { apiKey: string; baseUrl: string; resourceName?: string }): Promise<{
+      success: boolean;
+      error?: string;
+    }> => {
+      try {
+        const { apiKey, baseUrl } = config;
+
+        // Azure Foundry for Anthropic uses endpoint format:
+        // https://{resource}.services.ai.azure.com/anthropic/v1/messages
+        // Also supports legacy format: https://{resource}.openai.azure.com/anthropic
+        const isAzureFoundry = baseUrl.includes('services.ai.azure.com') || baseUrl.includes('openai.azure.com');
+
+        if (!isAzureFoundry) {
+          return {
+            success: false,
+            error: 'Base URL should be an Azure Foundry endpoint (e.g., https://your-resource.services.ai.azure.com or https://your-resource.openai.azure.com)'
+          };
+        }
+
+        // Normalize URL - ensure it ends with proper path
+        let normalizedUrl = baseUrl.replace(/\/$/, '');
+
+        // For services.ai.azure.com, ensure we have the full path
+        if (normalizedUrl.includes('services.ai.azure.com')) {
+          // Remove trailing paths if any, then add correct path
+          const baseUrlPart = normalizedUrl.replace(/\/anthropic.*$/, '');
+          normalizedUrl = `${baseUrlPart}/anthropic/v1/messages`;
+        } else {
+          // Legacy openai.azure.com format
+          if (!normalizedUrl.endsWith('/anthropic')) {
+            normalizedUrl = `${normalizedUrl}/anthropic`;
+          }
+          normalizedUrl = `${normalizedUrl}/v1/messages`;
+        }
+
+        // Validate by making a minimal API call to the Anthropic messages endpoint
+        // We send an invalid request that will fail with 400 (bad request)
+        // but proves the credentials work (vs 401/403 for auth errors)
+        const response = await fetch(normalizedUrl, {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-haiku-20240307', // Use a basic model for validation
+            max_tokens: 1,
+            messages: [{ role: 'user', content: 'test' }]
+          })
+        });
+
+        // Success responses
+        if (response.ok) {
+          return { success: true };
+        }
+
+        // Check for specific error codes
+        if (response.status === 401) {
+          return { success: false, error: 'Invalid API key. Please check your credentials.' };
+        }
+        if (response.status === 403) {
+          return { success: false, error: 'Access denied. Please check your API key permissions.' };
+        }
+
+        // 400 (bad request) or 404 (model not found) still means auth worked
+        // The credentials are valid, just the test request format may differ
+        if (response.status === 400 || response.status === 404) {
+          // Try to parse the error to see if it's an auth issue or just a request format issue
+          try {
+            const errorData = await response.json();
+            const errorMessage = errorData?.error?.message || '';
+
+            // If it's a model/deployment not found error, credentials are likely valid
+            if (errorMessage.includes('model') || errorMessage.includes('deployment') ||
+                errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+              return { success: true };
+            }
+
+            // For other 400/404 errors, assume credentials work but request format differs
+            return { success: true };
+          } catch {
+            // JSON parse failed, but status indicates the endpoint was reached
+            return { success: true };
+          }
+        }
+
+        const errorText = await response.text();
+        return {
+          success: false,
+          error: `Validation failed (${response.status}): ${errorText}`
+        };
+      } catch (error) {
+        // Network errors or other exceptions
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+        // Check for common network issues
+        if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('getaddrinfo')) {
+          return {
+            success: false,
+            error: 'Could not reach the Azure Foundry endpoint. Please check the URL.'
+          };
+        }
+
+        return {
+          success: false,
+          error: `Failed to validate Azure Foundry configuration: ${errorMessage}`
+        };
+      }
+    }
+  );
+
+  // ============================================
   // Dialog Operations
   // ============================================
 

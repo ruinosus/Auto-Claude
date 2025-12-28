@@ -63,8 +63,58 @@
   },
   "steps": {
     "welcome": "Bienvenue",
-    "auth": "Auth",
+    "authMode": "Mode Auth",
+    "auth": "OAuth",
+    "azureFoundry": "Azure",
+    "authToken": "Jeton",
     "memory": "Mémoire",
     "done": "Terminé"
+  },
+  "authMode": {
+    "title": "Choisir la méthode d'authentification",
+    "description": "Sélectionnez comment vous souhaitez vous authentifier avec Claude",
+    "options": {
+      "oauth": {
+        "title": "Claude OAuth",
+        "description": "Utilisez votre compte Claude personnel avec l'authentification OAuth. Prend en charge plusieurs comptes avec changement automatique de limite de débit."
+      },
+      "azureFoundry": {
+        "title": "Azure Foundry",
+        "description": "Utilisez Azure OpenAI avec les modèles Anthropic via Azure Foundry. Nécessite une clé API et une configuration de point de terminaison."
+      },
+      "authToken": {
+        "title": "Jeton d'authentification",
+        "description": "Utilisez un jeton API Anthropic direct ou une authentification proxy. Pour CCR (Claude Code Router) ou configurations personnalisées."
+      }
+    },
+    "recommended": "Recommandé",
+    "enterprise": "Entreprise",
+    "changeHint": "Vous pouvez modifier cela plus tard dans les Paramètres du projet pour chaque projet individuellement."
+  },
+  "azureFoundry": {
+    "title": "Configurer Azure Foundry",
+    "description": "Entrez vos identifiants Azure OpenAI pour l'accès aux modèles Anthropic",
+    "infoTitle": "À propos d'Azure Foundry",
+    "infoDescription": "Azure Foundry fournit l'accès aux modèles Claude via Azure OpenAI Service. Vous aurez besoin de votre point de terminaison Azure OpenAI et de votre clé API.",
+    "learnMore": "En savoir plus sur Azure OpenAI",
+    "fields": {
+      "apiKey": "Clé API",
+      "apiKeyPlaceholder": "Entrez votre clé API Azure OpenAI",
+      "baseUrl": "URL de base",
+      "baseUrlPlaceholder": "https://votre-ressource.openai.azure.com/anthropic",
+      "baseUrlHelp": "Votre point de terminaison Azure OpenAI. Le suffixe /anthropic sera ajouté automatiquement si nécessaire.",
+      "resourceName": "Nom de la ressource (optionnel)",
+      "resourceNamePlaceholder": "nom-de-votre-ressource",
+      "resourceNameHelp": "Le nom de votre ressource Azure OpenAI (extrait de l'URL si non fourni)."
+    },
+    "validation": {
+      "validate": "Valider la connexion",
+      "validating": "Validation...",
+      "validated": "Validé",
+      "success": "Connexion réussie",
+      "successMessage": "Configuration Azure Foundry validée. Vous pouvez maintenant continuer.",
+      "invalidUrl": "L'URL de base doit être un point de terminaison Azure OpenAI (ex: https://votre-ressource.openai.azure.com)",
+      "failed": "La validation a échoué. Veuillez vérifier vos identifiants."
+    }
   }
 }

@@ -125,6 +125,23 @@ export interface AppSettings {
   language?: SupportedLanguage;
   // ROI (Return on Investment) settings
   roi?: ROISettings;
+  // Default authentication mode for new projects
+  defaultAuthMode?: 'oauth' | 'azure-foundry' | 'auth-token';
+  // Azure Foundry configuration (global defaults) - for Claude
+  azureFoundryApiKey?: string;
+  azureFoundryBaseUrl?: string;
+  azureFoundryResourceName?: string;
+  // Azure Foundry Model Deployment Names
+  azureFoundrySonnetModel?: string;
+  azureFoundryHaikuModel?: string;
+  azureFoundryOpusModel?: string;
+  // Azure OpenAI configuration (global defaults) - for Graphiti Memory
+  azureOpenaiApiKey?: string;
+  azureOpenaiBaseUrl?: string;
+  azureOpenaiLlmDeployment?: string;
+  azureOpenaiEmbeddingDeployment?: string;
+  // Graphiti embedding provider preference
+  graphitiEmbeddingProvider?: 'ollama' | 'openai' | 'voyage' | 'google' | 'azure_openai';
 }
 
 // Auto-Claude Source Environment Configuration (for auto-claude repo .env)

@@ -14,7 +14,11 @@ import {
   Lock,
   Globe,
   Building,
-  User
+  User,
+  Cloud,
+  Eye,
+  EyeOff,
+  Info
 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
@@ -34,9 +38,10 @@ import {
   SelectTrigger,
   SelectValue
 } from './ui/select';
+import { Card, CardContent } from './ui/card';
 import { GitHubOAuthFlow } from './project-settings/GitHubOAuthFlow';
 import { ClaudeOAuthFlow } from './project-settings/ClaudeOAuthFlow';
-import type { Project, ProjectSettings } from '../../shared/types';
+import type { Project, ProjectSettings, AppSettings } from '../../shared/types';
 
 interface GitHubSetupModalProps {
   open: boolean;
@@ -89,6 +94,17 @@ export function GitHubSetupModal({
   const [selectedOwner, setSelectedOwner] = useState<string | null>(null);
   const [isLoadingOrgs, setIsLoadingOrgs] = useState(false);
 
+  // Auth mode state (oauth vs azure-foundry)
+  const [authMode, setAuthMode] = useState<'oauth' | 'azure-foundry' | 'auth-token'>('oauth');
+
+  // Azure Foundry state
+  const [azureApiKey, setAzureApiKey] = useState('');
+  const [azureBaseUrl, setAzureBaseUrl] = useState('');
+  const [showAzureApiKey, setShowAzureApiKey] = useState(false);
+  const [isValidatingAzure, setIsValidatingAzure] = useState(false);
+  const [azureError, setAzureError] = useState<string | null>(null);
+  const [hasAzureConfig, setHasAzureConfig] = useState(false);
+
   // Reset state and check existing auth when modal opens
   useEffect(() => {
     if (open) {
@@ -111,22 +127,52 @@ export function GitHubSetupModal({
       setOrganizations([]);
       setSelectedOwner(null);
       setIsLoadingOrgs(false);
+      // Reset Azure state
+      setAzureApiKey('');
+      setAzureBaseUrl('');
+      setAzureError(null);
+      setHasAzureConfig(false);
 
       // Check for existing authentication and skip to appropriate step
       const checkExistingAuth = async () => {
         try {
+          // First, check auth mode from app settings
+          const settingsResult = await window.electronAPI.getSettings();
+          let currentAuthMode: 'oauth' | 'azure-foundry' | 'auth-token' = 'oauth';
+          let hasAzureFoundryConfig = false;
+
+          if (settingsResult.success && settingsResult.data) {
+            const settings = settingsResult.data as AppSettings;
+            currentAuthMode = settings.defaultAuthMode || 'oauth';
+            setAuthMode(currentAuthMode);
+
+            // Pre-fill Azure config if available
+            if (settings.azureFoundryBaseUrl) {
+              setAzureBaseUrl(settings.azureFoundryBaseUrl);
+            }
+            if (settings.azureFoundryApiKey) {
+              hasAzureFoundryConfig = true;
+              setHasAzureConfig(true);
+            }
+          }
+
           // Check for existing GitHub token
           const ghTokenResult = await window.electronAPI.getGitHubToken();
           const hasGitHubAuth = ghTokenResult.success && ghTokenResult.data?.token;
 
-          // Check for existing Claude authentication
-          const profilesResult = await window.electronAPI.getClaudeProfiles();
+          // Check for existing Claude authentication (for OAuth mode)
           let hasClaudeAuth = false;
-          if (profilesResult.success && profilesResult.data) {
-            const activeProfile = profilesResult.data.profiles.find(
-              (p) => p.id === profilesResult.data!.activeProfileId
-            );
-            hasClaudeAuth = !!(activeProfile?.oauthToken || (activeProfile?.isDefault && activeProfile?.configDir));
+          if (currentAuthMode === 'oauth') {
+            const profilesResult = await window.electronAPI.getClaudeProfiles();
+            if (profilesResult.success && profilesResult.data) {
+              const activeProfile = profilesResult.data.profiles.find(
+                (p) => p.id === profilesResult.data!.activeProfileId
+              );
+              hasClaudeAuth = !!(activeProfile?.oauthToken || (activeProfile?.isDefault && activeProfile?.configDir));
+            }
+          } else if (currentAuthMode === 'azure-foundry') {
+            // For Azure Foundry, check if config exists
+            hasClaudeAuth = hasAzureFoundryConfig;
           }
 
           // Determine starting step based on existing auth
@@ -275,6 +321,54 @@ export function GitHubSetupModal({
     await detectRepository();
   };
 
+  // Handle Azure Foundry validation and save
+  const handleAzureValidate = async () => {
+    if (!azureApiKey.trim() || !azureBaseUrl.trim()) {
+      setAzureError('Please enter both API key and base URL');
+      return;
+    }
+
+    setIsValidatingAzure(true);
+    setAzureError(null);
+
+    try {
+      const result = await window.electronAPI.validateAzureFoundryConfig({
+        apiKey: azureApiKey.trim(),
+        baseUrl: azureBaseUrl.trim()
+      });
+
+      if (result.success) {
+        // Validation passed, save the config
+        const saveResult = await window.electronAPI.saveSettings({
+          azureFoundryApiKey: azureApiKey.trim(),
+          azureFoundryBaseUrl: azureBaseUrl.trim(),
+          defaultAuthMode: 'azure-foundry'
+        });
+
+        if (saveResult?.success) {
+          setHasAzureConfig(true);
+          // Move to repo detection
+          await detectRepository();
+        } else {
+          setAzureError(saveResult?.error || 'Failed to save configuration');
+        }
+      } else {
+        setAzureError(result.error || 'Validation failed. Please check your credentials.');
+      }
+    } catch (err) {
+      setAzureError(err instanceof Error ? err.message : 'Validation failed');
+    } finally {
+      setIsValidatingAzure(false);
+    }
+  };
+
+  // Handle skipping Azure config (use existing)
+  const handleUseExistingAzure = async () => {
+    if (hasAzureConfig) {
+      await detectRepository();
+    }
+  };
+
   // Handle creating a new GitHub repository
   const handleCreateRepo = async () => {
     if (!newRepoName.trim()) {
@@ -399,6 +493,153 @@ export function GitHubSetupModal({
         );
 
       case 'claude-auth':
+        // Show different content based on auth mode
+        if (authMode === 'azure-foundry') {
+          return (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Cloud className="h-5 w-5" />
+                  Configure Azure Foundry
+                </DialogTitle>
+                <DialogDescription>
+                  Enter your Azure Foundry credentials to access Claude AI features.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="py-4 space-y-4">
+                {/* Already configured banner */}
+                {hasAzureConfig && (
+                  <Card className="border border-success/30 bg-success/10">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-success shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-success">
+                            Azure Foundry is already configured
+                          </p>
+                          <p className="text-xs text-success/80 mt-1">
+                            You can continue with your existing configuration or enter new credentials.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Info card */}
+                <Card className="border border-info/30 bg-info/10">
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <Info className="h-5 w-5 text-info shrink-0 mt-0.5" />
+                      <div className="text-sm text-muted-foreground">
+                        <p>
+                          Azure Foundry provides access to Claude models through Azure.
+                          Enter your Azure Foundry endpoint and API key.
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Error banner */}
+                {azureError && (
+                  <Card className="border border-destructive/30 bg-destructive/10">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                        <p className="text-sm text-destructive">{azureError}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Azure API Key */}
+                <div className="space-y-2">
+                  <Label htmlFor="azure-api-key">API Key *</Label>
+                  <div className="relative">
+                    <Input
+                      id="azure-api-key"
+                      type={showAzureApiKey ? 'text' : 'password'}
+                      placeholder="Enter your Azure API key"
+                      value={azureApiKey}
+                      onChange={(e) => setAzureApiKey(e.target.value)}
+                      className="pr-10"
+                      disabled={isValidatingAzure}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAzureApiKey(!showAzureApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showAzureApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Azure Base URL */}
+                <div className="space-y-2">
+                  <Label htmlFor="azure-base-url">Base URL *</Label>
+                  <Input
+                    id="azure-base-url"
+                    type="text"
+                    placeholder="https://your-resource.services.ai.azure.com"
+                    value={azureBaseUrl}
+                    onChange={(e) => setAzureBaseUrl(e.target.value)}
+                    disabled={isValidatingAzure}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Azure Foundry endpoint URL
+                  </p>
+                </div>
+
+                {/* Buttons */}
+                <div className="flex flex-col gap-2">
+                  {hasAzureConfig && (
+                    <Button
+                      onClick={handleUseExistingAzure}
+                      variant="default"
+                      size="lg"
+                      className="w-full gap-2"
+                    >
+                      <CheckCircle2 className="h-5 w-5" />
+                      Use Existing Configuration
+                    </Button>
+                  )}
+                  <Button
+                    onClick={handleAzureValidate}
+                    variant={hasAzureConfig ? 'outline' : 'default'}
+                    size="lg"
+                    className="w-full gap-2"
+                    disabled={!azureApiKey.trim() || !azureBaseUrl.trim() || isValidatingAzure}
+                  >
+                    {isValidatingAzure ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Validating...
+                      </>
+                    ) : (
+                      <>
+                        <Cloud className="h-5 w-5" />
+                        {hasAzureConfig ? 'Update & Continue' : 'Validate & Continue'}
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {onSkip && (
+                  <div className="flex justify-center pt-2">
+                    <Button onClick={onSkip} variant="ghost" size="sm">
+                      Skip for now
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        }
+
+        // OAuth mode (default)
         return (
           <>
             <DialogHeader>

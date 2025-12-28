@@ -22,6 +22,11 @@ export const settingsMock = {
     }
   }),
 
+  // Azure Foundry validation (mock - always succeeds in browser mode)
+  validateAzureFoundryConfig: async () => ({
+    success: true
+  }),
+
   // App Info
   getAppVersion: async () => '0.1.0-browser',
 

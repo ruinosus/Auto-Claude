@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Wand2 } from 'lucide-react';
 import {
@@ -12,7 +12,9 @@ import {
 import { ScrollArea } from '../ui/scroll-area';
 import { WizardProgress, WizardStep } from './WizardProgress';
 import { WelcomeStep } from './WelcomeStep';
+import { AuthModeStep, AuthMode } from './AuthModeStep';
 import { OAuthStep } from './OAuthStep';
+import { AzureFoundryStep } from './AzureFoundryStep';
 import { MemoryStep } from './MemoryStep';
 import { CompletionStep } from './CompletionStep';
 import { useSettingsStore } from '../../stores/settings-store';
@@ -25,15 +27,43 @@ interface OnboardingWizardProps {
 }
 
 // Wizard step identifiers
-type WizardStepId = 'welcome' | 'oauth' | 'memory' | 'completion';
+type WizardStepId = 'welcome' | 'auth-mode' | 'oauth' | 'azure-foundry' | 'auth-token' | 'memory' | 'completion';
 
 // Step configuration with translation keys
-const WIZARD_STEPS: { id: WizardStepId; labelKey: string }[] = [
+interface WizardStepConfig {
+  id: WizardStepId;
+  labelKey: string;
+}
+
+// Base steps always shown
+const BASE_STEPS: WizardStepConfig[] = [
   { id: 'welcome', labelKey: 'steps.welcome' },
-  { id: 'oauth', labelKey: 'steps.auth' },
+  { id: 'auth-mode', labelKey: 'steps.authMode' }
+];
+
+// Auth-specific steps based on selected mode
+const AUTH_STEPS: Record<AuthMode, WizardStepConfig> = {
+  'oauth': { id: 'oauth', labelKey: 'steps.auth' },
+  'azure-foundry': { id: 'azure-foundry', labelKey: 'steps.azureFoundry' },
+  'auth-token': { id: 'auth-token', labelKey: 'steps.authToken' }
+};
+
+// Final steps always shown
+const FINAL_STEPS: WizardStepConfig[] = [
   { id: 'memory', labelKey: 'steps.memory' },
   { id: 'completion', labelKey: 'steps.done' }
 ];
+
+/**
+ * Build dynamic wizard steps based on selected auth mode
+ */
+function buildWizardSteps(authMode: AuthMode | null): WizardStepConfig[] {
+  if (!authMode) {
+    // Before auth mode is selected, only show base steps
+    return [...BASE_STEPS];
+  }
+  return [...BASE_STEPS, AUTH_STEPS[authMode], ...FINAL_STEPS];
+}
 
 /**
  * Main onboarding wizard component.
@@ -56,12 +86,16 @@ export function OnboardingWizard({
   const { updateSettings } = useSettingsStore();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<WizardStepId>>(new Set());
+  const [selectedAuthMode, setSelectedAuthMode] = useState<AuthMode | null>(null);
+
+  // Build dynamic wizard steps based on selected auth mode
+  const wizardSteps = useMemo(() => buildWizardSteps(selectedAuthMode), [selectedAuthMode]);
 
   // Get current step ID
-  const currentStepId = WIZARD_STEPS[currentStepIndex].id;
+  const currentStepId = wizardSteps[currentStepIndex]?.id ?? 'welcome';
 
   // Build step data for progress indicator
-  const steps: WizardStep[] = WIZARD_STEPS.map((step, index) => ({
+  const steps: WizardStep[] = wizardSteps.map((step, index) => ({
     id: step.id,
     label: t(step.labelKey),
     completed: completedSteps.has(step.id) || index < currentStepIndex
@@ -72,10 +106,18 @@ export function OnboardingWizard({
     // Mark current step as completed
     setCompletedSteps(prev => new Set(prev).add(currentStepId));
 
-    if (currentStepIndex < WIZARD_STEPS.length - 1) {
+    if (currentStepIndex < wizardSteps.length - 1) {
       setCurrentStepIndex(prev => prev + 1);
     }
-  }, [currentStepIndex, currentStepId]);
+  }, [currentStepIndex, currentStepId, wizardSteps.length]);
+
+  // Handle auth mode selection and advance to next step
+  const handleAuthModeSelect = useCallback((mode: AuthMode) => {
+    setSelectedAuthMode(mode);
+    // Mark auth-mode step as completed and advance
+    setCompletedSteps(prev => new Set(prev).add('auth-mode'));
+    setCurrentStepIndex(prev => prev + 1);
+  }, []);
 
   const goToPreviousStep = useCallback(() => {
     if (currentStepIndex > 0) {
@@ -87,6 +129,7 @@ export function OnboardingWizard({
   const resetWizard = useCallback(() => {
     setCurrentStepIndex(0);
     setCompletedSteps(new Set());
+    setSelectedAuthMode(null);
   }, []);
 
   const skipWizard = useCallback(async () => {
@@ -147,6 +190,15 @@ export function OnboardingWizard({
             onSkip={skipWizard}
           />
         );
+      case 'auth-mode':
+        return (
+          <AuthModeStep
+            onNext={handleAuthModeSelect}
+            onBack={goToPreviousStep}
+            onSkip={skipWizard}
+            selectedMode={selectedAuthMode ?? undefined}
+          />
+        );
       case 'oauth':
         return (
           <OAuthStep
@@ -154,6 +206,30 @@ export function OnboardingWizard({
             onBack={goToPreviousStep}
             onSkip={skipWizard}
           />
+        );
+      case 'azure-foundry':
+        return (
+          <AzureFoundryStep
+            onNext={goToNextStep}
+            onBack={goToPreviousStep}
+            onSkip={skipWizard}
+          />
+        );
+      case 'auth-token':
+        // TODO: Create AuthTokenStep component
+        // For now, skip to next step
+        return (
+          <div className="flex h-full flex-col items-center justify-center px-8 py-6">
+            <p className="text-muted-foreground">
+              Auth Token configuration coming soon. Click Continue to proceed.
+            </p>
+            <button
+              onClick={goToNextStep}
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded"
+            >
+              Continue
+            </button>
+          </div>
         );
       case 'memory':
         return (

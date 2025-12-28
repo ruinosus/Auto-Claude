@@ -254,6 +254,11 @@ export interface ElectronAPI {
     git: import('./cli').ToolDetectionResult;
     gh: import('./cli').ToolDetectionResult;
   }>>;
+  validateAzureFoundryConfig: (config: {
+    apiKey: string;
+    baseUrl: string;
+    resourceName?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
 
   // Dialog operations
   selectDirectory: () => Promise<string | null>;

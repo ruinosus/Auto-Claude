@@ -48,6 +48,8 @@ export function registerEnvHandlers(
     if (config.azureFoundryApiKey !== undefined) {
       existingVars['ANTHROPIC_FOUNDRY_API_KEY'] = config.azureFoundryApiKey;
       existingVars['CLAUDE_CODE_USE_FOUNDRY'] = 'true';
+      // Also set ANTHROPIC_AUTH_TOKEN (required by some components)
+      existingVars['ANTHROPIC_AUTH_TOKEN'] = config.azureFoundryApiKey;
     }
     if (config.azureFoundryBaseUrl !== undefined) {
       existingVars['ANTHROPIC_FOUNDRY_BASE_URL'] = config.azureFoundryBaseUrl;
@@ -55,9 +57,19 @@ export function registerEnvHandlers(
     if (config.azureFoundryResource !== undefined) {
       existingVars['ANTHROPIC_FOUNDRY_RESOURCE'] = config.azureFoundryResource;
     }
+    // Azure Foundry Model Deployment Names
+    if (config.azureFoundrySonnetModel !== undefined) {
+      existingVars['ANTHROPIC_DEFAULT_SONNET_MODEL'] = config.azureFoundrySonnetModel;
+    }
+    if (config.azureFoundryHaikuModel !== undefined) {
+      existingVars['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = config.azureFoundryHaikuModel;
+    }
+    if (config.azureFoundryOpusModel !== undefined) {
+      existingVars['ANTHROPIC_DEFAULT_OPUS_MODEL'] = config.azureFoundryOpusModel;
+    }
 
-    // Auth Token (Proxy/CCR)
-    if (config.anthropicAuthToken !== undefined) {
+    // Auth Token (Proxy/CCR) - only set if not already set by Azure Foundry
+    if (config.anthropicAuthToken !== undefined && !existingVars['ANTHROPIC_AUTH_TOKEN']) {
       existingVars['ANTHROPIC_AUTH_TOKEN'] = config.anthropicAuthToken;
     }
 
@@ -158,7 +170,13 @@ ${existingVars['ANTHROPIC_FOUNDRY_BASE_URL'] ? `ANTHROPIC_FOUNDRY_BASE_URL=${exi
 ${existingVars['ANTHROPIC_FOUNDRY_RESOURCE'] ? `ANTHROPIC_FOUNDRY_RESOURCE=${existingVars['ANTHROPIC_FOUNDRY_RESOURCE']}` : '# ANTHROPIC_FOUNDRY_RESOURCE=your-resource-name'}
 ${existingVars['CLAUDE_CODE_USE_FOUNDRY'] ? `CLAUDE_CODE_USE_FOUNDRY=${existingVars['CLAUDE_CODE_USE_FOUNDRY']}` : '# CLAUDE_CODE_USE_FOUNDRY=true'}
 
-# Auth Token (proxy/CCR)
+# Azure Foundry Model Deployment Names (required for Azure Foundry)
+# These map Claude model IDs to your Azure deployment names
+${existingVars['ANTHROPIC_DEFAULT_SONNET_MODEL'] ? `ANTHROPIC_DEFAULT_SONNET_MODEL=${existingVars['ANTHROPIC_DEFAULT_SONNET_MODEL']}` : '# ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-5'}
+${existingVars['ANTHROPIC_DEFAULT_HAIKU_MODEL'] ? `ANTHROPIC_DEFAULT_HAIKU_MODEL=${existingVars['ANTHROPIC_DEFAULT_HAIKU_MODEL']}` : '# ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5'}
+${existingVars['ANTHROPIC_DEFAULT_OPUS_MODEL'] ? `ANTHROPIC_DEFAULT_OPUS_MODEL=${existingVars['ANTHROPIC_DEFAULT_OPUS_MODEL']}` : '# ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-5'}
+
+# Auth Token (proxy/CCR or Azure Foundry fallback)
 ${existingVars['ANTHROPIC_AUTH_TOKEN'] ? `ANTHROPIC_AUTH_TOKEN=${existingVars['ANTHROPIC_AUTH_TOKEN']}` : '# ANTHROPIC_AUTH_TOKEN='}
 
 # Model override (OPTIONAL)
@@ -308,6 +326,16 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
       }
       if (vars['ANTHROPIC_FOUNDRY_RESOURCE']) {
         config.azureFoundryResource = vars['ANTHROPIC_FOUNDRY_RESOURCE'];
+      }
+      // Azure Foundry Model Deployment Names
+      if (vars['ANTHROPIC_DEFAULT_SONNET_MODEL']) {
+        config.azureFoundrySonnetModel = vars['ANTHROPIC_DEFAULT_SONNET_MODEL'];
+      }
+      if (vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']) {
+        config.azureFoundryHaikuModel = vars['ANTHROPIC_DEFAULT_HAIKU_MODEL'];
+      }
+      if (vars['ANTHROPIC_DEFAULT_OPUS_MODEL']) {
+        config.azureFoundryOpusModel = vars['ANTHROPIC_DEFAULT_OPUS_MODEL'];
       }
 
       // Auth Token (Proxy/CCR)
