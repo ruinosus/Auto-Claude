@@ -10,7 +10,7 @@ import {
   loadProjectEnvVars,
   loadGlobalSettings,
   isGraphitiEnabled,
-  hasValidEmbeddingProvider,
+  validateEmbeddingConfiguration,
   getGraphitiDatabaseDetails
 } from './utils';
 
@@ -92,6 +92,7 @@ export function buildMemoryStatus(
 
   // Check environment configuration
   const graphitiEnabled = isGraphitiEnabled(projectEnvVars);
+  const embeddingValidation = validateEmbeddingConfiguration(projectEnvVars, globalSettings);
 
   if (!graphitiEnabled) {
     return {
@@ -102,19 +103,16 @@ export function buildMemoryStatus(
     };
   }
 
-  // Check if any valid embedding provider is configured
-  const providerCheck = hasValidEmbeddingProvider(projectEnvVars, globalSettings);
-
   // Memory works without embeddings (keyword search fallback), but show provider status
   const dbDetails = getGraphitiDatabaseDetails(projectEnvVars);
 
-  if (!providerCheck.valid) {
+  if (!embeddingValidation.valid) {
     return {
       enabled: true,
       available: true, // Memory still works with keyword search
       dbPath: dbDetails.dbPath,
       database: dbDetails.database,
-      reason: `${providerCheck.provider}: ${providerCheck.reason} (using keyword search)`,
+      reason: `${embeddingValidation.provider}: ${embeddingValidation.reason} (using keyword search)`,
       groupId
     };
   }
@@ -124,7 +122,7 @@ export function buildMemoryStatus(
     available: true,
     dbPath: dbDetails.dbPath,
     database: dbDetails.database,
-    provider: providerCheck.provider,
+    provider: embeddingValidation.provider,
     groupId
   };
 }

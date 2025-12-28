@@ -131,61 +131,89 @@ export function getEmbeddingProvider(projectEnvVars: EnvironmentVars): string {
 }
 
 /**
- * Check if a valid embedding provider is configured
- * Supports: OpenAI, Azure OpenAI, Google, Voyage, Ollama
+ * Embedding configuration validation result
  */
-export function hasValidEmbeddingProvider(
+export interface EmbeddingValidationResult {
+  valid: boolean;
+  provider: string;
+  reason?: string;
+}
+
+/**
+ * Validate embedding configuration based on the configured provider
+ * Supports: openai, ollama, google, voyage, azure_openai
+ *
+ * @returns validation result with provider info and reason if invalid
+ */
+export function validateEmbeddingConfiguration(
   projectEnvVars: EnvironmentVars,
   globalSettings: GlobalSettings
-): { valid: boolean; provider: string; reason?: string } {
+): EmbeddingValidationResult {
   const provider = getEmbeddingProvider(projectEnvVars);
 
   switch (provider) {
-    case 'openai':
+    case 'openai': {
       if (hasOpenAIKey(projectEnvVars, globalSettings)) {
         return { valid: true, provider: 'OpenAI' };
       }
-      return { valid: false, provider: 'OpenAI', reason: 'OPENAI_API_KEY not set' };
+      return {
+        valid: false,
+        provider: 'OpenAI',
+        reason: 'OPENAI_API_KEY not set (required for OpenAI embeddings)'
+      };
+    }
 
-    case 'azure_openai':
+    case 'ollama': {
+      // Ollama is local, no API key needed - works with default localhost
+      return { valid: true, provider: 'Ollama' };
+    }
+
+    case 'google': {
+      const googleKey = projectEnvVars['GOOGLE_API_KEY'] || process.env.GOOGLE_API_KEY;
+      if (googleKey) {
+        return { valid: true, provider: 'Google AI' };
+      }
+      return {
+        valid: false,
+        provider: 'Google AI',
+        reason: 'GOOGLE_API_KEY not set (required for Google AI embeddings)'
+      };
+    }
+
+    case 'voyage': {
+      const voyageKey = projectEnvVars['VOYAGE_API_KEY'] || process.env.VOYAGE_API_KEY;
+      if (voyageKey) {
+        return { valid: true, provider: 'Voyage AI' };
+      }
+      return {
+        valid: false,
+        provider: 'Voyage AI',
+        reason: 'VOYAGE_API_KEY not set (required for Voyage AI embeddings)'
+      };
+    }
+
+    case 'azure_openai': {
       const azureKey = projectEnvVars['AZURE_OPENAI_API_KEY'] || process.env.AZURE_OPENAI_API_KEY;
       const azureUrl = projectEnvVars['AZURE_OPENAI_BASE_URL'] || process.env.AZURE_OPENAI_BASE_URL;
-      const azureLlmDeployment = projectEnvVars['AZURE_OPENAI_LLM_DEPLOYMENT'] || process.env.AZURE_OPENAI_LLM_DEPLOYMENT;
       const azureEmbedDeployment = projectEnvVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] || process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
 
-      if (azureKey && azureUrl && azureLlmDeployment && azureEmbedDeployment) {
+      if (azureKey && azureUrl && azureEmbedDeployment) {
         return { valid: true, provider: 'Azure OpenAI' };
       }
       const missing = [];
       if (!azureKey) missing.push('API_KEY');
       if (!azureUrl) missing.push('BASE_URL');
-      if (!azureLlmDeployment) missing.push('LLM_DEPLOYMENT');
       if (!azureEmbedDeployment) missing.push('EMBEDDING_DEPLOYMENT');
-      return { valid: false, provider: 'Azure OpenAI', reason: `Missing: ${missing.join(', ')}` };
-
-    case 'google':
-      const googleKey = projectEnvVars['GOOGLE_API_KEY'] || process.env.GOOGLE_API_KEY;
-      if (googleKey) {
-        return { valid: true, provider: 'Google AI' };
-      }
-      return { valid: false, provider: 'Google AI', reason: 'GOOGLE_API_KEY not set' };
-
-    case 'voyage':
-      const voyageKey = projectEnvVars['VOYAGE_API_KEY'] || process.env.VOYAGE_API_KEY;
-      if (voyageKey) {
-        return { valid: true, provider: 'Voyage AI' };
-      }
-      return { valid: false, provider: 'Voyage AI', reason: 'VOYAGE_API_KEY not set' };
-
-    case 'ollama':
-      const ollamaModel = projectEnvVars['OLLAMA_EMBEDDING_MODEL'] || process.env.OLLAMA_EMBEDDING_MODEL;
-      if (ollamaModel) {
-        return { valid: true, provider: 'Ollama' };
-      }
-      return { valid: false, provider: 'Ollama', reason: 'OLLAMA_EMBEDDING_MODEL not set' };
+      return {
+        valid: false,
+        provider: 'Azure OpenAI',
+        reason: `Missing: ${missing.join(', ')}`
+      };
+    }
 
     default:
-      return { valid: false, provider: provider, reason: `Unknown provider: ${provider}` };
+      // Unknown provider - assume it might work
+      return { valid: true, provider };
   }
 }
 
