@@ -90,25 +90,76 @@ export function getDefaultDbPath(): string {
 }
 
 /**
+ * Get the auto-build source path from settings
+ */
+function getAutoBuildSourceFromSettings(): string | null {
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+    if (fs.existsSync(settingsPath)) {
+      const content = fs.readFileSync(settingsPath, 'utf-8');
+      const settings = JSON.parse(content);
+      if (settings.autoBuildPath && fs.existsSync(settings.autoBuildPath)) {
+        return settings.autoBuildPath;
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
  * Get the path to the query_memory.py script
  */
 function getQueryScriptPath(): string | null {
+  // Get autoBuildPath from settings (this is the configured backend path)
+  const autoBuildSource = getAutoBuildSourceFromSettings();
+
   // Look for the script in backend directory - validate using spec_runner.py marker
   const possiblePaths = [
+    // Priority: Use configured autoBuildPath
+    autoBuildSource ? path.join(autoBuildSource, 'query_memory.py') : null,
     // Apps structure: from dist/main -> apps/backend
     path.resolve(__dirname, '..', '..', '..', 'backend', 'query_memory.py'),
     path.resolve(app.getAppPath(), '..', 'backend', 'query_memory.py'),
-    path.resolve(process.cwd(), 'apps', 'backend', 'query_memory.py')
-  ];
+    path.resolve(process.cwd(), 'apps', 'backend', 'query_memory.py'),
+    // Additional paths for development mode
+    path.resolve(__dirname, '..', '..', '..', '..', 'backend', 'query_memory.py'),
+    path.resolve(app.getAppPath(), '..', '..', 'backend', 'query_memory.py'),
+  ].filter(Boolean) as string[];
+
+  // Write debug log to file
+  const debugLog: string[] = [];
+  debugLog.push(`[getQueryScriptPath] ${new Date().toISOString()}`);
+  debugLog.push(`[getQueryScriptPath] autoBuildSource: ${autoBuildSource}`);
+  debugLog.push(`[getQueryScriptPath] __dirname: ${__dirname}`);
+  debugLog.push(`[getQueryScriptPath] app.getAppPath(): ${app.getAppPath()}`);
+  debugLog.push(`[getQueryScriptPath] process.cwd(): ${process.cwd()}`);
 
   for (const p of possiblePaths) {
     // Validate backend structure by checking for spec_runner.py marker
     const backendPath = path.dirname(p);
     const specRunnerPath = path.join(backendPath, 'runners', 'spec_runner.py');
-    if (fs.existsSync(p) && fs.existsSync(specRunnerPath)) {
+    const scriptExists = fs.existsSync(p);
+    const markerExists = fs.existsSync(specRunnerPath);
+    debugLog.push(`[getQueryScriptPath] Checking: ${p}`);
+    debugLog.push(`  - script exists: ${scriptExists}`);
+    debugLog.push(`  - marker exists: ${markerExists} (${specRunnerPath})`);
+
+    if (scriptExists && markerExists) {
+      debugLog.push(`[getQueryScriptPath] FOUND: ${p}`);
+      // Write debug log to home directory
+      try {
+        fs.writeFileSync(path.join(require('os').homedir(), '.auto-claude', 'memory_query_debug.log'), debugLog.join('\n'));
+      } catch { /* ignore */ }
       return p;
     }
   }
+
+  debugLog.push(`[getQueryScriptPath] NOT FOUND - returning null`);
+  // Write debug log to home directory
+  try {
+    fs.writeFileSync(path.join(require('os').homedir(), '.auto-claude', 'memory_query_debug.log'), debugLog.join('\n'));
+  } catch { /* ignore */ }
+
   return null;
 }
 

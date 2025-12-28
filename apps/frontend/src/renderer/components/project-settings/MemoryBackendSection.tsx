@@ -182,12 +182,17 @@ export function MemoryBackendSection({
             </p>
             <Select
               value={embeddingProvider}
-              onValueChange={(value) => onUpdateConfig({
-                graphitiProviderConfig: {
-                  ...envConfig.graphitiProviderConfig,
-                  embeddingProvider: value as 'openai' | 'voyage' | 'azure_openai' | 'ollama' | 'google',
-                }
-              })}
+              onValueChange={(value) => {
+                const provider = value as 'openai' | 'voyage' | 'azure_openai' | 'ollama' | 'google';
+                onUpdateConfig({
+                  graphitiProviderConfig: {
+                    ...envConfig.graphitiProviderConfig,
+                    embeddingProvider: provider,
+                    // Azure OpenAI uses the same provider for both LLM and embeddings
+                    llmProvider: provider === 'azure_openai' ? 'azure_openai' : envConfig.graphitiProviderConfig?.llmProvider,
+                  }
+                });
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select embedding provider" />
@@ -296,6 +301,9 @@ export function MemoryBackendSection({
           {embeddingProvider === 'azure_openai' && (
             <div className="space-y-3">
               <Label className="text-sm font-medium text-foreground">Azure OpenAI Configuration</Label>
+              <p className="text-xs text-muted-foreground">
+                Configure both LLM (for entity extraction) and embeddings (for semantic search)
+              </p>
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">API Key</Label>
                 <PasswordInput
@@ -303,6 +311,7 @@ export function MemoryBackendSection({
                   onChange={(value) => onUpdateConfig({
                     graphitiProviderConfig: {
                       ...envConfig.graphitiProviderConfig,
+                      llmProvider: 'azure_openai',
                       embeddingProvider: 'azure_openai',
                       azureOpenaiApiKey: value || undefined,
                     }
@@ -318,6 +327,7 @@ export function MemoryBackendSection({
                   onChange={(e) => onUpdateConfig({
                     graphitiProviderConfig: {
                       ...envConfig.graphitiProviderConfig,
+                      llmProvider: 'azure_openai',
                       embeddingProvider: 'azure_openai',
                       azureOpenaiBaseUrl: e.target.value || undefined,
                     }
@@ -325,18 +335,40 @@ export function MemoryBackendSection({
                 />
               </div>
               <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">LLM Deployment Name</Label>
+                <Input
+                  placeholder="gpt-4o"
+                  value={envConfig.graphitiProviderConfig?.azureOpenaiLlmDeployment || ''}
+                  onChange={(e) => onUpdateConfig({
+                    graphitiProviderConfig: {
+                      ...envConfig.graphitiProviderConfig,
+                      llmProvider: 'azure_openai',
+                      embeddingProvider: 'azure_openai',
+                      azureOpenaiLlmDeployment: e.target.value || undefined,
+                    }
+                  })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used for entity extraction (e.g., gpt-4o, gpt-4o-mini)
+                </p>
+              </div>
+              <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">Embedding Deployment Name</Label>
                 <Input
-                  placeholder="text-embedding-ada-002"
+                  placeholder="text-embedding-3-small"
                   value={envConfig.graphitiProviderConfig?.azureOpenaiEmbeddingDeployment || ''}
                   onChange={(e) => onUpdateConfig({
                     graphitiProviderConfig: {
                       ...envConfig.graphitiProviderConfig,
+                      llmProvider: 'azure_openai',
                       embeddingProvider: 'azure_openai',
                       azureOpenaiEmbeddingDeployment: e.target.value || undefined,
                     }
                   })}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Used for semantic search (e.g., text-embedding-3-small)
+                </p>
               </div>
             </div>
           )}

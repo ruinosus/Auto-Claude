@@ -142,6 +142,9 @@ export interface GraphitiMemoryStatus {
   database?: string;
   dbPath?: string;
   reason?: string;
+  provider?: string;
+  /** Unique identifier for this project's memory namespace (e.g., "project_myapp_abc12345") */
+  groupId?: string;
 }
 
 // Memory Infrastructure Types
@@ -185,7 +188,9 @@ export type GraphitiLLMProvider = 'openai' | 'anthropic' | 'azure_openai' | 'oll
 export type GraphitiProviderType = GraphitiLLMProvider;
 
 export interface GraphitiProviderConfig {
-  // Embedding Provider (LLM provider removed - Claude SDK handles RAG)
+  // Provider configuration
+  // LLM Provider is needed for entity extraction in graphiti-core
+  llmProvider?: GraphitiLLMProvider;  // Defaults to embeddingProvider if not set
   embeddingProvider: GraphitiEmbeddingProvider;
   embeddingModel?: string;  // Embedding model, uses provider default if not specified
 
@@ -193,10 +198,11 @@ export interface GraphitiProviderConfig {
   openaiApiKey?: string;
   openaiEmbeddingModel?: string;
 
-  // Azure OpenAI Embeddings
+  // Azure OpenAI (both LLM and Embeddings)
   azureOpenaiApiKey?: string;
   azureOpenaiBaseUrl?: string;
-  azureOpenaiEmbeddingDeployment?: string;
+  azureOpenaiLlmDeployment?: string;  // e.g., 'gpt-4o'
+  azureOpenaiEmbeddingDeployment?: string;  // e.g., 'text-embedding-3-small'
 
   // Voyage AI Embeddings
   voyageApiKey?: string;

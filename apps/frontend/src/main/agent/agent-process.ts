@@ -210,6 +210,7 @@ export class AgentProcessManager {
 
   /**
    * Get project-specific environment variables based on project settings
+   * Loads both project settings and the project's .auto-claude/.env file
    */
   private getProjectEnvVars(projectPath: string): Record<string, string> {
     const env: Record<string, string> = {};
@@ -223,6 +224,37 @@ export class AgentProcessManager {
       if (project.settings.graphitiMcpEnabled) {
         const graphitiUrl = project.settings.graphitiMcpUrl || 'http://localhost:8000/mcp/';
         env['GRAPHITI_MCP_URL'] = graphitiUrl;
+      }
+    }
+
+    // Load project's .auto-claude/.env file for Graphiti and other project-specific settings
+    if (project?.autoBuildPath) {
+      const projectEnvPath = path.join(projectPath, project.autoBuildPath, '.env');
+      if (existsSync(projectEnvPath)) {
+        try {
+          const envContent = readFileSync(projectEnvPath, 'utf-8');
+          // Parse env file (same logic as loadAutoBuildEnv)
+          for (const line of envContent.split(/\r?\n/)) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+
+            const eqIndex = trimmed.indexOf('=');
+            if (eqIndex > 0) {
+              const key = trimmed.substring(0, eqIndex).trim();
+              let value = trimmed.substring(eqIndex + 1).trim();
+
+              // Remove quotes if present
+              if ((value.startsWith('"') && value.endsWith('"')) ||
+                  (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.slice(1, -1);
+              }
+
+              env[key] = value;
+            }
+          }
+        } catch {
+          // Ignore errors loading project env
+        }
       }
     }
 

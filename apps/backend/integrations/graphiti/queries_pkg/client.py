@@ -71,6 +71,7 @@ class GraphitiClient:
         self._driver = None
         self._llm_client = None
         self._embedder = None
+        self._cross_encoder = None
         self._initialized = False
 
     @property
@@ -104,6 +105,7 @@ class GraphitiClient:
             from graphiti_providers import (
                 ProviderError,
                 ProviderNotInstalled,
+                create_cross_encoder,
                 create_embedder,
                 create_llm_client,
             )
@@ -132,6 +134,21 @@ class GraphitiClient:
             except ProviderError as e:
                 logger.warning(f"Embedder provider configuration error: {e}")
                 return False
+
+            # Create cross-encoder for reranking (optional but recommended)
+            try:
+                self._cross_encoder = create_cross_encoder(
+                    self.config, llm_client=self._llm_client
+                )
+                if self._cross_encoder:
+                    logger.info(
+                        f"Created cross-encoder for provider: {self.config.llm_provider}"
+                    )
+                else:
+                    logger.debug("Cross-encoder not available for this provider")
+            except Exception as e:
+                logger.warning(f"Could not create cross-encoder (non-fatal): {e}")
+                self._cross_encoder = None
 
             # Apply LadybugDB monkeypatch to use it via graphiti's KuzuDriver
             if not _apply_ladybug_monkeypatch():
@@ -172,6 +189,7 @@ class GraphitiClient:
                 graph_driver=self._driver,
                 llm_client=self._llm_client,
                 embedder=self._embedder,
+                cross_encoder=self._cross_encoder,
             )
 
             # Build indices (first time only)

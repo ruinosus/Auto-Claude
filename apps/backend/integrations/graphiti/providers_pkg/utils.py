@@ -64,8 +64,9 @@ async def get_graph_hints(
 
         from graphiti_memory import GraphitiMemory, GroupIdMode
 
-        # Determine project directory from project_id or use current dir
-        project_dir = Path.cwd()
+        # Use project_id as the project directory for proper per-project memory isolation
+        # The project_id is typically the project path passed by the caller
+        project_dir = Path(project_id) if project_id else Path.cwd()
 
         # Use spec_dir if provided, otherwise create a temp context
         if spec_dir is None:

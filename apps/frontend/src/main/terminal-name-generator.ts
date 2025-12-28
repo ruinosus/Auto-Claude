@@ -6,6 +6,7 @@ import { EventEmitter } from 'events';
 import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from './rate-limit-detector';
 import { parsePythonCommand } from './python-detector';
 import { pythonEnvManager } from './python-env-manager';
+import { getClaudeProfileManager } from './claude-profile-manager';
 
 /**
  * Debug logging - only logs when DEBUG=true or in development mode
@@ -144,12 +145,19 @@ export class TerminalNameGenerator extends EventEmitter {
     debug('Generating terminal name for command:', command.substring(0, 100) + '...');
 
     const autoBuildEnv = this.loadAutoBuildEnv();
-    debug('Environment loaded', {
-      hasOAuthToken: !!autoBuildEnv.CLAUDE_CODE_OAUTH_TOKEN
-    });
 
-    // Get active Claude profile environment (CLAUDE_CONFIG_DIR if not default)
+    // Get active Claude profile environment (Azure Foundry, OAuth token, etc.)
+    const profileManager = getClaudeProfileManager();
+    const activeProfileEnv = profileManager.getActiveProfileEnv();
+
+    // Get profile config dir (for non-default profiles)
     const profileEnv = getProfileEnv();
+
+    debug('Environment loaded', {
+      hasOAuthToken: !!autoBuildEnv.CLAUDE_CODE_OAUTH_TOKEN || !!activeProfileEnv.CLAUDE_CODE_OAUTH_TOKEN,
+      isAzureFoundry: !!activeProfileEnv.ANTHROPIC_BASE_URL,
+      hasProxyAuth: !!activeProfileEnv.ANTHROPIC_AUTH_TOKEN
+    });
 
     return new Promise((resolve) => {
       // Use the venv Python where claude_agent_sdk is installed
@@ -159,7 +167,8 @@ export class TerminalNameGenerator extends EventEmitter {
         env: {
           ...process.env,
           ...autoBuildEnv,
-          ...profileEnv, // Include active Claude profile config
+          ...profileEnv, // Include Claude profile config dir
+          ...activeProfileEnv, // Include Azure Foundry/OAuth (highest priority)
           PYTHONUNBUFFERED: '1',
           PYTHONIOENCODING: 'utf-8',
           PYTHONUTF8: '1'

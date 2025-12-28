@@ -77,13 +77,32 @@ export function MemoriesTab({
           <CardContent className="space-y-3">
             {memoryStatus?.available ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-3 text-sm">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
                   <InfoItem label="Database" value={memoryStatus.database || 'auto_claude_memory'} />
-                  <InfoItem label="Path" value={memoryStatus.dbPath || '~/.auto-claude/graphs'} />
+                  <InfoItem label="Path" value={memoryStatus.dbPath || '~/.auto-claude/memories'} />
+                  {memoryStatus.provider && (
+                    <InfoItem label="Embeddings" value={memoryStatus.provider} />
+                  )}
                   {memoryState && (
                     <InfoItem label="Episodes" value={memoryState.episode_count.toString()} />
                   )}
                 </div>
+                {memoryStatus.groupId && (
+                  <div className="mt-3 pt-3 border-t border-border/50">
+                    <InfoItem
+                      label="Project Namespace"
+                      value={memoryStatus.groupId}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Memory is isolated per project using this unique identifier
+                    </p>
+                  </div>
+                )}
+                {memoryStatus.reason && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {memoryStatus.reason}
+                  </p>
+                )}
                 {memoryState?.last_session && (
                   <p className="text-xs text-muted-foreground">
                     Last session: #{memoryState.last_session}

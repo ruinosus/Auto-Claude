@@ -47,8 +47,14 @@ def create_azure_openai_llm_client(config: "GraphitiConfig") -> Any:
             "Azure OpenAI provider requires AZURE_OPENAI_LLM_DEPLOYMENT"
         )
 
+    # Azure OpenAI v1 API requires base_url to end with /openai/v1/
+    # See: https://help.getzep.com/graphiti/configuration/llm-configuration
+    base_url = config.azure_openai_base_url.rstrip("/")
+    if not base_url.endswith("/openai/v1"):
+        base_url = f"{base_url}/openai/v1/"
+
     azure_client = AsyncOpenAI(
-        base_url=config.azure_openai_base_url,
+        base_url=base_url,
         api_key=config.azure_openai_api_key,
     )
 

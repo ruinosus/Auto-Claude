@@ -120,6 +120,76 @@ export function hasOpenAIKey(projectEnvVars: EnvironmentVars, globalSettings: Gl
 }
 
 /**
+ * Get the configured embedding provider
+ */
+export function getEmbeddingProvider(projectEnvVars: EnvironmentVars): string {
+  return (
+    projectEnvVars['GRAPHITI_EMBEDDER_PROVIDER'] ||
+    process.env.GRAPHITI_EMBEDDER_PROVIDER ||
+    'openai'
+  ).toLowerCase();
+}
+
+/**
+ * Check if a valid embedding provider is configured
+ * Supports: OpenAI, Azure OpenAI, Google, Voyage, Ollama
+ */
+export function hasValidEmbeddingProvider(
+  projectEnvVars: EnvironmentVars,
+  globalSettings: GlobalSettings
+): { valid: boolean; provider: string; reason?: string } {
+  const provider = getEmbeddingProvider(projectEnvVars);
+
+  switch (provider) {
+    case 'openai':
+      if (hasOpenAIKey(projectEnvVars, globalSettings)) {
+        return { valid: true, provider: 'OpenAI' };
+      }
+      return { valid: false, provider: 'OpenAI', reason: 'OPENAI_API_KEY not set' };
+
+    case 'azure_openai':
+      const azureKey = projectEnvVars['AZURE_OPENAI_API_KEY'] || process.env.AZURE_OPENAI_API_KEY;
+      const azureUrl = projectEnvVars['AZURE_OPENAI_BASE_URL'] || process.env.AZURE_OPENAI_BASE_URL;
+      const azureLlmDeployment = projectEnvVars['AZURE_OPENAI_LLM_DEPLOYMENT'] || process.env.AZURE_OPENAI_LLM_DEPLOYMENT;
+      const azureEmbedDeployment = projectEnvVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] || process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
+
+      if (azureKey && azureUrl && azureLlmDeployment && azureEmbedDeployment) {
+        return { valid: true, provider: 'Azure OpenAI' };
+      }
+      const missing = [];
+      if (!azureKey) missing.push('API_KEY');
+      if (!azureUrl) missing.push('BASE_URL');
+      if (!azureLlmDeployment) missing.push('LLM_DEPLOYMENT');
+      if (!azureEmbedDeployment) missing.push('EMBEDDING_DEPLOYMENT');
+      return { valid: false, provider: 'Azure OpenAI', reason: `Missing: ${missing.join(', ')}` };
+
+    case 'google':
+      const googleKey = projectEnvVars['GOOGLE_API_KEY'] || process.env.GOOGLE_API_KEY;
+      if (googleKey) {
+        return { valid: true, provider: 'Google AI' };
+      }
+      return { valid: false, provider: 'Google AI', reason: 'GOOGLE_API_KEY not set' };
+
+    case 'voyage':
+      const voyageKey = projectEnvVars['VOYAGE_API_KEY'] || process.env.VOYAGE_API_KEY;
+      if (voyageKey) {
+        return { valid: true, provider: 'Voyage AI' };
+      }
+      return { valid: false, provider: 'Voyage AI', reason: 'VOYAGE_API_KEY not set' };
+
+    case 'ollama':
+      const ollamaModel = projectEnvVars['OLLAMA_EMBEDDING_MODEL'] || process.env.OLLAMA_EMBEDDING_MODEL;
+      if (ollamaModel) {
+        return { valid: true, provider: 'Ollama' };
+      }
+      return { valid: false, provider: 'Ollama', reason: 'OLLAMA_EMBEDDING_MODEL not set' };
+
+    default:
+      return { valid: false, provider: provider, reason: `Unknown provider: ${provider}` };
+  }
+}
+
+/**
  * Get Graphiti database details (LadybugDB - embedded database)
  */
 export interface GraphitiDatabaseDetails {

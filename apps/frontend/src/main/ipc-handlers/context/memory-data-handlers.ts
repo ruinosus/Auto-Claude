@@ -161,29 +161,58 @@ export function registerMemoryDataHandlers(
   ipcMain.handle(
     IPC_CHANNELS.CONTEXT_GET_MEMORIES,
     async (_, projectId: string, limit: number = 20): Promise<IPCResult<MemoryEpisode[]>> => {
+      // Write debug to file for visibility
+      const fs = require('fs');
+      const os = require('os');
+      const debugPath = require('path').join(os.homedir(), '.auto-claude', 'memory_fetch_debug.log');
+      const log = (msg: string) => {
+        try {
+          fs.appendFileSync(debugPath, `[${new Date().toISOString()}] ${msg}\n`);
+        } catch { /* ignore */ }
+      };
+
+      log(`=== CONTEXT_GET_MEMORIES called ===`);
+      log(`projectId: ${projectId}, limit: ${limit}`);
+
       const project = projectStore.getProject(projectId);
       if (!project) {
+        log(`ERROR: Project not found: ${projectId}`);
         return { success: false, error: 'Project not found' };
       }
 
+      log(`Project found: path=${project.path}, autoBuildPath=${project.autoBuildPath}`);
+
       const projectEnvVars = loadProjectEnvVars(project.path, project.autoBuildPath);
       const graphitiEnabled = isGraphitiEnabled(projectEnvVars);
+      const kuzuAvailable = isKuzuAvailable();
+
+      log(`graphitiEnabled: ${graphitiEnabled}, kuzuAvailable: ${kuzuAvailable}`);
+      log(`GRAPHITI_ENABLED env: ${projectEnvVars['GRAPHITI_ENABLED']}`);
 
       // Try LadybugDB first if available
-      if (graphitiEnabled && isKuzuAvailable()) {
+      if (graphitiEnabled && kuzuAvailable) {
         try {
           const dbDetails = getGraphitiDatabaseDetails(projectEnvVars);
+          log(`DB details: dbPath=${dbDetails.dbPath}, database=${dbDetails.database}`);
+
           const memoryService = getMemoryService({
             dbPath: dbDetails.dbPath,
             database: dbDetails.database,
           });
           const graphMemories = await memoryService.getEpisodicMemories(limit);
+          log(`Got ${graphMemories.length} memories from LadybugDB`);
+
           if (graphMemories.length > 0) {
+            log(`SUCCESS: Returning ${graphMemories.length} memories`);
             return { success: true, data: graphMemories };
           }
+          log(`No memories found in LadybugDB, falling back to file-based`);
         } catch (error) {
+          log(`ERROR querying LadybugDB: ${error}`);
           console.warn('Failed to get memories from LadybugDB, falling back to file-based:', error);
         }
+      } else {
+        log(`SKIP LadybugDB: graphitiEnabled=${graphitiEnabled}, kuzuAvailable=${kuzuAvailable}`);
       }
 
       // Fall back to file-based memories

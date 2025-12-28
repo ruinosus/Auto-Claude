@@ -247,6 +247,14 @@ export class AgentQueueManager {
       tokenPreview: hasToken ? oauthToken?.substring(0, 20) + '...' : 'none'
     });
 
+    // Debug: Show Graphiti env vars being passed
+    debugLog('[Agent Queue] Graphiti env vars:', {
+      GRAPHITI_ENABLED: combinedEnv['GRAPHITI_ENABLED'] || 'NOT SET',
+      GRAPHITI_LLM_PROVIDER: combinedEnv['GRAPHITI_LLM_PROVIDER'] || 'NOT SET',
+      GRAPHITI_EMBEDDER_PROVIDER: combinedEnv['GRAPHITI_EMBEDDER_PROVIDER'] || 'NOT SET',
+      projectPath
+    });
+
     // Parse Python command to handle space-separated commands like "py -3"
     const [pythonCommand, pythonBaseArgs] = parsePythonCommand(pythonPath);
     const childProcess = spawn(pythonCommand, [...pythonBaseArgs, ...args], {
@@ -543,6 +551,14 @@ export class AgentQueueManager {
       source: tokenSource,
       hasToken,
       tokenPreview: hasToken ? oauthToken?.substring(0, 20) + '...' : 'none'
+    });
+
+    // Debug: Show Graphiti env vars being passed
+    debugLog('[Agent Queue] Graphiti env vars:', {
+      GRAPHITI_ENABLED: combinedEnv['GRAPHITI_ENABLED'] || 'NOT SET',
+      GRAPHITI_LLM_PROVIDER: combinedEnv['GRAPHITI_LLM_PROVIDER'] || 'NOT SET',
+      GRAPHITI_EMBEDDER_PROVIDER: combinedEnv['GRAPHITI_EMBEDDER_PROVIDER'] || 'NOT SET',
+      projectPath
     });
 
     // Parse Python command to handle space-separated commands like "py -3"

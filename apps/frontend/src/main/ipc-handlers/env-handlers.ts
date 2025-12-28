@@ -93,17 +93,22 @@ export function registerEnvHandlers(
     if (config.graphitiEnabled !== undefined) {
       existingVars['GRAPHITI_ENABLED'] = config.graphitiEnabled ? 'true' : 'false';
     }
-    // Memory Provider Configuration (embeddings only - LLM uses Claude SDK)
+    // Memory Provider Configuration (LLM for entity extraction + embeddings for semantic search)
     if (config.graphitiProviderConfig) {
       const pc = config.graphitiProviderConfig;
-      // Embedding provider only (LLM provider removed - Claude SDK handles RAG)
+      // LLM provider for entity extraction (graphiti-core needs this)
+      // Infer from embeddingProvider for Azure OpenAI (uses same provider for both)
+      const effectiveLlmProvider = pc.llmProvider || (pc.embeddingProvider === 'azure_openai' ? 'azure_openai' : undefined);
+      if (effectiveLlmProvider) existingVars['GRAPHITI_LLM_PROVIDER'] = effectiveLlmProvider;
+      // Embedding provider for semantic search
       if (pc.embeddingProvider) existingVars['GRAPHITI_EMBEDDER_PROVIDER'] = pc.embeddingProvider;
       // OpenAI Embeddings
       if (pc.openaiApiKey) existingVars['OPENAI_API_KEY'] = pc.openaiApiKey;
       if (pc.openaiEmbeddingModel) existingVars['OPENAI_EMBEDDING_MODEL'] = pc.openaiEmbeddingModel;
-      // Azure OpenAI Embeddings
+      // Azure OpenAI (LLM and Embeddings)
       if (pc.azureOpenaiApiKey) existingVars['AZURE_OPENAI_API_KEY'] = pc.azureOpenaiApiKey;
       if (pc.azureOpenaiBaseUrl) existingVars['AZURE_OPENAI_BASE_URL'] = pc.azureOpenaiBaseUrl;
+      if (pc.azureOpenaiLlmDeployment) existingVars['AZURE_OPENAI_LLM_DEPLOYMENT'] = pc.azureOpenaiLlmDeployment;
       if (pc.azureOpenaiEmbeddingDeployment) existingVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] = pc.azureOpenaiEmbeddingDeployment;
       // Voyage Embeddings
       if (pc.voyageApiKey) existingVars['VOYAGE_API_KEY'] = pc.voyageApiKey;
@@ -188,21 +193,26 @@ ${existingVars['ENABLE_FANCY_UI'] !== undefined ? `ENABLE_FANCY_UI=${existingVar
 
 # =============================================================================
 # MEMORY INTEGRATION
-# Embedding providers: OpenAI, Google AI, Azure OpenAI, Ollama, Voyage
+# LLM providers (for entity extraction): OpenAI, Azure OpenAI, Ollama, Google
+# Embedding providers (for semantic search): OpenAI, Azure OpenAI, Voyage, Ollama, Google
 # =============================================================================
 ${existingVars['GRAPHITI_ENABLED'] ? `GRAPHITI_ENABLED=${existingVars['GRAPHITI_ENABLED']}` : '# GRAPHITI_ENABLED=true'}
 
+# LLM Provider (for entity extraction in knowledge graph)
+${existingVars['GRAPHITI_LLM_PROVIDER'] ? `GRAPHITI_LLM_PROVIDER=${existingVars['GRAPHITI_LLM_PROVIDER']}` : '# GRAPHITI_LLM_PROVIDER=azure_openai'}
+
 # Embedding Provider (for semantic search - optional, keyword search works without)
-${existingVars['GRAPHITI_EMBEDDER_PROVIDER'] ? `GRAPHITI_EMBEDDER_PROVIDER=${existingVars['GRAPHITI_EMBEDDER_PROVIDER']}` : '# GRAPHITI_EMBEDDER_PROVIDER=ollama'}
+${existingVars['GRAPHITI_EMBEDDER_PROVIDER'] ? `GRAPHITI_EMBEDDER_PROVIDER=${existingVars['GRAPHITI_EMBEDDER_PROVIDER']}` : '# GRAPHITI_EMBEDDER_PROVIDER=azure_openai'}
 
 # OpenAI Embeddings
 ${existingVars['OPENAI_API_KEY'] ? `OPENAI_API_KEY=${existingVars['OPENAI_API_KEY']}` : '# OPENAI_API_KEY='}
 ${existingVars['OPENAI_EMBEDDING_MODEL'] ? `OPENAI_EMBEDDING_MODEL=${existingVars['OPENAI_EMBEDDING_MODEL']}` : '# OPENAI_EMBEDDING_MODEL=text-embedding-3-small'}
 
-# Azure OpenAI Embeddings
+# Azure OpenAI (LLM and Embeddings)
 ${existingVars['AZURE_OPENAI_API_KEY'] ? `AZURE_OPENAI_API_KEY=${existingVars['AZURE_OPENAI_API_KEY']}` : '# AZURE_OPENAI_API_KEY='}
 ${existingVars['AZURE_OPENAI_BASE_URL'] ? `AZURE_OPENAI_BASE_URL=${existingVars['AZURE_OPENAI_BASE_URL']}` : '# AZURE_OPENAI_BASE_URL='}
-${existingVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] ? `AZURE_OPENAI_EMBEDDING_DEPLOYMENT=${existingVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT']}` : '# AZURE_OPENAI_EMBEDDING_DEPLOYMENT='}
+${existingVars['AZURE_OPENAI_LLM_DEPLOYMENT'] ? `AZURE_OPENAI_LLM_DEPLOYMENT=${existingVars['AZURE_OPENAI_LLM_DEPLOYMENT']}` : '# AZURE_OPENAI_LLM_DEPLOYMENT=gpt-4o'}
+${existingVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] ? `AZURE_OPENAI_EMBEDDING_DEPLOYMENT=${existingVars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT']}` : '# AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small'}
 
 # Voyage AI Embeddings
 ${existingVars['VOYAGE_API_KEY'] ? `VOYAGE_API_KEY=${existingVars['VOYAGE_API_KEY']}` : '# VOYAGE_API_KEY='}
@@ -365,18 +375,26 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         config.enableFancyUi = false;
       }
 
-      // Populate graphitiProviderConfig from .env file (embeddings only - no LLM provider)
+      // Populate graphitiProviderConfig from .env file (LLM + embeddings)
+      const llmProviderRaw = vars['GRAPHITI_LLM_PROVIDER'];
       const embeddingProvider = vars['GRAPHITI_EMBEDDER_PROVIDER'];
-      if (embeddingProvider || vars['AZURE_OPENAI_API_KEY'] ||
+
+      // Infer llmProvider from embeddingProvider for Azure OpenAI (uses same provider for both)
+      const llmProvider = llmProviderRaw || (embeddingProvider === 'azure_openai' ? 'azure_openai' : undefined);
+
+      if (llmProvider || embeddingProvider || vars['AZURE_OPENAI_API_KEY'] ||
           vars['VOYAGE_API_KEY'] || vars['GOOGLE_API_KEY'] || vars['OLLAMA_BASE_URL']) {
         config.graphitiProviderConfig = {
+          // LLM provider for entity extraction (inferred from embedder for Azure)
+          llmProvider: llmProvider as 'openai' | 'anthropic' | 'azure_openai' | 'ollama' | 'google' | 'groq' | 'openrouter' | undefined,
           embeddingProvider: (embeddingProvider as 'openai' | 'voyage' | 'azure_openai' | 'ollama' | 'google') || 'ollama',
           // OpenAI Embeddings
           openaiApiKey: vars['OPENAI_API_KEY'],
           openaiEmbeddingModel: vars['OPENAI_EMBEDDING_MODEL'],
-          // Azure OpenAI Embeddings
+          // Azure OpenAI (LLM and Embeddings)
           azureOpenaiApiKey: vars['AZURE_OPENAI_API_KEY'],
           azureOpenaiBaseUrl: vars['AZURE_OPENAI_BASE_URL'],
+          azureOpenaiLlmDeployment: vars['AZURE_OPENAI_LLM_DEPLOYMENT'],
           azureOpenaiEmbeddingDeployment: vars['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'],
           // Voyage Embeddings
           voyageApiKey: vars['VOYAGE_API_KEY'],

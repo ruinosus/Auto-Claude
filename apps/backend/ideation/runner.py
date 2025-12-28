@@ -6,17 +6,19 @@ Orchestrates the ideation creation process through multiple phases:
 2. Context & Graph Hints - Gather context in parallel
 3. Ideation Generation - Generate ideas in parallel
 4. Merge - Combine all outputs
+5. Save to Memory - Persist ideas to Graphiti for future context
 """
 
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Add auto-claude to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from debug import debug, debug_section
+from debug import debug, debug_section, debug_success, debug_warning
 from ui import Icons, box, icon, muted, print_section, print_status
 
 from .config import IdeationConfigManager
@@ -223,6 +225,13 @@ class IdeationOrchestrator:
         result = await self.phase_executor.execute_merge()
         results.append(result)
 
+        # Phase 5: Save to Memory
+        print_section("PHASE 5: SAVE TO MEMORY", Icons.GEAR)
+        import sys
+        print("[MEMORY DEBUG] Starting _save_to_memory...", file=sys.stderr, flush=True)
+        memory_result = await self._save_to_memory()
+        print(f"[MEMORY DEBUG] _save_to_memory returned: {memory_result}", file=sys.stderr, flush=True)
+
         # Summary
         self._print_summary()
 
@@ -252,3 +261,171 @@ class IdeationOrchestrator:
                     style="heavy",
                 )
             )
+
+    async def _save_to_memory(self) -> bool:
+        """Save ideation results to Graphiti memory for future context.
+
+        This persists the generated ideas as episodic memory, allowing future
+        sessions to reference what was ideated and learn from patterns.
+
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        import os
+        from graphiti_providers import is_graphiti_enabled
+
+        # Debug: Write to log file for visibility
+        log_file = self.output_dir / "memory_debug.log"
+        def log(msg):
+            with open(log_file, "a") as f:
+                f.write(f"{msg}\n")
+
+        log(f"=== Memory Save Debug - {datetime.now().isoformat()} ===")
+
+        graphiti_enabled_env = os.environ.get("GRAPHITI_ENABLED", "NOT SET")
+        llm_provider_env = os.environ.get("GRAPHITI_LLM_PROVIDER", "NOT SET")
+        embedder_provider_env = os.environ.get("GRAPHITI_EMBEDDER_PROVIDER", "NOT SET")
+
+        log(f"GRAPHITI_ENABLED={graphiti_enabled_env}")
+        log(f"GRAPHITI_LLM_PROVIDER={llm_provider_env}")
+        log(f"GRAPHITI_EMBEDDER_PROVIDER={embedder_provider_env}")
+
+        graphiti_check = is_graphiti_enabled()
+        log(f"is_graphiti_enabled() = {graphiti_check}")
+
+        if not graphiti_check:
+            log("SKIPPING - Graphiti not enabled")
+            print_status(f"Graphiti not enabled (GRAPHITI_ENABLED={graphiti_enabled_env}), skipping memory save", "info")
+            return False
+
+        log("Graphiti IS enabled, continuing...")
+
+        ideation_file = self.output_dir / "ideation.json"
+        log(f"Looking for ideation file: {ideation_file}")
+        log(f"File exists: {ideation_file.exists()}")
+
+        if not ideation_file.exists():
+            log("SKIPPING - No ideation file")
+            print_status("No ideation file found to save", "warning")
+            return False
+
+        try:
+            log("Loading ideation file...")
+            with open(ideation_file) as f:
+                ideation = json.load(f)
+
+            ideas = ideation.get("ideas", [])
+            log(f"Found {len(ideas)} ideas")
+
+            if not ideas:
+                log("SKIPPING - No ideas")
+                print_status("No ideas to save to memory", "info")
+                return False
+
+            # Import GraphitiMemory
+            log("Importing GraphitiMemory...")
+            from graphiti_memory import GraphitiMemory, GroupIdMode
+            log("Import successful")
+
+            # Create memory instance with PROJECT mode for cross-session context
+            log(f"Creating GraphitiMemory for project: {self.project_dir}")
+            memory = GraphitiMemory(
+                spec_dir=self.output_dir,
+                project_dir=self.project_dir,
+                group_id_mode=GroupIdMode.PROJECT,
+            )
+            log(f"Memory created, is_enabled={memory.is_enabled}, group_id={memory.group_id}")
+
+            if not memory.is_enabled:
+                log("SKIPPING - GraphitiMemory not enabled")
+                print_status("GraphitiMemory not enabled", "warning")
+                return False
+
+            # Initialize memory
+            log("Initializing memory...")
+            initialized = await memory.initialize()
+            log(f"Initialized: {initialized}")
+
+            if not initialized:
+                log("FAILED - Could not initialize")
+                print_status("Failed to initialize GraphitiMemory", "warning")
+                return False
+
+            # Build episode content - summarize the ideation session
+            summary = ideation.get("summary", {})
+            by_type = summary.get("by_type", {})
+
+            # Create a structured summary of ideation
+            episode_content = f"""## Ideation Session - {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+### Summary
+Generated {len(ideas)} ideas across {len(by_type)} categories.
+
+### Ideas by Type
+"""
+            for idea_type, count in by_type.items():
+                type_label = IDEATION_TYPE_LABELS.get(idea_type, idea_type)
+                episode_content += f"- **{type_label}**: {count} ideas\n"
+
+            # Add top ideas from each category
+            episode_content += "\n### Top Ideas\n"
+            ideas_by_type: dict[str, list] = {}
+            for idea in ideas:
+                idea_type = idea.get("ideation_type", "unknown")
+                if idea_type not in ideas_by_type:
+                    ideas_by_type[idea_type] = []
+                ideas_by_type[idea_type].append(idea)
+
+            for idea_type, type_ideas in ideas_by_type.items():
+                type_label = IDEATION_TYPE_LABELS.get(idea_type, idea_type)
+                episode_content += f"\n#### {type_label}\n"
+                # Add top 3 ideas from each type
+                for idea in type_ideas[:3]:
+                    title = idea.get("title", "Untitled")
+                    description = idea.get("description", "")[:200]
+                    priority = idea.get("priority", "medium")
+                    episode_content += f"- [{priority.upper()}] **{title}**: {description}...\n"
+
+            # Save as episodic memory
+            debug("ideation_memory", "Saving ideation to memory", ideas_count=len(ideas))
+
+            # Use session_num=0 to indicate this is an ideation session (not a build session)
+            insights = {
+                "type": "ideation_session",
+                "content": episode_content,
+                "total_ideas": len(ideas),
+                "by_type": by_type,
+                "enabled_types": self.enabled_types,
+                "model": self.model,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            log("Saving session insights...")
+            result = await memory.save_session_insights(
+                session_num=0,  # 0 indicates ideation, not a build session
+                insights=insights,
+            )
+            log(f"Save result: {result}")
+
+            await memory.close()
+            log("Memory closed")
+
+            log(f"SUCCESS - Saved {len(ideas)} ideas to memory")
+            debug_success("ideation_memory", f"Saved {len(ideas)} ideas to memory")
+            print_status(f"Saved {len(ideas)} ideas to memory", "success")
+            return True
+
+        except ImportError as e:
+            import traceback
+            log(f"IMPORT ERROR: {e}")
+            log(traceback.format_exc())
+            debug_warning("ideation_memory", f"GraphitiMemory not available: {e}")
+            print_status(f"Memory packages not available: {e}", "warning")
+            return False
+        except Exception as e:
+            import traceback
+            log(f"EXCEPTION: {e}")
+            log(traceback.format_exc())
+            debug_warning("ideation_memory", f"Failed to save to memory: {e}")
+            print_status(f"Failed to save to memory: {e}", "warning")
+            return False
