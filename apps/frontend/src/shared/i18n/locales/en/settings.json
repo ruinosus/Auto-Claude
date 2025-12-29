@@ -294,5 +294,23 @@
     "minutesPerLine": "Minutes per Line",
     "minPerLine": "min/line",
     "minutesPerLineHint": "Average time to manually write or modify a line of code"
+  },
+  "otel": {
+    "title": "OpenTelemetry Settings",
+    "description": "Configure telemetry collection for analytics and monitoring",
+    "enableTelemetry": "Enable OpenTelemetry",
+    "enableTelemetryDescription": "Send telemetry data to your OTEL collector for analytics",
+    "endpoint": "OTEL Endpoint URL",
+    "endpointHint": "The HTTP endpoint of your OpenTelemetry collector (e.g., http://localhost:4318)",
+    "testConnection": "Test Connection",
+    "statusConnected": "Connected",
+    "statusTesting": "Testing connection...",
+    "statusError": "Connection failed",
+    "statusDisconnected": "Not connected",
+    "connectedTo": "Connected to",
+    "endpointRequired": "Endpoint URL is required",
+    "invalidEndpoint": "Invalid endpoint URL format",
+    "connectionFailed": "Failed to connect to OTEL endpoint",
+    "infoText": "OpenTelemetry allows you to collect and export telemetry data (metrics, traces, logs) to your observability platform for enhanced analytics and debugging."
   }
 }

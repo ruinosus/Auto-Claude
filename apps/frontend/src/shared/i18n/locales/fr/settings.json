@@ -294,5 +294,23 @@
     "minutesPerLine": "Minutes par ligne",
     "minPerLine": "min/ligne",
     "minutesPerLineHint": "Temps moyen pour ecrire ou modifier manuellement une ligne de code"
+  },
+  "otel": {
+    "title": "Parametres OpenTelemetry",
+    "description": "Configurer la collecte de telemetrie pour l'analytique et le monitoring",
+    "enableTelemetry": "Activer OpenTelemetry",
+    "enableTelemetryDescription": "Envoyer les donnees de telemetrie a votre collecteur OTEL pour l'analytique",
+    "endpoint": "URL du point de terminaison OTEL",
+    "endpointHint": "Le point de terminaison HTTP de votre collecteur OpenTelemetry (ex: http://localhost:4318)",
+    "testConnection": "Tester la connexion",
+    "statusConnected": "Connecte",
+    "statusTesting": "Test de connexion en cours...",
+    "statusError": "Echec de connexion",
+    "statusDisconnected": "Non connecte",
+    "connectedTo": "Connecte a",
+    "endpointRequired": "L'URL du point de terminaison est requise",
+    "invalidEndpoint": "Format d'URL invalide",
+    "connectionFailed": "Impossible de se connecter au point de terminaison OTEL",
+    "infoText": "OpenTelemetry vous permet de collecter et exporter des donnees de telemetrie (metriques, traces, logs) vers votre plateforme d'observabilite pour une analytique et un debogage ameliores."
   }
 }
