@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { DateRange, AnalyticsFilters } from '../../shared/types/analytics-v2';
 
 // Types for analytics data
 export interface TokenUsage {
@@ -76,6 +77,13 @@ interface AlertRecord {
   timestamp: number;
 }
 
+export interface DrillDownState {
+  isOpen: boolean;
+  level: 'aggregate' | 'spec' | 'session' | 'message';
+  specId?: string;
+  sessionId?: string;
+}
+
 interface AnalyticsState {
   // Data
   data: AnalyticsData | null;
@@ -83,6 +91,9 @@ interface AnalyticsState {
   pollingIntervalMs: number;
   budgets: Record<string, number>; // specId -> budget amount
   alertsShown: Record<string, AlertRecord>; // "specId:threshold" -> timestamp
+  dateRange: DateRange;
+  filters: AnalyticsFilters;
+  drillDown: DrillDownState;
 
   // Actions
   setData: (data: AnalyticsData | null) => void;
@@ -93,6 +104,11 @@ interface AnalyticsState {
   shouldShowAlert: (specId: string, threshold: number) => boolean;
   markAlertShown: (specId: string, threshold: number) => void;
   resetAlerts: () => void;
+  setDateRange: (range: DateRange) => void;
+  setFilters: (newFilters: Partial<AnalyticsFilters>) => void;
+  clearFilters: () => void;
+  openDrillDown: (level: 'aggregate' | 'spec' | 'session' | 'message', id?: string) => void;
+  closeDrillDown: () => void;
 }
 
 const ALERT_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
@@ -101,6 +117,19 @@ function getAlertKey(specId: string, threshold: number): string {
   return `${specId}:${threshold}`;
 }
 
+const DEFAULT_FILTERS: AnalyticsFilters = {
+  dateRange: '7d',
+  specIds: [],
+  phases: [],
+  models: [],
+  costRange: { min: 0, max: Infinity }
+};
+
+const DEFAULT_DRILL_DOWN: DrillDownState = {
+  isOpen: false,
+  level: 'aggregate'
+};
+
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   // Initial state
   data: null,
@@ -108,6 +137,9 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   pollingIntervalMs: 2000, // 2 seconds default
   budgets: {},
   alertsShown: {},
+  dateRange: '7d',
+  filters: { ...DEFAULT_FILTERS },
+  drillDown: { ...DEFAULT_DRILL_DOWN },
 
   // Actions
   setData: (data) => set({ data }),
@@ -152,7 +184,42 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     }));
   },
 
-  resetAlerts: () => set({ alertsShown: {} })
+  resetAlerts: () => set({ alertsShown: {} }),
+
+  setDateRange: (range: DateRange) => {
+    set((state) => ({
+      dateRange: range,
+      filters: { ...state.filters, dateRange: range }
+    }));
+  },
+
+  setFilters: (newFilters: Partial<AnalyticsFilters>) => {
+    set((state) => ({
+      filters: { ...state.filters, ...newFilters }
+    }));
+  },
+
+  clearFilters: () => {
+    set({
+      dateRange: '7d',
+      filters: { ...DEFAULT_FILTERS }
+    });
+  },
+
+  openDrillDown: (level: 'aggregate' | 'spec' | 'session' | 'message', id?: string) => {
+    set({
+      drillDown: {
+        isOpen: true,
+        level,
+        specId: level === 'spec' || level === 'session' || level === 'message' ? id : undefined,
+        sessionId: level === 'session' || level === 'message' ? id : undefined
+      }
+    });
+  },
+
+  closeDrillDown: () => {
+    set({ drillDown: { ...DEFAULT_DRILL_DOWN } });
+  }
 }));
 
 // Helper functions for external use
@@ -201,4 +268,38 @@ export function getAnalyticsData(): AnalyticsData | null {
 // Check if polling is active
 export function isPollingActive(): boolean {
   return useAnalyticsStore.getState().isPolling;
+}
+
+// Date range and filters
+export function setDateRange(range: DateRange): void {
+  useAnalyticsStore.getState().setDateRange(range);
+}
+
+export function setFilters(newFilters: Partial<AnalyticsFilters>): void {
+  useAnalyticsStore.getState().setFilters(newFilters);
+}
+
+export function clearFilters(): void {
+  useAnalyticsStore.getState().clearFilters();
+}
+
+export function getFilters(): AnalyticsFilters {
+  return useAnalyticsStore.getState().filters;
+}
+
+export function getDateRange(): DateRange {
+  return useAnalyticsStore.getState().dateRange;
+}
+
+// Drill-down navigation
+export function openDrillDown(level: 'aggregate' | 'spec' | 'session' | 'message', id?: string): void {
+  useAnalyticsStore.getState().openDrillDown(level, id);
+}
+
+export function closeDrillDown(): void {
+  useAnalyticsStore.getState().closeDrillDown();
+}
+
+export function getDrillDownState(): DrillDownState {
+  return useAnalyticsStore.getState().drillDown;
 }
