@@ -49,6 +49,8 @@ from .benchmarks import BenchmarkService, Benchmark
 
 from .budget_enforcer import BudgetEnforcer, BudgetSettings, BudgetCheckResult
 
+from .anomaly_detector import AnomalyDetector, Anomaly
+
 __all__ = [
     # Storage
     "AnalyticsStorage",
@@ -87,4 +89,7 @@ __all__ = [
     "BudgetEnforcer",
     "BudgetSettings",
     "BudgetCheckResult",
+    # Anomaly Detection
+    "AnomalyDetector",
+    "Anomaly",
 ]
