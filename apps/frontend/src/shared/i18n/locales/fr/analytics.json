@@ -140,6 +140,17 @@
       "sessionId": "ID de session"
     }
   },
+  "intentBreakdown": {
+    "title": "Répartition des intentions",
+    "description": "Distribution des tokens par type pour chaque spec",
+    "noData": "Aucune donnée de tokens disponible",
+    "total": "Total",
+    "types": {
+      "prompt": "Tokens de requête",
+      "system": "Tokens système",
+      "context": "Tokens de contexte"
+    }
+  },
   "roi": {
     "totalSavings": "Économies totales",
     "hoursSaved": "Heures économisées",

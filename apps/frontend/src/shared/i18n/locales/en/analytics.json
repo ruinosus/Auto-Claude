@@ -140,6 +140,17 @@
       "sessionId": "Session ID"
     }
   },
+  "intentBreakdown": {
+    "title": "Intent Breakdown",
+    "description": "Token distribution by type across specs",
+    "noData": "No token data available",
+    "total": "Total",
+    "types": {
+      "prompt": "Prompt Tokens",
+      "system": "System Tokens",
+      "context": "Context Tokens"
+    }
+  },
   "roi": {
     "totalSavings": "Total Savings",
     "hoursSaved": "Hours Saved",
