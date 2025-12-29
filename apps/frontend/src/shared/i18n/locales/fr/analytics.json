@@ -1,4 +1,5 @@
 {
+  "title": "Analytiques",
   "header": {
     "title": "Tableau de bord analytique",
     "subtitle": "Surveillez votre utilisation et vos couts Auto-Claude"
@@ -10,6 +11,74 @@
   "featureUsage": {
     "title": "Utilisation des fonctionnalites",
     "description": "Repartition des tokens par fonctionnalite IA"
+  },
+  "filters": {
+    "title": "Filtres",
+    "dateRange": "Periode",
+    "specs": "Specs",
+    "phases": "Phases",
+    "models": "Modeles",
+    "costRange": "Fourchette de cout",
+    "clear": "Effacer tout",
+    "apply": "Appliquer les filtres"
+  },
+  "dateRanges": {
+    "7d": "7 derniers jours",
+    "30d": "30 derniers jours",
+    "90d": "90 derniers jours",
+    "all": "Tout"
+  },
+  "export": {
+    "title": "Exporter",
+    "csv": "Exporter CSV",
+    "json": "Exporter JSON",
+    "pdf": "Exporter PDF",
+    "options": "Options d'exportation",
+    "selectMetrics": "Selectionnez les metriques a inclure"
+  },
+  "budget": {
+    "title": "Budget",
+    "enforce": "Appliquer le blocage",
+    "warnThreshold": "Seuil d'avertissement",
+    "blockThreshold": "Seuil de blocage",
+    "override": "Ignorer",
+    "blocked": "Budget depasse",
+    "remaining": "Restant"
+  },
+  "anomalies": {
+    "title": "Anomalies",
+    "detected": "anomalies detectees",
+    "dismiss": "Ignorer",
+    "investigate": "Investiguer",
+    "costSpike": "Pic de cout",
+    "tokenSpike": "Pic de tokens",
+    "durationSpike": "Pic de duree"
+  },
+  "comparison": {
+    "title": "Comparer les Specs",
+    "select": "Selectionnez les specs a comparer",
+    "vsAverage": "vs Moyenne",
+    "bestIn": "Meilleur en"
+  },
+  "quality": {
+    "title": "Metriques de Qualite",
+    "grade": "Note",
+    "lintErrors": "Erreurs Lint",
+    "lintWarnings": "Avertissements Lint",
+    "coverage": "Couverture de tests",
+    "complexity": "Complexite"
+  },
+  "benchmarks": {
+    "title": "Benchmarks du Marche",
+    "region": "Region",
+    "seniority": "Niveau d'experience",
+    "comparison": "Vous avez economise {{percent}}% par rapport a {{benchmark}}"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Tout marquer comme lu",
+    "clearAll": "Tout effacer",
+    "noNotifications": "Aucune notification"
   },
   "roi": {
     "totalSavings": "Economies totales",

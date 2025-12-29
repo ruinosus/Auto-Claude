@@ -1,4 +1,5 @@
 {
+  "title": "Analytics",
   "header": {
     "title": "Analytics Dashboard",
     "subtitle": "Monitor your Auto-Claude usage and costs"
@@ -10,6 +11,74 @@
   "featureUsage": {
     "title": "Feature Usage",
     "description": "Token usage breakdown by AI-powered features"
+  },
+  "filters": {
+    "title": "Filters",
+    "dateRange": "Date Range",
+    "specs": "Specs",
+    "phases": "Phases",
+    "models": "Models",
+    "costRange": "Cost Range",
+    "clear": "Clear All",
+    "apply": "Apply Filters"
+  },
+  "dateRanges": {
+    "7d": "Last 7 days",
+    "30d": "Last 30 days",
+    "90d": "Last 90 days",
+    "all": "All time"
+  },
+  "export": {
+    "title": "Export",
+    "csv": "Export CSV",
+    "json": "Export JSON",
+    "pdf": "Export PDF",
+    "options": "Export Options",
+    "selectMetrics": "Select metrics to include"
+  },
+  "budget": {
+    "title": "Budget",
+    "enforce": "Enforce Blocking",
+    "warnThreshold": "Warning Threshold",
+    "blockThreshold": "Block Threshold",
+    "override": "Override",
+    "blocked": "Budget Exceeded",
+    "remaining": "Remaining"
+  },
+  "anomalies": {
+    "title": "Anomalies",
+    "detected": "anomalies detected",
+    "dismiss": "Dismiss",
+    "investigate": "Investigate",
+    "costSpike": "Cost Spike",
+    "tokenSpike": "Token Spike",
+    "durationSpike": "Duration Spike"
+  },
+  "comparison": {
+    "title": "Compare Specs",
+    "select": "Select specs to compare",
+    "vsAverage": "vs Average",
+    "bestIn": "Best in"
+  },
+  "quality": {
+    "title": "Quality Metrics",
+    "grade": "Grade",
+    "lintErrors": "Lint Errors",
+    "lintWarnings": "Lint Warnings",
+    "coverage": "Test Coverage",
+    "complexity": "Complexity"
+  },
+  "benchmarks": {
+    "title": "Market Benchmarks",
+    "region": "Region",
+    "seniority": "Seniority Level",
+    "comparison": "You saved {{percent}}% compared to {{benchmark}}"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "clearAll": "Clear all",
+    "noNotifications": "No notifications"
   },
   "roi": {
     "totalSavings": "Total Savings",
