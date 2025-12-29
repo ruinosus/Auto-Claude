@@ -45,6 +45,8 @@ from .otel_exporter import (
     is_otel_enabled,
 )
 
+from .benchmarks import BenchmarkService, Benchmark
+
 __all__ = [
     # Storage
     "AnalyticsStorage",
@@ -76,4 +78,7 @@ __all__ = [
     "OTelExporter",
     "get_otel_exporter",
     "is_otel_enabled",
+    # Benchmarks
+    "BenchmarkService",
+    "Benchmark",
 ]
