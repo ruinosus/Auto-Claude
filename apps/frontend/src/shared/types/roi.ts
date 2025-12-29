@@ -69,6 +69,19 @@ export interface SpecROIWithMetrics extends SpecROI {
   metrics: ROIMetrics;
 }
 
+export interface EnhancedSpecROI extends SpecROI {
+  complexityFactor: number;
+  detectedStack?: string;
+  qualityGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
+}
+
+export interface SmartEstimation {
+  estimatedHours: number;
+  confidence: 'low' | 'medium' | 'high';
+  basis: string;
+  adjustedMinutesPerLine: number;
+}
+
 // Default values
 export const DEFAULT_ROI_SETTINGS: ROISettings = {
   developerHourlyRate: 75,
