@@ -47,6 +47,8 @@ from .otel_exporter import (
 
 from .benchmarks import BenchmarkService, Benchmark
 
+from .budget_enforcer import BudgetEnforcer, BudgetSettings, BudgetCheckResult
+
 __all__ = [
     # Storage
     "AnalyticsStorage",
@@ -81,4 +83,8 @@ __all__ = [
     # Benchmarks
     "BenchmarkService",
     "Benchmark",
+    # Budget Enforcer
+    "BudgetEnforcer",
+    "BudgetSettings",
+    "BudgetCheckResult",
 ]
