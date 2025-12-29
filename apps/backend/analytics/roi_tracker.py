@@ -7,7 +7,7 @@ import logging
 import subprocess
 import asyncio
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from datetime import datetime
 
 from .storage import get_analytics_storage
@@ -135,7 +135,7 @@ class ROITracker:
             float: Complexity factor (1.0 = baseline, >1.0 = more complex, <1.0 = simpler)
         """
         try:
-            from context.project_analyzer import ProjectAnalyzer
+            from project.analyzer import ProjectAnalyzer
 
             analyzer = ProjectAnalyzer(project_path)
             profile = analyzer.analyze()
@@ -168,7 +168,7 @@ class ROITracker:
         project_path: str,
         lines_estimate: int,
         minutes_per_line: float = 2.5
-    ) -> dict:
+    ) -> Dict[str, Union[float, str]]:
         """
         Get a smart time estimate based on complexity.
 
@@ -180,6 +180,15 @@ class ROITracker:
         Returns:
             dict with hours, confidence, basis, adjusted_minutes_per_line
         """
+        if lines_estimate <= 0:
+            return {
+                'hours': 0.0,
+                'confidence': 'low',
+                'basis': 'No lines to estimate',
+                'adjusted_minutes_per_line': minutes_per_line,
+                'complexity_factor': 1.0
+            }
+
         complexity_factor = self.calculate_complexity_factor(project_path)
         adjusted_minutes = minutes_per_line * complexity_factor
         hours = (lines_estimate * adjusted_minutes) / 60
