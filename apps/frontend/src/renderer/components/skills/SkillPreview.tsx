@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Package, Loader2, AlertCircle } from 'lucide-react'
+import { Package, Loader2, AlertCircle, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 } from '../ui/dialog'
 import { Badge } from '../ui/badge'
 import { ScrollArea } from '../ui/scroll-area'
+import { Button } from '../ui/button'
 import type { Skill } from '../../../shared/types'
 
 interface SkillPreviewProps {
@@ -53,27 +54,43 @@ export function SkillPreview({ skill, open, onOpenChange }: SkillPreviewProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            <Package className="h-5 w-5 text-primary" />
-            <span>{skill.name}</span>
-          </DialogTitle>
-          <DialogDescription className="flex flex-wrap gap-2 mt-2">
-            <Badge variant={skill.source === 'user' ? 'default' : 'secondary'}>
-              {skill.source}
-            </Badge>
-            {skill.category && (
-              <Badge variant="outline">{skill.category}</Badge>
-            )}
-            {skill.version && (
-              <Badge variant="outline">v{skill.version}</Badge>
-            )}
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0" hideCloseButton>
+        <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b shrink-0">
+          <div className="flex-1 min-w-0">
+            <DialogHeader className="space-y-0">
+              <DialogTitle className="flex items-center gap-3">
+                <Package className="h-5 w-5 text-primary" />
+                <span>{skill.name}</span>
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Skill content preview for {skill.name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <Badge variant={skill.source === 'user' ? 'default' : 'secondary'}>
+                {skill.source}
+              </Badge>
+              {skill.category && (
+                <Badge variant="outline">{skill.category}</Badge>
+              )}
+              {skill.version && (
+                <Badge variant="outline">v{skill.version}</Badge>
+              )}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 ml-4"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </Button>
+        </div>
 
-        <div className="flex-1 min-h-0 -mx-6">
-          <ScrollArea className="h-full px-6">
+        <div className="flex-1 min-h-0 overflow-auto">
+          <div className="px-6 py-4 pb-8">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -85,13 +102,11 @@ export function SkillPreview({ skill, open, onOpenChange }: SkillPreviewProps) {
                 <span>{error}</span>
               </div>
             ) : (
-              <div className="py-4">
-                <pre className="whitespace-pre-wrap font-mono text-sm bg-muted/50 p-4 rounded-lg overflow-x-auto">
-                  {content}
-                </pre>
-              </div>
+              <pre className="whitespace-pre-wrap font-mono text-sm bg-muted/50 p-4 rounded-lg">
+                {content}
+              </pre>
             )}
-          </ScrollArea>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

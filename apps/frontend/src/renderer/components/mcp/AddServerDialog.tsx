@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Globe, Zap } from 'lucide-react';
 import { AddExistingServerForm } from './AddExistingServerForm';
@@ -60,6 +60,9 @@ export function AddServerDialog({ open, onClose, onServerAdded }: AddServerDialo
           <div className="space-y-4">
             <DialogHeader>
               <DialogTitle>Add MCP Server</DialogTitle>
+              <DialogDescription className="sr-only">
+                Choose how to add your MCP server
+              </DialogDescription>
             </DialogHeader>
             <p className="text-sm text-muted-foreground">
               Choose how to add your server:

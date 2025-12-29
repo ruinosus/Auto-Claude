@@ -106,6 +106,8 @@ if (process.platform === 'darwin') {
   // Force the name to appear in dock on macOS
   app.name = 'Auto Claude';
 }
+// Set process title (helps with some OS displays)
+process.title = 'Auto Claude';
 
 // Initialize the application
 app.whenReady().then(async () => {

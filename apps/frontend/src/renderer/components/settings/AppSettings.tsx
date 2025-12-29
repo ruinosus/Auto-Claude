@@ -355,11 +355,18 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
 
             {/* Main content */}
             <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full">
-                <div className="p-8 max-w-2xl">
+              {/* Skills and MCP need full space without scroll wrapper */}
+              {activeTopLevel === 'app' && (appSection === 'skills' || appSection === 'mcp') ? (
+                <div className="h-full">
                   {renderContent()}
                 </div>
-              </ScrollArea>
+              ) : (
+                <ScrollArea className="h-full">
+                  <div className="p-8 max-w-2xl">
+                    {renderContent()}
+                  </div>
+                </ScrollArea>
+              )}
             </div>
           </div>
         </FullScreenDialogBody>

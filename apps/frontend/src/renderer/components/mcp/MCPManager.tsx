@@ -127,29 +127,31 @@ export function MCPManager() {
       </div>
 
       {/* Servers List */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {loading ? (
-          <div className="text-center py-8 text-muted-foreground">
-            Loading MCP servers...
-          </div>
-        ) : filteredServers.length === 0 ? (
-          <div className="text-center py-8">
-            <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground mb-2">
-              {searchQuery ? 'No servers match your search' : 'No MCP servers available'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredServers.map(server => (
-              <MCPServerCard
-                key={server.id}
-                server={server}
-                onConfigure={handleConfigure}
-              />
-            ))}
-          </div>
-        )}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="p-4 pb-8">
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Loading MCP servers...
+            </div>
+          ) : filteredServers.length === 0 ? (
+            <div className="text-center py-8">
+              <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-muted-foreground mb-2">
+                {searchQuery ? 'No servers match your search' : 'No MCP servers available'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredServers.map(server => (
+                <MCPServerCard
+                  key={server.id}
+                  server={server}
+                  onConfigure={handleConfigure}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Config Modal */}

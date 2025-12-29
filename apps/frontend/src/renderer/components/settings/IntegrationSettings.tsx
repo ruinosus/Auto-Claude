@@ -18,7 +18,9 @@ import {
   ChevronRight,
   RefreshCw,
   Activity,
-  AlertCircle
+  AlertCircle,
+  Cloud,
+  Server
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -43,6 +45,8 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
   const { t: tCommon } = useTranslation('common');
   // Password visibility toggle for global API keys
   const [showGlobalOpenAIKey, setShowGlobalOpenAIKey] = useState(false);
+  const [showGlobalAzureApiKey, setShowGlobalAzureApiKey] = useState(false);
+  const [globalAzureUrlError, setGlobalAzureUrlError] = useState<string | null>(null);
 
   // Claude Accounts state
   const [claudeProfiles, setClaudeProfiles] = useState<ClaudeProfile[]>([]);
@@ -59,6 +63,15 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
   const [manualTokenEmail, setManualTokenEmail] = useState('');
   const [showManualToken, setShowManualToken] = useState(false);
   const [savingTokenProfileId, setSavingTokenProfileId] = useState<string | null>(null);
+
+  // Azure Foundry profile creation state
+  const [isAddingAzureProfile, setIsAddingAzureProfile] = useState(false);
+  const [newAzureProfileName, setNewAzureProfileName] = useState('');
+  const [newAzureApiKey, setNewAzureApiKey] = useState('');
+  const [newAzureBaseUrl, setNewAzureBaseUrl] = useState('');
+  const [showNewAzureApiKey, setShowNewAzureApiKey] = useState(false);
+  const [azureUrlError, setAzureUrlError] = useState<string | null>(null);
+  const [isSavingAzureProfile, setIsSavingAzureProfile] = useState(false);
 
   // Auto-swap settings state
   const [autoSwitchSettings, setAutoSwitchSettings] = useState<ClaudeAutoSwitchSettings | null>(null);
@@ -259,6 +272,115 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
     }
   };
 
+  // Validate Azure Foundry URL
+  const validateAzureUrl = (url: string): boolean => {
+    if (!url) {
+      setAzureUrlError(null);
+      return false;
+    }
+    try {
+      new URL(url);
+      if (!url.endsWith('/anthropic')) {
+        setAzureUrlError('Base URL must end with /anthropic');
+        return false;
+      }
+      setAzureUrlError(null);
+      return true;
+    } catch {
+      setAzureUrlError('Invalid URL format');
+      return false;
+    }
+  };
+
+  // Handle Azure Foundry profile creation
+  const handleAddAzureProfile = async () => {
+    if (!newAzureProfileName.trim() || !newAzureApiKey.trim() || !newAzureBaseUrl.trim()) return;
+    if (!validateAzureUrl(newAzureBaseUrl)) return;
+
+    setIsSavingAzureProfile(true);
+    try {
+      const profileName = newAzureProfileName.trim();
+      const profileSlug = profileName.toLowerCase().replace(/\s+/g, '-');
+
+      const result = await window.electronAPI.saveClaudeProfile({
+        id: `azure-${Date.now()}`,
+        name: profileName,
+        configDir: `~/.claude-profiles/${profileSlug}`,
+        isDefault: false,
+        createdAt: new Date(),
+        proxyEnabled: true,
+        proxyBaseUrl: newAzureBaseUrl.trim(),
+        proxyApiKey: newAzureApiKey.trim()
+      });
+
+      if (result.success) {
+        await loadClaudeProfiles();
+        // Reset form
+        setIsAddingAzureProfile(false);
+        setNewAzureProfileName('');
+        setNewAzureApiKey('');
+        setNewAzureBaseUrl('');
+        setShowNewAzureApiKey(false);
+        setAzureUrlError(null);
+      } else {
+        alert(`Failed to create Azure profile: ${result.error || 'Please try again.'}`);
+      }
+    } catch (err) {
+      console.error('Failed to add Azure profile:', err);
+      alert('Failed to create Azure profile. Please try again.');
+    } finally {
+      setIsSavingAzureProfile(false);
+    }
+  };
+
+  // Cancel Azure profile creation
+  const handleCancelAzureProfile = () => {
+    setIsAddingAzureProfile(false);
+    setNewAzureProfileName('');
+    setNewAzureApiKey('');
+    setNewAzureBaseUrl('');
+    setShowNewAzureApiKey(false);
+    setAzureUrlError(null);
+  };
+
+  // Check if profile is authenticated based on its type
+  const isProfileAuthenticated = (profile: ClaudeProfile): boolean => {
+    if (profile.proxyEnabled) {
+      // Azure Foundry profile - authenticated if has API key and base URL
+      return !!(profile.proxyApiKey && profile.proxyBaseUrl);
+    }
+    // OAuth profile - authenticated if has OAuth token OR (is default AND has configDir)
+    return !!(profile.oauthToken || (profile.isDefault && profile.configDir));
+  };
+
+  // Get profile type label
+  const getProfileTypeLabel = (profile: ClaudeProfile): string => {
+    if (profile.proxyEnabled) {
+      return 'Azure Foundry';
+    }
+    return 'OAuth';
+  };
+
+  // Validate global Azure Foundry URL
+  const validateGlobalAzureUrl = (url: string): boolean => {
+    if (!url) {
+      setGlobalAzureUrlError(null);
+      return true; // Empty is valid (optional field)
+    }
+    try {
+      new URL(url);
+      if (!url.endsWith('/anthropic')) {
+        setGlobalAzureUrlError('Base URL must end with /anthropic');
+        return false;
+      }
+      setGlobalAzureUrlError(null);
+      return true;
+    } catch {
+      setGlobalAzureUrlError('Invalid URL format');
+      return false;
+    }
+  };
+
   // Load auto-swap settings
   const loadAutoSwitchSettings = async () => {
     setIsLoadingAutoSwitch(true);
@@ -340,9 +462,15 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                           "h-7 w-7 rounded-full flex items-center justify-center text-xs font-medium shrink-0",
                           profile.id === activeProfileId
                             ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground"
+                            : profile.proxyEnabled
+                              ? "bg-blue-500/20 text-blue-500"
+                              : "bg-muted text-muted-foreground"
                         )}>
-                          {(editingProfileId === profile.id ? editingProfileName : profile.name).charAt(0).toUpperCase()}
+                          {profile.proxyEnabled ? (
+                            <Cloud className="h-3.5 w-3.5" />
+                          ) : (
+                            (editingProfileId === profile.id ? editingProfileName : profile.name).charAt(0).toUpperCase()
+                          )}
                         </div>
                         <div className="min-w-0">
                           {editingProfileId === profile.id ? (
@@ -378,6 +506,20 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                             <>
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-medium text-foreground">{profile.name}</span>
+                                {/* Profile type badge */}
+                                <span className={cn(
+                                  "text-xs px-1.5 py-0.5 rounded flex items-center gap-1",
+                                  profile.proxyEnabled
+                                    ? "bg-blue-500/20 text-blue-600 dark:text-blue-400"
+                                    : "bg-muted text-muted-foreground"
+                                )}>
+                                  {profile.proxyEnabled ? (
+                                    <Cloud className="h-3 w-3" />
+                                  ) : (
+                                    <Users className="h-3 w-3" />
+                                  )}
+                                  {getProfileTypeLabel(profile)}
+                                </span>
                                 {profile.isDefault && (
                                   <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{t('integrations.default')}</span>
                                 )}
@@ -387,7 +529,7 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                                     {t('integrations.active')}
                                   </span>
                                 )}
-                                {(profile.oauthToken || (profile.isDefault && profile.configDir)) ? (
+                                {isProfileAuthenticated(profile) ? (
                                   <span className="text-xs bg-success/20 text-success px-1.5 py-0.5 rounded flex items-center gap-1">
                                     <Check className="h-3 w-3" />
                                     {t('integrations.authenticated')}
@@ -401,45 +543,54 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                               {profile.email && (
                                 <span className="text-xs text-muted-foreground">{profile.email}</span>
                               )}
+                              {/* Show Azure endpoint for proxy profiles */}
+                              {profile.proxyEnabled && profile.proxyBaseUrl && (
+                                <div className="text-xs text-muted-foreground truncate max-w-[250px]" title={profile.proxyBaseUrl}>
+                                  {profile.proxyBaseUrl}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
                       </div>
                       {editingProfileId !== profile.id && (
                         <div className="flex items-center gap-1">
-                          {/* Authenticate button - show only if NOT authenticated */}
-                          {/* A profile is authenticated if: has OAuth token OR (is default AND has configDir) */}
-                          {!(profile.oauthToken || (profile.isDefault && profile.configDir)) ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleAuthenticateProfile(profile.id)}
-                              disabled={authenticatingProfileId === profile.id}
-                              className="gap-1 h-7 text-xs"
-                            >
-                              {authenticatingProfileId === profile.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
+                          {/* Authenticate button - only for OAuth profiles, not Azure Foundry */}
+                          {!profile.proxyEnabled && (
+                            <>
+                              {!isProfileAuthenticated(profile) ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleAuthenticateProfile(profile.id)}
+                                  disabled={authenticatingProfileId === profile.id}
+                                  className="gap-1 h-7 text-xs"
+                                >
+                                  {authenticatingProfileId === profile.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <LogIn className="h-3 w-3" />
+                                  )}
+                                  {t('integrations.authenticate')}
+                                </Button>
                               ) : (
-                                <LogIn className="h-3 w-3" />
+                                /* Re-authenticate button for already authenticated OAuth profiles */
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleAuthenticateProfile(profile.id)}
+                                  disabled={authenticatingProfileId === profile.id}
+                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                  title="Re-authenticate profile"
+                                >
+                                  {authenticatingProfileId === profile.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <RefreshCw className="h-3 w-3" />
+                                  )}
+                                </Button>
                               )}
-                              {t('integrations.authenticate')}
-                            </Button>
-                          ) : (
-                            /* Re-authenticate button for already authenticated profiles */
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleAuthenticateProfile(profile.id)}
-                              disabled={authenticatingProfileId === profile.id}
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                              title="Re-authenticate profile"
-                            >
-                              {authenticatingProfileId === profile.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <RefreshCw className="h-3 w-3" />
-                              )}
-                            </Button>
+                            </>
                           )}
                           {profile.id !== activeProfileId && (
                             <Button
@@ -566,32 +717,132 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
               </div>
             )}
 
-            {/* Add new account */}
-            <div className="flex items-center gap-2">
-              <Input
-                placeholder={t('integrations.accountNamePlaceholder')}
-                value={newProfileName}
-                onChange={(e) => setNewProfileName(e.target.value)}
-                className="flex-1 h-8 text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newProfileName.trim()) {
-                    handleAddProfile();
-                  }
-                }}
-              />
-              <Button
-                onClick={handleAddProfile}
-                disabled={!newProfileName.trim() || isAddingProfile}
-                size="sm"
-                className="gap-1 shrink-0"
-              >
-                {isAddingProfile ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Plus className="h-3 w-3" />
-                )}
-                {tCommon('buttons.add')}
-              </Button>
+            {/* Add new account section */}
+            <div className="space-y-3">
+              {/* Toggle between OAuth and Azure Foundry */}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={!isAddingAzureProfile ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setIsAddingAzureProfile(false)}
+                  className="gap-1"
+                >
+                  <Users className="h-3 w-3" />
+                  OAuth
+                </Button>
+                <Button
+                  variant={isAddingAzureProfile ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setIsAddingAzureProfile(true)}
+                  className="gap-1"
+                >
+                  <Cloud className="h-3 w-3" />
+                  Azure Foundry
+                </Button>
+              </div>
+
+              {/* OAuth profile form */}
+              {!isAddingAzureProfile && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder={t('integrations.accountNamePlaceholder')}
+                    value={newProfileName}
+                    onChange={(e) => setNewProfileName(e.target.value)}
+                    className="flex-1 h-8 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newProfileName.trim()) {
+                        handleAddProfile();
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleAddProfile}
+                    disabled={!newProfileName.trim() || isAddingProfile}
+                    size="sm"
+                    className="gap-1 shrink-0"
+                  >
+                    {isAddingProfile ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Plus className="h-3 w-3" />
+                    )}
+                    {tCommon('buttons.add')}
+                  </Button>
+                </div>
+              )}
+
+              {/* Azure Foundry profile form */}
+              {isAddingAzureProfile && (
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
+                    <Cloud className="h-4 w-4" />
+                    {t('integrations.addAzureProfile') || 'Add Azure Foundry Profile'}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Input
+                      placeholder={t('integrations.profileNamePlaceholder') || 'Profile name (e.g., "Work Azure")'}
+                      value={newAzureProfileName}
+                      onChange={(e) => setNewAzureProfileName(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+
+                    <div className="relative">
+                      <Input
+                        type={showNewAzureApiKey ? 'text' : 'password'}
+                        placeholder={t('integrations.azureApiKeyPlaceholder') || 'Azure Foundry API Key'}
+                        value={newAzureApiKey}
+                        onChange={(e) => setNewAzureApiKey(e.target.value)}
+                        className="h-8 text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewAzureApiKey(!showNewAzureApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showNewAzureApiKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </button>
+                    </div>
+
+                    <Input
+                      placeholder="https://your-resource.openai.azure.com/anthropic"
+                      value={newAzureBaseUrl}
+                      onChange={(e) => {
+                        setNewAzureBaseUrl(e.target.value);
+                        validateAzureUrl(e.target.value);
+                      }}
+                      className={cn("h-8 text-sm", azureUrlError && "border-destructive")}
+                    />
+                    {azureUrlError && (
+                      <p className="text-xs text-destructive">{azureUrlError}</p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancelAzureProfile}
+                      className="h-7 text-xs"
+                    >
+                      {tCommon('buttons.cancel')}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleAddAzureProfile}
+                      disabled={!newAzureProfileName.trim() || !newAzureApiKey.trim() || !newAzureBaseUrl.trim() || !!azureUrlError || isSavingAzureProfile}
+                      className="h-7 text-xs gap-1"
+                    >
+                      {isSavingAzureProfile ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Plus className="h-3 w-3" />
+                      )}
+                      {t('integrations.createProfile') || 'Create Profile'}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -732,6 +983,157 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
             </div>
           </div>
         )}
+
+        {/* Default Authentication Section */}
+        <div className="space-y-4 pt-4 border-t border-border">
+          <div className="flex items-center gap-2">
+            <Server className="h-4 w-4 text-muted-foreground" />
+            <h4 className="text-sm font-semibold text-foreground">
+              {t('integrations.defaultAuth') || 'Default Authentication'}
+            </h4>
+          </div>
+
+          <div className="rounded-lg bg-muted/30 border border-border p-4 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {t('integrations.defaultAuthDescription') || 'Configure default authentication for new projects that don\'t have specific settings.'}
+            </p>
+
+            {/* Default Auth Mode Selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                {t('integrations.defaultAuthMode') || 'Default Authentication Mode'}
+              </Label>
+              <select
+                className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm"
+                value={settings.defaultAuthMode || 'oauth'}
+                onChange={(e) =>
+                  onSettingsChange({ ...settings, defaultAuthMode: e.target.value as 'oauth' | 'azure-foundry' | 'auth-token' })
+                }
+              >
+                <option value="oauth">OAuth (Recommended)</option>
+                <option value="azure-foundry">Azure Foundry (Enterprise)</option>
+                <option value="auth-token">Auth Token (CCR/Proxy)</option>
+              </select>
+            </div>
+
+            {/* Azure Foundry Default Settings - Show when Azure Foundry is selected */}
+            {settings.defaultAuthMode === 'azure-foundry' && (
+              <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400">
+                  <Cloud className="h-4 w-4" />
+                  {t('integrations.azureFoundryDefaults') || 'Azure Foundry Default Settings'}
+                </div>
+
+                <div className="space-y-3">
+                  {/* API Key */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      {t('integrations.azureApiKey') || 'API Key'}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type={showGlobalAzureApiKey ? 'text' : 'password'}
+                        placeholder={t('integrations.azureApiKeyPlaceholder') || 'Azure Foundry API Key'}
+                        value={settings.azureFoundryApiKey || ''}
+                        onChange={(e) =>
+                          onSettingsChange({ ...settings, azureFoundryApiKey: e.target.value || undefined })
+                        }
+                        className="h-8 text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGlobalAzureApiKey(!showGlobalAzureApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showGlobalAzureApiKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Base URL */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      {t('integrations.azureBaseUrl') || 'Base URL'}
+                    </Label>
+                    <Input
+                      placeholder="https://your-resource.openai.azure.com/anthropic"
+                      value={settings.azureFoundryBaseUrl || ''}
+                      onChange={(e) => {
+                        const url = e.target.value;
+                        onSettingsChange({ ...settings, azureFoundryBaseUrl: url || undefined });
+                        validateGlobalAzureUrl(url);
+                      }}
+                      className={cn("h-8 text-sm", globalAzureUrlError && "border-destructive")}
+                    />
+                    {globalAzureUrlError && (
+                      <p className="text-xs text-destructive">{globalAzureUrlError}</p>
+                    )}
+                  </div>
+
+                  {/* Resource Name */}
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      {t('integrations.azureResourceName') || 'Resource Name'}
+                    </Label>
+                    <Input
+                      placeholder="your-azure-resource"
+                      value={settings.azureFoundryResourceName || ''}
+                      onChange={(e) =>
+                        onSettingsChange({ ...settings, azureFoundryResourceName: e.target.value || undefined })
+                      }
+                      className="h-8 text-sm"
+                    />
+                  </div>
+
+                  {/* Model Deployments */}
+                  <div className="pt-2 border-t border-border/50">
+                    <Label className="text-xs font-medium">
+                      {t('integrations.modelDeployments') || 'Model Deployment Names'}
+                    </Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {t('integrations.modelDeploymentsDescription') || 'Custom deployment names for your Azure Foundry models'}
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Sonnet</Label>
+                        <Input
+                          placeholder="claude-sonnet-4-5"
+                          value={settings.azureFoundrySonnetModel || ''}
+                          onChange={(e) =>
+                            onSettingsChange({ ...settings, azureFoundrySonnetModel: e.target.value || undefined })
+                          }
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Haiku</Label>
+                        <Input
+                          placeholder="claude-haiku-4-5"
+                          value={settings.azureFoundryHaikuModel || ''}
+                          onChange={(e) =>
+                            onSettingsChange({ ...settings, azureFoundryHaikuModel: e.target.value || undefined })
+                          }
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Opus</Label>
+                        <Input
+                          placeholder="claude-opus-4-5"
+                          value={settings.azureFoundryOpusModel || ''}
+                          onChange={(e) =>
+                            onSettingsChange({ ...settings, azureFoundryOpusModel: e.target.value || undefined })
+                          }
+                          className="h-7 text-xs"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* API Keys Section */}
         <div className="space-y-4 pt-4 border-t border-border">
