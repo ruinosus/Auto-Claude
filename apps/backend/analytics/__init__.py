@@ -51,6 +51,14 @@ from .budget_enforcer import BudgetEnforcer, BudgetSettings, BudgetCheckResult
 
 from .anomaly_detector import AnomalyDetector, Anomaly
 
+from .quality_tracker import (
+    QualityTracker,
+    QualityMetrics,
+    LintResult,
+    TypeCheckResult,
+    create_quality_tracker,
+)
+
 __all__ = [
     # Storage
     "AnalyticsStorage",
@@ -92,4 +100,10 @@ __all__ = [
     # Anomaly Detection
     "AnomalyDetector",
     "Anomaly",
+    # Quality Tracker
+    "QualityTracker",
+    "QualityMetrics",
+    "LintResult",
+    "TypeCheckResult",
+    "create_quality_tracker",
 ]
