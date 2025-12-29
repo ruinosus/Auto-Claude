@@ -1,10 +1,21 @@
 # apps/backend/analytics/budget_enforcer.py
-"""Budget enforcement for spec execution (G04)"""
+"""Budget enforcement for spec execution.
+
+G04 refers to Gap 04 in the analytics evolution plan: Budget Enforcement.
+This gap identified the need for proactive cost controls to prevent
+runaway agent execution costs. This module implements:
+- Per-spec budget limits with configurable thresholds
+- Warning alerts at configurable percentage thresholds
+- Optional hard blocking when budgets are exceeded
+- Override capability with audit trail
+"""
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Optional, Dict
 import logging
+import sqlite3
 
 from .storage import AnalyticsStorage
 
@@ -85,6 +96,9 @@ class BudgetEnforcer:
                 notification_enabled=bool(row['notification_enabled']),
                 override_allowed=bool(row['override_allowed'])
             )
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting budget settings: {e}")
+            return BudgetSettings()
         finally:
             conn.close()
 
@@ -93,7 +107,20 @@ class BudgetEnforcer:
 
         Args:
             settings: BudgetSettings to persist.
+
+        Raises:
+            ValueError: If threshold percentages are invalid (< 0 or > 100).
         """
+        # Validate threshold percentages
+        if not (0 <= settings.warn_threshold_percent <= 100):
+            raise ValueError(
+                f"warn_threshold_percent must be between 0 and 100, got {settings.warn_threshold_percent}"
+            )
+        if not (0 <= settings.block_threshold_percent <= 100):
+            raise ValueError(
+                f"block_threshold_percent must be between 0 and 100, got {settings.block_threshold_percent}"
+            )
+
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -111,6 +138,9 @@ class BudgetEnforcer:
                 datetime.now().isoformat()
             ))
             conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Database error saving budget settings: {e}")
+            raise
         finally:
             conn.close()
 
@@ -132,6 +162,9 @@ class BudgetEnforcer:
             ''')
             rows = cursor.fetchall()
             return {row['spec_id']: row['budget'] for row in rows}
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting spec budgets: {e}")
+            return {}
         finally:
             conn.close()
 
@@ -140,8 +173,15 @@ class BudgetEnforcer:
 
         Args:
             spec_id: The spec identifier.
-            budget: Budget amount in USD.
+            budget: Budget amount in USD (must be >= 0).
+
+        Raises:
+            ValueError: If budget is negative.
         """
+        # Validate budget is non-negative
+        if budget < 0:
+            raise ValueError(f"Budget must be non-negative, got {budget}")
+
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -153,6 +193,9 @@ class BudgetEnforcer:
                     estimated_business_value = excluded.estimated_business_value
             ''', (spec_id, budget))
             conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Database error setting budget for {spec_id}: {e}")
+            raise
         finally:
             conn.close()
 
@@ -186,6 +229,9 @@ class BudgetEnforcer:
             ''', (spec_id,))
             row = cursor.fetchone()
             return row['total'] if row else 0.0
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting current cost for {spec_id}: {e}")
+            return 0.0
         finally:
             conn.close()
 
@@ -217,7 +263,10 @@ class BudgetEnforcer:
 
         current_cost = self.get_current_cost(spec_id)
         projected_cost = current_cost + estimated_additional_cost
-        percentage_used = (projected_cost / budget) * 100
+        # Use Decimal for precise percentage calculation to avoid floating-point errors
+        percentage_used = float(
+            (Decimal(str(projected_cost)) / Decimal(str(budget))) * Decimal('100')
+        )
         remaining = budget - projected_cost
 
         # Check if blocked
@@ -274,6 +323,9 @@ class BudgetEnforcer:
             ''', (datetime.now().isoformat(), spec_id, f"{user}: {reason}"))
             conn.commit()
             logger.info(f"Budget override recorded for {spec_id}: {reason}")
+        except sqlite3.Error as e:
+            logger.error(f"Database error recording override for {spec_id}: {e}")
+            raise
         finally:
             conn.close()
 
@@ -303,7 +355,10 @@ class BudgetEnforcer:
                 "enforce_blocking": settings.enforce_blocking
             }
 
-        percentage_used = (current_cost / budget) * 100
+        # Use Decimal for precise percentage calculation to avoid floating-point errors
+        percentage_used = float(
+            (Decimal(str(current_cost)) / Decimal(str(budget))) * Decimal('100')
+        )
         remaining = budget - current_cost
 
         return {
