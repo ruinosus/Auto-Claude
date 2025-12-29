@@ -414,5 +414,11 @@ export const IPC_CHANNELS = {
 
   // Export operations
   EXPORT_DATA: 'export:data',
-  EXPORT_DATA_PROGRESS: 'export:data-progress'
+  EXPORT_DATA_PROGRESS: 'export:data-progress',
+
+  // Notification operations
+  NOTIFICATION_SHOW: 'notification:show',
+  NOTIFICATION_GET_HISTORY: 'notification:get-history',
+  NOTIFICATION_MARK_READ: 'notification:mark-read',
+  NOTIFICATION_CLEAR_ALL: 'notification:clear-all'
 } as const;
