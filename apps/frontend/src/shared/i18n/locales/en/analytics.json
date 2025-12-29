@@ -73,7 +73,12 @@
     "title": "Compare Specs",
     "select": "Select specs to compare",
     "vsAverage": "vs Average",
-    "bestIn": "Best in"
+    "bestIn": "Best in",
+    "close": "Close comparison",
+    "metric": "Metric",
+    "time": "Time",
+    "qaAttempts": "QA Attempts",
+    "best": "Best"
   },
   "quality": {
     "title": "Quality Metrics",
@@ -81,13 +86,30 @@
     "lintErrors": "Lint Errors",
     "lintWarnings": "Lint Warnings",
     "coverage": "Test Coverage",
-    "complexity": "Complexity"
+    "complexity": "Complexity",
+    "noData": "No quality data available",
+    "excellent": "Excellent quality",
+    "analyzedAt": "Analyzed on {{date}}"
   },
   "benchmarks": {
     "title": "Market Benchmarks",
+    "description": "Compare your AI costs against human developer rates",
     "region": "Region",
     "seniority": "Seniority Level",
-    "comparison": "You saved {{percent}}% compared to {{benchmark}}"
+    "comparison": "You saved {{percent}}% compared to {{benchmark}}",
+    "regions": {
+      "us": "United States",
+      "latam": "Latin America",
+      "eu": "European Union"
+    },
+    "seniorities": {
+      "junior": "Junior",
+      "mid": "Mid-Level",
+      "senior": "Senior"
+    },
+    "humanCost": "Human Developer Cost",
+    "aiCost": "AI Cost",
+    "savings": "Savings"
   },
   "notifications": {
     "title": "Notifications",

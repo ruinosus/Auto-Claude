@@ -73,7 +73,12 @@
     "title": "Comparer les Specs",
     "select": "Sélectionnez les specs à comparer",
     "vsAverage": "vs Moyenne",
-    "bestIn": "Meilleur en"
+    "bestIn": "Meilleur en",
+    "close": "Fermer la comparaison",
+    "metric": "Métrique",
+    "time": "Temps",
+    "qaAttempts": "Tentatives QA",
+    "best": "Meilleur"
   },
   "quality": {
     "title": "Métriques de Qualité",
@@ -81,13 +86,30 @@
     "lintErrors": "Erreurs Lint",
     "lintWarnings": "Avertissements Lint",
     "coverage": "Couverture de tests",
-    "complexity": "Complexité"
+    "complexity": "Complexité",
+    "noData": "Aucune donnée de qualité disponible",
+    "excellent": "Excellente qualité",
+    "analyzedAt": "Analysé le {{date}}"
   },
   "benchmarks": {
     "title": "Benchmarks du Marché",
+    "description": "Comparez vos coûts IA aux tarifs des développeurs humains",
     "region": "Région",
     "seniority": "Niveau d'expérience",
-    "comparison": "Vous avez économisé {{percent}}% par rapport à {{benchmark}}"
+    "comparison": "Vous avez économisé {{percent}}% par rapport à {{benchmark}}",
+    "regions": {
+      "us": "États-Unis",
+      "latam": "Amérique Latine",
+      "eu": "Union Européenne"
+    },
+    "seniorities": {
+      "junior": "Junior",
+      "mid": "Intermédiaire",
+      "senior": "Senior"
+    },
+    "humanCost": "Coût Développeur Humain",
+    "aiCost": "Coût IA",
+    "savings": "Économies"
   },
   "notifications": {
     "title": "Notifications",
