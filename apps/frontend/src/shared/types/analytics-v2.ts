@@ -32,7 +32,7 @@ export interface BudgetCheckResult {
 
 export interface Anomaly {
   id: number;
-  detectedAt: Date;
+  detectedAt: string;
   anomalyType: 'cost_spike' | 'token_spike' | 'duration_spike';
   severity: 'info' | 'warning' | 'critical';
   metricName: string;
@@ -41,7 +41,7 @@ export interface Anomaly {
   zScore: number;
   specId?: string;
   dismissed: boolean;
-  dismissedAt?: Date;
+  dismissedAt?: string;
   dismissedBy?: string;
 }
 
@@ -53,14 +53,7 @@ export interface QualityMetrics {
   testCoveragePercent?: number;
   complexityScore?: number;
   qualityGrade: 'A' | 'B' | 'C' | 'D' | 'F';
-  analyzedAt: Date;
-}
-
-export interface SmartEstimate {
-  hours: number;
-  confidence: 'low' | 'medium' | 'high';
-  basis: string;
-  similarSpecsCount: number;
+  analyzedAt: string;
 }
 
 export interface ExportOptions {

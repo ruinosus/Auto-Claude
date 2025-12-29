@@ -5,19 +5,25 @@
  * Types for user notifications including budget alerts, anomaly warnings, and completion events
  */
 
+/**
+ * Represents a user notification with optional action handler
+ */
 export interface Notification {
   id: string;
   type: 'info' | 'warning' | 'error' | 'success';
   title: string;
   message: string;
-  timestamp: Date;
+  timestamp: string;
   read: boolean;
   action?: {
     label: string;
-    handler: string;
+    handler: 'navigate' | 'dismiss' | 'openSettings' | 'viewSpec';
   };
 }
 
+/**
+ * User preferences for notification delivery and filtering
+ */
 export interface NotificationPreferences {
   enabled: boolean;
   soundEnabled: boolean;
