@@ -676,6 +676,15 @@ export interface ElectronAPI {
   getNotificationHistory: () => Promise<import('./notification').Notification[]>;
   markNotificationRead: (id: string) => Promise<void>;
   clearAllNotifications: () => Promise<void>;
+
+  // Export API (nested for organized access)
+  export: {
+    data: (options: import('./analytics-v2').ExportOptions) => Promise<{
+      success: boolean;
+      filePath?: string;
+      error?: string;
+    }>;
+  };
 }
 
 declare global {

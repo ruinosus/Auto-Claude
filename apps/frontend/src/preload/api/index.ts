@@ -12,6 +12,7 @@ import { SkillsAPI, createSkillsAPI } from './modules/skills-api';
 import { MCPAPI, createMCPAPI } from './modules/mcp-api';
 import { ROIAPI, createROIAPI } from './modules/roi-api';
 import { NotificationAPI, createNotificationAPI } from './modules/notification-api';
+import { ExportAPI, createExportAPI } from './modules/export-api';
 
 export interface ElectronAPI extends
   ProjectAPI,
@@ -26,7 +27,8 @@ export interface ElectronAPI extends
   SkillsAPI,
   MCPAPI,
   ROIAPI,
-  NotificationAPI {
+  NotificationAPI,
+  ExportAPI {
   github: GitHubAPI;
 }
 
@@ -44,6 +46,7 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createMCPAPI(),
   ...createROIAPI(),
   ...createNotificationAPI(),
+  ...createExportAPI(),
   github: createGitHubAPI()
 });
 
@@ -62,7 +65,8 @@ export {
   createSkillsAPI,
   createMCPAPI,
   createROIAPI,
-  createNotificationAPI
+  createNotificationAPI,
+  createExportAPI
 };
 
 export type {
@@ -79,5 +83,6 @@ export type {
   SkillsAPI,
   MCPAPI,
   ROIAPI,
-  NotificationAPI
+  NotificationAPI,
+  ExportAPI
 };

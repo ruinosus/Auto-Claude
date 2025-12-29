@@ -41,7 +41,15 @@
     "json": "Exporter JSON",
     "pdf": "Exporter PDF",
     "options": "Options d'exportation",
-    "selectMetrics": "Sélectionnez les métriques à inclure"
+    "selectMetrics": "Sélectionnez les métriques à inclure",
+    "success": {
+      "title": "Exportation réussie",
+      "description": "Enregistré dans {{filePath}}"
+    },
+    "error": {
+      "title": "Échec de l'exportation",
+      "description": "{{error}}"
+    }
   },
   "budget": {
     "title": "Budget",

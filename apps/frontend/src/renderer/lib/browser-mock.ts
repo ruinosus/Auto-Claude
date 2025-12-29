@@ -232,6 +232,16 @@ const browserMockAPI: ElectronAPI = {
       specsCount: 0
     }),
     deleteSpec: async () => ({ success: true })
+  },
+
+  // Notification operations
+  getNotificationHistory: async () => [],
+  markNotificationRead: async () => {},
+  clearAllNotifications: async () => {},
+
+  // Export API
+  export: {
+    data: async () => ({ success: true, filePath: '/mock/export/analytics.csv' })
   }
 };
 
