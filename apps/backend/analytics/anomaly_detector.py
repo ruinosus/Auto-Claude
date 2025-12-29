@@ -4,6 +4,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
+import sqlite3
 import statistics
 import logging
 
@@ -46,62 +47,76 @@ class AnomalyDetector:
 
     def detect_cost_anomalies(self) -> List[Anomaly]:
         """Detect unusual cost spikes"""
-        conn = self.conn
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT date(started_at) as date, SUM(total_cost_usd) as daily_cost
-            FROM conversations
-            WHERE started_at >= datetime('now', ?)
-            GROUP BY date(started_at)
-            ORDER BY date
-        ''', (f'-{self.window_days} days',))
+            cursor.execute('''
+                SELECT date(started_at) as date, SUM(total_cost_usd) as daily_cost
+                FROM conversations
+                WHERE started_at >= datetime('now', ?)
+                GROUP BY date(started_at)
+                ORDER BY date
+            ''', (f'-{self.window_days} days',))
 
-        rows = cursor.fetchall()
-        conn.close()
+            rows = cursor.fetchall()
 
-        if len(rows) < 3:
+            if len(rows) < 3:
+                return []
+
+            costs = [row['daily_cost'] for row in rows]
+            dates = [row['date'] for row in rows]
+
+            return self._detect_anomalies(
+                values=costs,
+                dates=dates,
+                metric_name='daily_cost',
+                anomaly_type='cost_spike'
+            )
+        except sqlite3.Error as e:
+            logger.error(f"Database error detecting cost anomalies: {e}")
             return []
-
-        costs = [row['daily_cost'] for row in rows]
-        dates = [row['date'] for row in rows]
-
-        return self._detect_anomalies(
-            values=costs,
-            dates=dates,
-            metric_name='daily_cost',
-            anomaly_type='cost_spike'
-        )
+        finally:
+            if conn:
+                conn.close()
 
     def detect_token_anomalies(self) -> List[Anomaly]:
         """Detect unusual token usage"""
-        conn = self.conn
-        cursor = conn.cursor()
+        conn = None
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT date(started_at) as date,
-                   SUM(total_input_tokens + total_output_tokens) as daily_tokens
-            FROM conversations
-            WHERE started_at >= datetime('now', ?)
-            GROUP BY date(started_at)
-            ORDER BY date
-        ''', (f'-{self.window_days} days',))
+            cursor.execute('''
+                SELECT date(started_at) as date,
+                       SUM(total_input_tokens + total_output_tokens) as daily_tokens
+                FROM conversations
+                WHERE started_at >= datetime('now', ?)
+                GROUP BY date(started_at)
+                ORDER BY date
+            ''', (f'-{self.window_days} days',))
 
-        rows = cursor.fetchall()
-        conn.close()
+            rows = cursor.fetchall()
 
-        if len(rows) < 3:
+            if len(rows) < 3:
+                return []
+
+            tokens = [row['daily_tokens'] for row in rows]
+            dates = [row['date'] for row in rows]
+
+            return self._detect_anomalies(
+                values=tokens,
+                dates=dates,
+                metric_name='daily_tokens',
+                anomaly_type='token_spike'
+            )
+        except sqlite3.Error as e:
+            logger.error(f"Database error detecting token anomalies: {e}")
             return []
-
-        tokens = [row['daily_tokens'] for row in rows]
-        dates = [row['date'] for row in rows]
-
-        return self._detect_anomalies(
-            values=tokens,
-            dates=dates,
-            metric_name='daily_tokens',
-            anomaly_type='token_spike'
-        )
+        finally:
+            if conn:
+                conn.close()
 
     def _detect_anomalies(
         self,
@@ -168,64 +183,83 @@ class AnomalyDetector:
 
     def _save_anomaly(self, anomaly: Anomaly) -> None:
         """Persist anomaly to database"""
-        conn = self.conn
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO anomalies
-            (detected_at, anomaly_type, severity, metric_name,
-             expected_value, actual_value, z_score, spec_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            anomaly.detected_at,
-            anomaly.anomaly_type,
-            anomaly.severity,
-            anomaly.metric_name,
-            anomaly.expected_value,
-            anomaly.actual_value,
-            anomaly.z_score,
-            anomaly.spec_id
-        ))
-        conn.commit()
-        conn.close()
+        conn = None
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO anomalies
+                (detected_at, anomaly_type, severity, metric_name,
+                 expected_value, actual_value, z_score, spec_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                anomaly.detected_at,
+                anomaly.anomaly_type,
+                anomaly.severity,
+                anomaly.metric_name,
+                anomaly.expected_value,
+                anomaly.actual_value,
+                anomaly.z_score,
+                anomaly.spec_id
+            ))
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Database error saving anomaly: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     def get_active_anomalies(self) -> List[Anomaly]:
         """Get non-dismissed anomalies"""
-        conn = self.conn
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT * FROM anomalies
-            WHERE dismissed = 0
-            ORDER BY detected_at DESC
-            LIMIT 50
-        ''')
+        conn = None
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM anomalies
+                WHERE dismissed = 0
+                ORDER BY detected_at DESC
+                LIMIT 50
+            ''')
 
-        rows = cursor.fetchall()
-        conn.close()
+            rows = cursor.fetchall()
 
-        return [
-            Anomaly(
-                id=row['id'],
-                detected_at=row['detected_at'],
-                anomaly_type=row['anomaly_type'],
-                severity=row['severity'],
-                metric_name=row['metric_name'],
-                expected_value=row['expected_value'],
-                actual_value=row['actual_value'],
-                z_score=row['z_score'],
-                spec_id=row['spec_id'],
-                dismissed=bool(row['dismissed'])
-            )
-            for row in rows
-        ]
+            return [
+                Anomaly(
+                    id=row['id'],
+                    detected_at=row['detected_at'],
+                    anomaly_type=row['anomaly_type'],
+                    severity=row['severity'],
+                    metric_name=row['metric_name'],
+                    expected_value=row['expected_value'],
+                    actual_value=row['actual_value'],
+                    z_score=row['z_score'],
+                    spec_id=row['spec_id'],
+                    dismissed=bool(row['dismissed'])
+                )
+                for row in rows
+            ]
+        except sqlite3.Error as e:
+            logger.error(f"Database error getting active anomalies: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
 
     def dismiss_anomaly(self, anomaly_id: int, dismissed_by: str = "user") -> None:
         """Mark an anomaly as dismissed"""
-        conn = self.conn
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE anomalies
-            SET dismissed = 1, dismissed_at = ?, dismissed_by = ?
-            WHERE id = ?
-        ''', (datetime.now().isoformat(), dismissed_by, anomaly_id))
-        conn.commit()
-        conn.close()
+        conn = None
+        try:
+            conn = self.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE anomalies
+                SET dismissed = 1, dismissed_at = ?, dismissed_by = ?
+                WHERE id = ?
+            ''', (datetime.now().isoformat(), dismissed_by, anomaly_id))
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Database error dismissing anomaly {anomaly_id}: {e}")
+        finally:
+            if conn:
+                conn.close()
