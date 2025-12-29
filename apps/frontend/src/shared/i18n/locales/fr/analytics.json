@@ -17,6 +17,13 @@
     "dateRange": "Période",
     "specs": "Specs",
     "phases": "Phases",
+    "phasePrefix": "Phase",
+    "phaseNames": {
+      "planning": "Planification",
+      "coding": "Codage",
+      "validation": "Validation"
+    },
+    "removePhaseFilter": "Supprimer le filtre {{phase}}",
     "models": "Modèles",
     "costRange": "Fourchette de coût",
     "clear": "Effacer tout",

@@ -1,5 +1,5 @@
 // apps/frontend/src/renderer/components/analytics/AnalyticsFilters.tsx
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Filter, X } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '../ui/select';
 import { useAnalyticsStore } from '../../stores/analytics-store';
-import type { DateRange, AnalyticsFilters as FiltersType } from '../../../shared/types/analytics-v2';
+import type { DateRange } from '../../../shared/types/analytics-v2';
 
 const DATE_RANGES: { value: DateRange; labelKey: string }[] = [
   { value: '7d', labelKey: 'analytics:dateRanges.7d' },
@@ -28,12 +28,12 @@ export function AnalyticsFilters() {
   const [isExpanded, setIsExpanded] = useState(false);
   const { filters, setFilters, clearFilters, setDateRange } = useAnalyticsStore();
 
-  const activeFilterCount = [
+  const activeFilterCount = useMemo(() => [
     filters.specIds.length > 0,
     filters.phases.length > 0,
     filters.models.length > 0,
     filters.costRange.max !== Infinity,
-  ].filter(Boolean).length;
+  ].filter(Boolean).length, [filters.specIds.length, filters.phases.length, filters.models.length, filters.costRange.max]);
 
   const handlePhaseToggle = (phase: typeof PHASES[number]) => {
     const newPhases = filters.phases.includes(phase)
@@ -50,7 +50,7 @@ export function AnalyticsFilters() {
           value={filters.dateRange}
           onValueChange={(value: DateRange) => setDateRange(value)}
         >
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[180px]" aria-label={t('analytics:filters.dateRange')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -88,20 +88,26 @@ export function AnalyticsFilters() {
       {isExpanded && (
         <div className="p-4 border rounded-lg bg-muted/50 space-y-4">
           {/* Phase Filter */}
-          <div>
-            <label className="text-sm font-medium mb-2 block">
+          <div role="group" aria-labelledby="phases-label">
+            <span id="phases-label" className="text-sm font-medium mb-2 block">
               {t('analytics:filters.phases')}
-            </label>
+            </span>
             <div className="flex gap-2">
               {PHASES.map(phase => (
-                <Badge
+                <button
                   key={phase}
-                  variant={filters.phases.includes(phase) ? 'default' : 'outline'}
-                  className="cursor-pointer"
+                  type="button"
                   onClick={() => handlePhaseToggle(phase)}
+                  aria-pressed={filters.phases.includes(phase)}
+                  className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded-full"
                 >
-                  {phase}
-                </Badge>
+                  <Badge
+                    variant={filters.phases.includes(phase) ? 'default' : 'outline'}
+                    className="cursor-pointer"
+                  >
+                    {t(`analytics:filters.phaseNames.${phase}`)}
+                  </Badge>
+                </button>
               ))}
             </div>
           </div>
@@ -110,12 +116,16 @@ export function AnalyticsFilters() {
           {activeFilterCount > 0 && (
             <div className="flex flex-wrap gap-2 pt-2 border-t">
               {filters.phases.map(phase => (
-                <Badge key={phase} variant="secondary">
-                  Phase: {phase}
-                  <X
-                    className="h-3 w-3 ml-1 cursor-pointer"
+                <Badge key={phase} variant="secondary" className="flex items-center gap-1">
+                  {t('analytics:filters.phasePrefix')}: {t(`analytics:filters.phaseNames.${phase}`)}
+                  <button
+                    type="button"
                     onClick={() => handlePhaseToggle(phase)}
-                  />
+                    aria-label={t('analytics:filters.removePhaseFilter', { phase: t(`analytics:filters.phaseNames.${phase}`) })}
+                    className="ml-1 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 rounded-full"
+                  >
+                    <X className="h-3 w-3 cursor-pointer" />
+                  </button>
                 </Badge>
               ))}
             </div>

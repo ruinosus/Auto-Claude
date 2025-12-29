@@ -17,6 +17,13 @@
     "dateRange": "Date Range",
     "specs": "Specs",
     "phases": "Phases",
+    "phasePrefix": "Phase",
+    "phaseNames": {
+      "planning": "Planning",
+      "coding": "Coding",
+      "validation": "Validation"
+    },
+    "removePhaseFilter": "Remove {{phase}} filter",
     "models": "Models",
     "costRange": "Cost Range",
     "clear": "Clear All",
