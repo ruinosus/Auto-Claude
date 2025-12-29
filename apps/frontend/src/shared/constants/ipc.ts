@@ -410,5 +410,9 @@ export const IPC_CHANNELS = {
   MCP_STOP_FASTMCP_SERVER: 'mcp:stopFastMCPServer',
   MCP_GENERATE_FASTMCP_SERVER: 'mcp:generateFastMCPServer',
   MCP_ADD_CUSTOM_SERVER: 'mcp:addCustomServer',
-  MCP_TEST_CONNECTION_CUSTOM: 'mcp:testConnectionCustom'
+  MCP_TEST_CONNECTION_CUSTOM: 'mcp:testConnectionCustom',
+
+  // Export operations
+  EXPORT_DATA: 'export:data',
+  EXPORT_DATA_PROGRESS: 'export:data-progress'
 } as const;

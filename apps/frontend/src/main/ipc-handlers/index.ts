@@ -30,6 +30,7 @@ import { registerMemoryHandlers } from './memory-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
 import { setupAnalyticsHandlers } from './analytics-handlers';
 import { setupROIHandlers } from './roi-handlers';
+import { setupExportHandlers } from './export-handlers';
 import { registerListSkillsHandler } from './skills/list-skills';
 import { registerInstallSkillHandler } from './skills/install-skill';
 import { registerRemoveSkillHandler } from './skills/remove-skill';
@@ -111,6 +112,9 @@ export function setupIpcHandlers(
   // ROI handlers
   setupROIHandlers();
 
+  // Export handlers
+  setupExportHandlers();
+
   // Skills management handlers
   registerListSkillsHandler();
   registerInstallSkillHandler();
@@ -144,6 +148,7 @@ export {
   registerAppUpdateHandlers,
   setupAnalyticsHandlers,
   setupROIHandlers,
+  setupExportHandlers,
   registerListSkillsHandler,
   registerInstallSkillHandler,
   registerRemoveSkillHandler,
