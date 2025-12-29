@@ -8,10 +8,13 @@ for portability and disaster recovery.
 import sqlite3
 import json
 import asyncio
+import logging
 from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
 from contextlib import asynccontextmanager
+
+logger = logging.getLogger(__name__)
 
 
 # SQLite Schema
@@ -286,7 +289,7 @@ class AnalyticsStorage:
         # Run migrations
         self._migrate_v2()
 
-    def _migrate_v2(self):
+    def _migrate_v2(self) -> bool:
         """Migration for analytics evolution - v2.
 
         Adds tables for:
@@ -295,123 +298,131 @@ class AnalyticsStorage:
         - spec_quality_metrics (G13): Code quality tracking per spec
         - estimation_history (G14): Estimation accuracy tracking
         - notifications (G12): User notification system
+
+        Returns:
+            bool: True if migration succeeded, False otherwise.
         """
-        conn = sqlite3.connect(str(self.db_path))
-        cursor = conn.cursor()
-
-        # Budget settings table (G04)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS budget_settings (
-                id INTEGER PRIMARY KEY DEFAULT 1,
-                enforce_blocking INTEGER DEFAULT 0,
-                warn_threshold_percent REAL DEFAULT 80.0,
-                block_threshold_percent REAL DEFAULT 100.0,
-                notification_enabled INTEGER DEFAULT 1,
-                override_allowed INTEGER DEFAULT 1,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Anomalies table (G05)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS anomalies (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                detected_at TIMESTAMP NOT NULL,
-                anomaly_type TEXT NOT NULL,
-                severity TEXT NOT NULL,
-                metric_name TEXT NOT NULL,
-                expected_value REAL,
-                actual_value REAL,
-                z_score REAL,
-                spec_id TEXT,
-                dismissed INTEGER DEFAULT 0,
-                dismissed_at TIMESTAMP,
-                dismissed_by TEXT
-            )
-        ''')
-
-        # Quality metrics table (G13)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS spec_quality_metrics (
-                spec_id TEXT PRIMARY KEY,
-                lint_errors INTEGER DEFAULT 0,
-                lint_warnings INTEGER DEFAULT 0,
-                type_errors INTEGER DEFAULT 0,
-                test_coverage_percent REAL,
-                complexity_score REAL,
-                quality_grade TEXT,
-                analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Estimation history table (G14)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS estimation_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                spec_id TEXT NOT NULL,
-                project_id TEXT NOT NULL,
-                estimated_hours REAL,
-                actual_hours REAL,
-                lines_changed INTEGER,
-                complexity_factor REAL,
-                tech_stack TEXT,
-                accuracy_score REAL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        # Notifications table (G12)
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS notifications (
-                id TEXT PRIMARY KEY,
-                type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                message TEXT NOT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                read INTEGER DEFAULT 0,
-                action_label TEXT,
-                action_handler TEXT
-            )
-        ''')
-
-        # Add columns to existing tables
+        logger.info("Starting analytics schema migration v2")
+        conn = None
         try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN intent_type TEXT')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
 
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER DEFAULT 0')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            # Budget settings table (G04)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS budget_settings (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    enforce_blocking INTEGER DEFAULT 0,
+                    warn_threshold_percent REAL DEFAULT 80.0,
+                    block_threshold_percent REAL DEFAULT 100.0,
+                    notification_enabled INTEGER DEFAULT 1,
+                    override_allowed INTEGER DEFAULT 1,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
 
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN system_tokens INTEGER DEFAULT 0')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            # Anomalies table (G05) with CHECK constraints
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS anomalies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    detected_at TIMESTAMP NOT NULL,
+                    anomaly_type TEXT NOT NULL CHECK(anomaly_type IN ('cost_spike', 'token_spike', 'duration_spike', 'budget_override')),
+                    severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'critical')),
+                    metric_name TEXT NOT NULL,
+                    expected_value REAL,
+                    actual_value REAL,
+                    z_score REAL,
+                    spec_id TEXT,
+                    dismissed INTEGER DEFAULT 0,
+                    dismissed_at TIMESTAMP,
+                    dismissed_by TEXT
+                )
+            ''')
 
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN context_tokens INTEGER DEFAULT 0')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            # Quality metrics table (G13) with CHECK constraint
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS spec_quality_metrics (
+                    spec_id TEXT PRIMARY KEY,
+                    lint_errors INTEGER DEFAULT 0,
+                    lint_warnings INTEGER DEFAULT 0,
+                    type_errors INTEGER DEFAULT 0,
+                    test_coverage_percent REAL,
+                    complexity_score REAL,
+                    quality_grade TEXT CHECK(quality_grade IN ('A', 'B', 'C', 'D', 'F')),
+                    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
 
-        try:
-            cursor.execute('ALTER TABLE spec_roi ADD COLUMN complexity_factor REAL DEFAULT 1.0')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            # Estimation history table (G14)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS estimation_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    spec_id TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    estimated_hours REAL,
+                    actual_hours REAL,
+                    lines_changed INTEGER,
+                    complexity_factor REAL,
+                    tech_stack TEXT,
+                    accuracy_score REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
 
-        try:
-            cursor.execute('ALTER TABLE spec_roi ADD COLUMN detected_stack TEXT')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            # Notifications table (G12)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    read INTEGER DEFAULT 0,
+                    action_label TEXT,
+                    action_handler TEXT
+                )
+            ''')
 
-        try:
-            cursor.execute('ALTER TABLE spec_roi ADD COLUMN quality_grade TEXT')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
+            # Add columns to existing tables
+            # Using specific exception handling for ALTER TABLE (column already exists)
+            alter_statements = [
+                ('messages', 'intent_type', 'TEXT'),
+                ('messages', 'prompt_tokens', 'INTEGER DEFAULT 0'),
+                ('messages', 'system_tokens', 'INTEGER DEFAULT 0'),
+                ('messages', 'context_tokens', 'INTEGER DEFAULT 0'),
+                ('spec_roi', 'complexity_factor', 'REAL DEFAULT 1.0'),
+                ('spec_roi', 'detected_stack', 'TEXT'),
+                ('spec_roi', 'quality_grade', 'TEXT'),
+            ]
 
-        conn.commit()
-        conn.close()
+            for table, column, col_type in alter_statements:
+                try:
+                    cursor.execute(f'ALTER TABLE {table} ADD COLUMN {column} {col_type}')
+                    logger.debug(f"Added column {column} to {table}")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        pass  # Column already exists, expected during re-migration
+                    else:
+                        logger.warning(f"Failed to add column {column} to {table}: {e}")
+                        raise
+
+            conn.commit()
+            logger.info("Analytics schema migration v2 completed successfully")
+            return True
+
+        except sqlite3.Error as e:
+            logger.error(f"Analytics schema migration v2 failed: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error during analytics schema migration v2: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get SQLite connection."""
