@@ -7,7 +7,6 @@
 
 import { create } from 'zustand';
 import type { Notification } from '../../shared/types/notification';
-import { IPC_CHANNELS } from '../../shared/constants/ipc';
 
 interface NotificationState {
   notifications: Notification[];
@@ -71,7 +70,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }));
 
     try {
-      await window.electron.ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_MARK_READ, id);
+      await window.electronAPI.markNotificationRead(id);
     } catch (error) {
       // Revert on failure
       console.error('[notification-store] Failed to mark notification as read:', error);
@@ -98,7 +97,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   clearAll: async () => {
     try {
-      await window.electron.ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_CLEAR_ALL);
+      await window.electronAPI.clearAllNotifications();
       set({ notifications: [], unreadCount: 0 });
     } catch (error) {
       console.error('[notification-store] Failed to clear notifications:', error);
@@ -108,9 +107,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   fetchNotifications: async () => {
     set({ isLoading: true });
     try {
-      const notifications = await window.electron.ipcRenderer.invoke(
-        IPC_CHANNELS.NOTIFICATION_GET_HISTORY
-      );
+      const notifications = await window.electronAPI.getNotificationHistory();
       get().setNotifications(notifications || []);
     } catch (error) {
       console.error('[notification-store] Failed to fetch notifications:', error);

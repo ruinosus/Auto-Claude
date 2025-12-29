@@ -671,6 +671,11 @@ export interface ElectronAPI {
     getAggregate: (projectId?: string) => Promise<ROIAggregateMetrics>;
     deleteSpec: (specId: string) => Promise<{ success: boolean }>;
   };
+
+  // Notification operations
+  getNotificationHistory: () => Promise<import('./notification').Notification[]>;
+  markNotificationRead: (id: string) => Promise<void>;
+  clearAllNotifications: () => Promise<void>;
 }
 
 declare global {
