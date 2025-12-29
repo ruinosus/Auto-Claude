@@ -37,6 +37,7 @@ import { registerRemoveSkillHandler } from './skills/remove-skill';
 import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { registerMCPHandlers } from '../mcp-manager';
 import { notificationService } from '../notification-service';
+import { setupNotificationHandlers } from './notification-handlers';
 
 /**
  * Setup all IPC handlers across all domains
@@ -124,6 +125,9 @@ export function setupIpcHandlers(
   // MCP (Model Context Protocol) handlers
   registerMCPHandlers();
 
+  // Notification handlers (for in-app notification center)
+  setupNotificationHandlers();
+
   console.warn('[IPC] All handler modules registered successfully');
 }
 
@@ -153,5 +157,6 @@ export {
   registerInstallSkillHandler,
   registerRemoveSkillHandler,
   registerGetSkillContentHandler,
-  registerMCPHandlers
+  registerMCPHandlers,
+  setupNotificationHandlers
 };

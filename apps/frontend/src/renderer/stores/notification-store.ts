@@ -47,20 +47,40 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   },
 
   markRead: async (id) => {
+    // Check if notification exists and is unread before optimistic update
+    const currentState = get();
+    const notification = currentState.notifications.find(n => n.id === id);
+    const wasUnread = notification && !notification.read;
+
+    if (!notification) {
+      console.warn('[notification-store] Notification not found:', id);
+      return;
+    }
+
+    if (!wasUnread) {
+      // Already read, nothing to do
+      return;
+    }
+
+    // Optimistic update - update state first for immediate UI response
+    set(state => ({
+      notifications: state.notifications.map(n =>
+        n.id === id ? { ...n, read: true } : n
+      ),
+      unreadCount: Math.max(0, state.unreadCount - 1)
+    }));
+
     try {
       await window.electron.ipcRenderer.invoke(IPC_CHANNELS.NOTIFICATION_MARK_READ, id);
-      set(state => {
-        const notification = state.notifications.find(n => n.id === id);
-        const wasUnread = notification && !notification.read;
-        return {
-          notifications: state.notifications.map(n =>
-            n.id === id ? { ...n, read: true } : n
-          ),
-          unreadCount: wasUnread ? Math.max(0, state.unreadCount - 1) : state.unreadCount
-        };
-      });
     } catch (error) {
+      // Revert on failure
       console.error('[notification-store] Failed to mark notification as read:', error);
+      set(state => ({
+        notifications: state.notifications.map(n =>
+          n.id === id ? { ...n, read: false } : n
+        ),
+        unreadCount: state.unreadCount + 1
+      }));
     }
   },
 
