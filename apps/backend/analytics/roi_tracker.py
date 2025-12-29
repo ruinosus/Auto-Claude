@@ -3,6 +3,7 @@
 ROI Tracker - captures git diff stats and QA results for ROI calculation.
 """
 
+import logging
 import subprocess
 import asyncio
 from pathlib import Path
@@ -10,6 +11,36 @@ from typing import Dict, Optional
 from datetime import datetime
 
 from .storage import get_analytics_storage
+
+logger = logging.getLogger(__name__)
+
+# Complexity factors based on language
+COMPLEXITY_FACTORS = {
+    'python': 1.0,
+    'typescript': 0.9,
+    'javascript': 1.1,
+    'rust': 1.3,
+    'go': 0.95,
+    'java': 1.1,
+    'kotlin': 1.0,
+    'swift': 1.0,
+    'c++': 1.4,
+    'c#': 1.05,
+}
+
+# Additional complexity factors based on framework
+FRAMEWORK_FACTORS = {
+    'react': 1.0,
+    'next.js': 1.1,
+    'vue': 1.0,
+    'angular': 1.15,
+    'django': 1.0,
+    'fastapi': 0.9,
+    'flask': 0.95,
+    'express': 0.95,
+    'spring': 1.2,
+    'electron': 1.1,
+}
 
 
 class ROITracker:
@@ -92,6 +123,77 @@ class ROITracker:
         """Record a QA attempt."""
         self.qa_attempts += 1
         self.qa_passed = passed
+
+    def calculate_complexity_factor(self, project_path: str) -> float:
+        """
+        Calculate complexity factor based on project analysis.
+
+        Args:
+            project_path: Path to the project directory
+
+        Returns:
+            float: Complexity factor (1.0 = baseline, >1.0 = more complex, <1.0 = simpler)
+        """
+        try:
+            from context.project_analyzer import ProjectAnalyzer
+
+            analyzer = ProjectAnalyzer(project_path)
+            profile = analyzer.analyze()
+
+            # Language factor
+            lang = (profile.primary_language or 'unknown').lower()
+            lang_factor = COMPLEXITY_FACTORS.get(lang, 1.0)
+
+            # Framework factor
+            framework = (profile.framework or 'unknown').lower()
+            framework_factor = FRAMEWORK_FACTORS.get(framework, 1.0)
+
+            # Size factor
+            if getattr(profile, 'is_monorepo', False):
+                size_factor = 1.2
+            elif getattr(profile, 'file_count', 0) > 1000:
+                size_factor = 1.15
+            elif getattr(profile, 'file_count', 0) > 500:
+                size_factor = 1.1
+            else:
+                size_factor = 1.0
+
+            return round(lang_factor * framework_factor * size_factor, 2)
+        except Exception as e:
+            logger.warning(f"Could not calculate complexity factor: {e}")
+            return 1.0
+
+    def get_smart_estimate(
+        self,
+        project_path: str,
+        lines_estimate: int,
+        minutes_per_line: float = 2.5
+    ) -> dict:
+        """
+        Get a smart time estimate based on complexity.
+
+        Args:
+            project_path: Path to the project
+            lines_estimate: Estimated lines of code
+            minutes_per_line: Base minutes per line (default: 2.5 for mid-level)
+
+        Returns:
+            dict with hours, confidence, basis, adjusted_minutes_per_line
+        """
+        complexity_factor = self.calculate_complexity_factor(project_path)
+        adjusted_minutes = minutes_per_line * complexity_factor
+        hours = (lines_estimate * adjusted_minutes) / 60
+
+        # Determine confidence based on data availability
+        confidence = 'medium'  # Would be 'high' with historical data
+
+        return {
+            'hours': round(hours, 1),
+            'confidence': confidence,
+            'basis': f"Based on {adjusted_minutes:.1f} min/line with complexity factor {complexity_factor}",
+            'adjusted_minutes_per_line': round(adjusted_minutes, 2),
+            'complexity_factor': complexity_factor
+        }
 
     async def finalize(self, total_cost: float = 0, total_tokens: int = 0):
         """Finalize ROI tracking and save to database."""
