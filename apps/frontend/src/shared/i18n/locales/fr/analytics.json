@@ -2,23 +2,23 @@
   "title": "Analytiques",
   "header": {
     "title": "Tableau de bord analytique",
-    "subtitle": "Surveillez votre utilisation et vos couts Auto-Claude"
+    "subtitle": "Surveillez votre utilisation et vos coûts Auto-Claude"
   },
   "tabs": {
     "usage": "Utilisation",
     "roi": "ROI"
   },
   "featureUsage": {
-    "title": "Utilisation des fonctionnalites",
-    "description": "Repartition des tokens par fonctionnalite IA"
+    "title": "Utilisation des fonctionnalités",
+    "description": "Répartition des tokens par fonctionnalité IA"
   },
   "filters": {
     "title": "Filtres",
-    "dateRange": "Periode",
+    "dateRange": "Période",
     "specs": "Specs",
     "phases": "Phases",
-    "models": "Modeles",
-    "costRange": "Fourchette de cout",
+    "models": "Modèles",
+    "costRange": "Fourchette de coût",
     "clear": "Effacer tout",
     "apply": "Appliquer les filtres"
   },
@@ -34,7 +34,7 @@
     "json": "Exporter JSON",
     "pdf": "Exporter PDF",
     "options": "Options d'exportation",
-    "selectMetrics": "Selectionnez les metriques a inclure"
+    "selectMetrics": "Sélectionnez les métriques à inclure"
   },
   "budget": {
     "title": "Budget",
@@ -42,37 +42,37 @@
     "warnThreshold": "Seuil d'avertissement",
     "blockThreshold": "Seuil de blocage",
     "override": "Ignorer",
-    "blocked": "Budget depasse",
+    "blocked": "Budget dépassé",
     "remaining": "Restant"
   },
   "anomalies": {
     "title": "Anomalies",
-    "detected": "anomalies detectees",
+    "detected": "anomalies détectées",
     "dismiss": "Ignorer",
     "investigate": "Investiguer",
-    "costSpike": "Pic de cout",
+    "costSpike": "Pic de coût",
     "tokenSpike": "Pic de tokens",
-    "durationSpike": "Pic de duree"
+    "durationSpike": "Pic de durée"
   },
   "comparison": {
     "title": "Comparer les Specs",
-    "select": "Selectionnez les specs a comparer",
+    "select": "Sélectionnez les specs à comparer",
     "vsAverage": "vs Moyenne",
     "bestIn": "Meilleur en"
   },
   "quality": {
-    "title": "Metriques de Qualite",
+    "title": "Métriques de Qualité",
     "grade": "Note",
     "lintErrors": "Erreurs Lint",
     "lintWarnings": "Avertissements Lint",
     "coverage": "Couverture de tests",
-    "complexity": "Complexite"
+    "complexity": "Complexité"
   },
   "benchmarks": {
-    "title": "Benchmarks du Marche",
-    "region": "Region",
-    "seniority": "Niveau d'experience",
-    "comparison": "Vous avez economise {{percent}}% par rapport a {{benchmark}}"
+    "title": "Benchmarks du Marché",
+    "region": "Région",
+    "seniority": "Niveau d'expérience",
+    "comparison": "Vous avez économisé {{percent}}% par rapport à {{benchmark}}"
   },
   "notifications": {
     "title": "Notifications",
@@ -81,40 +81,40 @@
     "noNotifications": "Aucune notification"
   },
   "roi": {
-    "totalSavings": "Economies totales",
-    "hoursSaved": "Heures economisees",
+    "totalSavings": "Économies totales",
+    "hoursSaved": "Heures économisées",
     "roiPercentage": "ROI",
-    "successRate": "Taux de reussite",
+    "successRate": "Taux de réussite",
     "hours": "hrs",
     "specs": "specs",
     "chart": {
       "title": "ROI par spec",
-      "description": "Retour sur investissement pour les specs recentes",
-      "noData": "Aucune donnee disponible",
+      "description": "Retour sur investissement pour les specs récentes",
+      "noData": "Aucune donnée disponible",
       "roiLabel": "ROI"
     },
     "costValue": {
-      "title": "Cout vs Valeur",
-      "description": "Cout IA reel compare au cout de developpement manuel estime",
-      "noData": "Aucune donnee disponible",
-      "actualCost": "Cout reel",
-      "estimatedCost": "Cout manuel estime",
-      "hint": "Les points au-dessus de la diagonale representent un ROI positif"
+      "title": "Coût vs Valeur",
+      "description": "Coût IA réel comparé au coût de développement manuel estimé",
+      "noData": "Aucune donnée disponible",
+      "actualCost": "Coût réel",
+      "estimatedCost": "Coût manuel estimé",
+      "hint": "Les points au-dessus de la diagonale représentent un ROI positif"
     },
     "table": {
-      "title": "Details des specs",
-      "description": "Metriques ROI detaillees pour chaque spec",
-      "noData": "Aucun spec trouve",
+      "title": "Détails des specs",
+      "description": "Métriques ROI détaillées pour chaque spec",
+      "noData": "Aucun spec trouvé",
       "spec": "Spec",
-      "actualCost": "Cout reel",
-      "savings": "Economies",
+      "actualCost": "Coût réel",
+      "savings": "Économies",
       "roi": "ROI",
       "status": "Statut",
       "linesChanged": "Lignes",
       "date": "Date"
     },
     "dashboard": {
-      "retry": "Reessayer"
+      "retry": "Réessayer"
     }
   }
 }
