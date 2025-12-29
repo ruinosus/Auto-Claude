@@ -117,6 +117,29 @@
     "clearAll": "Tout effacer",
     "noNotifications": "Aucune notification"
   },
+  "drillDown": {
+    "close": "Fermer le panneau",
+    "selectItem": "Sélectionnez un élément pour voir les détails",
+    "specNotFound": "Spec non trouvée",
+    "specDetails": "Analytiques détaillées pour cette spec",
+    "sessionDetails": "Détails de session bientôt disponibles",
+    "messageDetails": "Détails des messages bientôt disponibles",
+    "levels": {
+      "aggregate": "Agrégé",
+      "spec": "Spec",
+      "session": "Session",
+      "message": "Message"
+    },
+    "fields": {
+      "phase": "Phase",
+      "cost": "Coût",
+      "inputTokens": "Tokens d'entrée",
+      "outputTokens": "Tokens de sortie",
+      "model": "Modèle",
+      "duration": "Durée",
+      "sessionId": "ID de session"
+    }
+  },
   "roi": {
     "totalSavings": "Économies totales",
     "hoursSaved": "Heures économisées",

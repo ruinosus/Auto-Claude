@@ -117,6 +117,29 @@
     "clearAll": "Clear all",
     "noNotifications": "No notifications"
   },
+  "drillDown": {
+    "close": "Close panel",
+    "selectItem": "Select an item to view details",
+    "specNotFound": "Spec not found",
+    "specDetails": "Detailed analytics for this spec",
+    "sessionDetails": "Session details coming soon",
+    "messageDetails": "Message details coming soon",
+    "levels": {
+      "aggregate": "Aggregate",
+      "spec": "Spec",
+      "session": "Session",
+      "message": "Message"
+    },
+    "fields": {
+      "phase": "Phase",
+      "cost": "Cost",
+      "inputTokens": "Input Tokens",
+      "outputTokens": "Output Tokens",
+      "model": "Model",
+      "duration": "Duration",
+      "sessionId": "Session ID"
+    }
+  },
   "roi": {
     "totalSavings": "Total Savings",
     "hoursSaved": "Hours Saved",
