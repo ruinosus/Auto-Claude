@@ -17,6 +17,12 @@ export function setupExportHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.EXPORT_DATA, async (_, options: ExportOptions) => {
     try {
+      // Validate format at runtime to prevent invalid input
+      const validFormats = ['csv', 'json', 'pdf'] as const;
+      if (!validFormats.includes(options.format as typeof validFormats[number])) {
+        throw new Error(`Invalid export format: ${options.format}. Must be one of: csv, json, pdf`);
+      }
+
       // In a real implementation, we would fetch data from analytics service
       // For now, return a stub response
       const data = {
