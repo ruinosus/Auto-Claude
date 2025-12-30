@@ -30,6 +30,9 @@ from .models import (
     ModelUsage,
     PhaseDuration,
     FeatureUsage,
+    DailyMetricResponse,
+    DailyMetricsListResponse,
+    BillingExportResponse,
 )
 from .langfuse_client import TraceFilter
 
@@ -608,6 +611,166 @@ async def get_usage_summary(
             "to": to_date.isoformat() if to_date else None,
         }
     )
+
+
+# =============================================================================
+# Daily Metrics Endpoints
+# =============================================================================
+
+@router.get("/metrics/daily", response_model=DailyMetricsListResponse)
+async def get_daily_metrics(
+    from_date: Optional[datetime] = Query(None, description="From date"),
+    to_date: Optional[datetime] = Query(None, description="To date"),
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+):
+    """
+    Get daily aggregated metrics from Langfuse.
+
+    Useful for billing dashboards and cost tracking.
+    """
+    from datetime import date as date_type, timedelta
+
+    try:
+        from analytics.metrics_client import get_daily_metrics as fetch_metrics, DailyMetric
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Metrics client not available")
+
+    # Default to last 30 days
+    end_date = to_date.date() if to_date else date_type.today()
+    start_date = from_date.date() if from_date else end_date - timedelta(days=30)
+
+    metrics = fetch_metrics(
+        from_date=start_date,
+        to_date=end_date,
+        user_id=project_id,
+    )
+
+    # Convert to response format
+    from .models import DailyMetricResponse, DailyMetricsListResponse
+
+    metric_responses = [
+        DailyMetricResponse(
+            date=m.date,
+            cost_usd=m.cost_total,
+            traces=m.count_traces,
+            input_tokens=m.usage_input_tokens,
+            output_tokens=m.usage_output_tokens,
+            observations=m.count_observations,
+        )
+        for m in metrics
+    ]
+
+    total_cost = sum(m.cost_total for m in metrics)
+    total_traces = sum(m.count_traces for m in metrics)
+    total_tokens = sum(m.usage_input_tokens + m.usage_output_tokens for m in metrics)
+
+    return DailyMetricsListResponse(
+        metrics=metric_responses,
+        total_cost=round(total_cost, 4),
+        total_traces=total_traces,
+        total_tokens=total_tokens,
+        period={
+            "from": start_date.isoformat(),
+            "to": end_date.isoformat(),
+        },
+    )
+
+
+@router.get("/metrics/billing", response_model=BillingExportResponse)
+async def export_billing_data(
+    from_date: Optional[datetime] = Query(None, description="From date"),
+    to_date: Optional[datetime] = Query(None, description="To date"),
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+):
+    """
+    Export billing data for invoicing.
+
+    Returns cost breakdown for the specified period.
+    """
+    from datetime import date as date_type, timedelta
+
+    try:
+        from analytics.metrics_client import export_traces_for_billing
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Metrics client not available")
+
+    # Default to current month
+    end_date = to_date.date() if to_date else date_type.today()
+    start_date = from_date.date() if from_date else end_date.replace(day=1)
+
+    billing_data = export_traces_for_billing(
+        from_date=start_date,
+        to_date=end_date,
+    )
+
+    from .models import DailyMetricResponse, BillingExportResponse
+
+    metric_responses = [
+        DailyMetricResponse(
+            date=d["date"],
+            cost_usd=d["cost_usd"],
+            traces=d["traces"],
+            input_tokens=d.get("input_tokens", 0),
+            output_tokens=d.get("output_tokens", 0),
+        )
+        for d in billing_data
+    ]
+
+    total_cost = sum(d["cost_usd"] for d in billing_data)
+    total_traces = sum(d["traces"] for d in billing_data)
+    total_tokens = sum(d.get("input_tokens", 0) + d.get("output_tokens", 0) for d in billing_data)
+
+    return BillingExportResponse(
+        data=metric_responses,
+        summary={
+            "total_cost_usd": round(total_cost, 4),
+            "total_traces": total_traces,
+            "total_tokens": total_tokens,
+            "days": len(billing_data),
+        },
+        period={
+            "from": start_date.isoformat(),
+            "to": end_date.isoformat(),
+        },
+        export_format="json",
+    )
+
+
+@router.get("/metrics/project/{project_id}/cost")
+async def get_project_cost(
+    project_id: str,
+    from_date: Optional[datetime] = Query(None, description="From date"),
+    to_date: Optional[datetime] = Query(None, description="To date"),
+):
+    """
+    Get total cost for a specific project.
+
+    Useful for rate limiting or billing by project.
+    """
+    from datetime import date as date_type, timedelta
+
+    try:
+        from analytics.metrics_client import get_project_cost as fetch_cost
+    except ImportError:
+        raise HTTPException(status_code=501, detail="Metrics client not available")
+
+    end_date = to_date.date() if to_date else date_type.today()
+    start_date = from_date.date() if from_date else end_date.replace(day=1)
+
+    total_cost = fetch_cost(
+        project_id=project_id,
+        from_date=start_date,
+        to_date=end_date,
+    )
+
+    return {
+        "project_id": project_id,
+        "total_cost_usd": round(total_cost, 4),
+        "period": {
+            "from": start_date.isoformat(),
+            "to": end_date.isoformat(),
+        },
+    }
 
 
 # =============================================================================

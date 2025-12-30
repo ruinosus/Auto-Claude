@@ -250,6 +250,37 @@ class UsageSummaryResponse(BaseModel):
 
 
 # =============================================================================
+# Daily Metrics Models
+# =============================================================================
+
+class DailyMetricResponse(BaseModel):
+    """Daily metric data point."""
+    date: str  # ISO date (YYYY-MM-DD)
+    cost_usd: float
+    traces: int
+    input_tokens: int = 0
+    output_tokens: int = 0
+    observations: int = 0
+
+
+class DailyMetricsListResponse(BaseModel):
+    """Response for list of daily metrics."""
+    metrics: List[DailyMetricResponse]
+    total_cost: float
+    total_traces: int
+    total_tokens: int
+    period: Dict[str, Optional[str]]
+
+
+class BillingExportResponse(BaseModel):
+    """Billing export data."""
+    data: List[DailyMetricResponse]
+    summary: Dict[str, Any]
+    period: Dict[str, Optional[str]]
+    export_format: str = "json"
+
+
+# =============================================================================
 # Query Parameters
 # =============================================================================
 
