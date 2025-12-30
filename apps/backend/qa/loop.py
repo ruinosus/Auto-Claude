@@ -58,9 +58,50 @@ try:
 except ImportError:
     LANGFUSE_ROI_AVAILABLE = False
 
+# Langfuse categorical/boolean scores (optional - graceful degradation)
+try:
+    from analytics.langfuse_integration import (
+        save_build_result,
+        save_qa_verdict,
+        save_qa_first_attempt,
+        is_langfuse_ready,
+    )
+    LANGFUSE_SCORES_AVAILABLE = True
+except ImportError:
+    LANGFUSE_SCORES_AVAILABLE = False
+
 # Configuration
 MAX_QA_ITERATIONS = 50
 MAX_CONSECUTIVE_ERRORS = 3  # Stop after 3 consecutive errors without progress
+
+
+def _save_qa_scores(trace_id: str | None, qa_passed: bool, qa_iteration: int) -> None:
+    """Save categorical and boolean QA scores to Langfuse."""
+    if not LANGFUSE_SCORES_AVAILABLE or not trace_id:
+        return
+
+    if not is_langfuse_ready():
+        return
+
+    try:
+        # Save build result
+        if qa_passed:
+            save_build_result(trace_id, "success")
+        else:
+            save_build_result(trace_id, "failure")
+
+        # Save QA verdict
+        if qa_passed:
+            save_qa_verdict(trace_id, "approved")
+        else:
+            save_qa_verdict(trace_id, "rejected")
+
+        # Save first-attempt pass
+        save_qa_first_attempt(trace_id, qa_passed and qa_iteration == 1)
+
+        debug("qa_loop", f"Saved QA categorical scores to trace {trace_id}")
+    except Exception as e:
+        debug("qa_loop", f"Failed to save QA categorical scores: {e}")
 
 
 # =============================================================================
@@ -381,6 +422,9 @@ async def run_qa_validation_loop(
             spec_id = spec_dir.name
             await _update_qa_roi(project_dir, spec_id, qa_passed=True, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
 
+            # Save categorical scores to Langfuse
+            _save_qa_scores(trace_id, qa_passed=True, qa_iteration=qa_iteration)
+
             return True
 
         elif status == "rejected":
@@ -452,6 +496,9 @@ async def run_qa_validation_loop(
                 # Update ROI tracking with QA result (recurring issues - failed)
                 spec_id = spec_dir.name
                 await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
+
+                # Save categorical scores to Langfuse
+                _save_qa_scores(trace_id, qa_passed=False, qa_iteration=qa_iteration)
 
                 return False
 
@@ -566,6 +613,9 @@ async def run_qa_validation_loop(
                 spec_id = spec_dir.name
                 await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
 
+                # Save categorical scores to Langfuse
+                _save_qa_scores(trace_id, qa_passed=False, qa_iteration=qa_iteration)
+
                 return False
 
             print("Retrying with error feedback...")
@@ -629,6 +679,9 @@ async def run_qa_validation_loop(
     # Update ROI tracking with QA result (max iterations - failed)
     spec_id = spec_dir.name
     await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
+
+    # Save categorical scores to Langfuse
+    _save_qa_scores(trace_id, qa_passed=False, qa_iteration=qa_iteration)
 
     print("\nManual intervention required.")
     return False
