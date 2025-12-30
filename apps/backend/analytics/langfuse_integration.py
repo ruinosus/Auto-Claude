@@ -606,6 +606,111 @@ def save_score(trace_id: str, name: str, value: float, comment: Optional[str] = 
 
 
 # =============================================================================
+# Categorical and Boolean Scores
+# =============================================================================
+
+def save_categorical_score(
+    trace_id: str,
+    name: str,
+    value: str,
+    comment: Optional[str] = None
+) -> bool:
+    """
+    Save a categorical score to a Langfuse trace.
+
+    Args:
+        trace_id: The Langfuse trace ID
+        name: Score name (e.g., "build_status", "qa_verdict")
+        value: Categorical value (e.g., "success", "partial", "failure")
+        comment: Optional comment
+
+    Returns:
+        True if score was saved successfully
+    """
+    if not _langfuse_client:
+        return False
+
+    try:
+        _langfuse_client.score(
+            trace_id=trace_id,
+            name=name,
+            value=value,
+            data_type="CATEGORICAL",
+            comment=comment
+        )
+        logger.debug(f"Saved categorical score {name}={value} to trace {trace_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to save categorical score {name}: {e}")
+        return False
+
+
+def save_boolean_score(
+    trace_id: str,
+    name: str,
+    value: bool,
+    comment: Optional[str] = None
+) -> bool:
+    """
+    Save a boolean score to a Langfuse trace.
+
+    Args:
+        trace_id: The Langfuse trace ID
+        name: Score name (e.g., "qa_first_attempt_pass")
+        value: Boolean value (True/False)
+        comment: Optional comment
+
+    Returns:
+        True if score was saved successfully
+    """
+    if not _langfuse_client:
+        return False
+
+    try:
+        _langfuse_client.score(
+            trace_id=trace_id,
+            name=name,
+            value=value,
+            data_type="BOOLEAN",
+            comment=comment
+        )
+        logger.debug(f"Saved boolean score {name}={value} to trace {trace_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to save boolean score {name}: {e}")
+        return False
+
+
+# Convenience functions for common scores
+def save_build_result(trace_id: str, result: str, comment: Optional[str] = None) -> bool:
+    """Save build result as categorical score. Values: success, partial, failure"""
+    valid_values = ["success", "partial", "failure"]
+    if result not in valid_values:
+        logger.warning(f"Invalid build result: {result}. Must be one of {valid_values}")
+        return False
+    return save_categorical_score(trace_id, "build_result", result, comment)
+
+
+def save_qa_verdict(trace_id: str, verdict: str, comment: Optional[str] = None) -> bool:
+    """Save QA verdict as categorical score. Values: approved, rejected, error"""
+    valid_values = ["approved", "rejected", "error"]
+    if verdict not in valid_values:
+        logger.warning(f"Invalid QA verdict: {verdict}. Must be one of {valid_values}")
+        return False
+    return save_categorical_score(trace_id, "qa_verdict", verdict, comment)
+
+
+def save_qa_first_attempt(trace_id: str, passed: bool) -> bool:
+    """Save whether QA passed on first attempt as boolean score."""
+    return save_boolean_score(
+        trace_id,
+        "qa_first_attempt_pass",
+        passed,
+        "QA passed on first attempt" if passed else "QA required multiple attempts"
+    )
+
+
+# =============================================================================
 # Decorator for automatic tracing
 # =============================================================================
 
