@@ -42,13 +42,15 @@ class RoadmapOrchestrator:
         self.enable_competitor_analysis = enable_competitor_analysis
         self.refresh_competitor_analysis = refresh_competitor_analysis
 
+        # Always initialize .auto-claude directory and ensure it's in .gitignore
+        # This is needed for analytics tracking even if custom output_dir is provided
+        init_auto_claude_dir(self.project_dir)
+
         # Default output to project's .auto-claude directory (installed instance)
         # Note: auto-claude/ is source code, .auto-claude/ is the installed instance
         if output_dir:
             self.output_dir = Path(output_dir)
         else:
-            # Initialize .auto-claude directory and ensure it's in .gitignore
-            init_auto_claude_dir(self.project_dir)
             self.output_dir = self.project_dir / ".auto-claude" / "roadmap"
 
         self.output_dir.mkdir(parents=True, exist_ok=True)

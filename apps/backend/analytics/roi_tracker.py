@@ -216,8 +216,9 @@ class ROITracker:
         existing = await self.storage.get_spec_roi(self.spec_id)
 
         # Merge with existing data
+        # Use project_dir.name as project_id, or preserve existing if already set
         roi_data = {
-            'project_id': existing.get('project_id', '') if existing else '',
+            'project_id': (existing.get('project_id') if existing else None) or self.project_dir.name,
             'estimated_business_value': existing.get('estimated_business_value', 0) if existing else 0,
             'estimated_hours_manual': existing.get('estimated_hours_manual') if existing else None,
             'developer_rate_override': existing.get('developer_rate_override') if existing else None,

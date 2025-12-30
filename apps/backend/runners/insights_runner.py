@@ -45,7 +45,24 @@ from debug import (
     debug_success,
 )
 
-# Import feature tracker for token tracking
+# Import Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Import legacy feature tracker for token tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -216,6 +233,11 @@ Current question: {message}"""
         except Exception as e:
             debug_error("insights_runner", f"Failed to start tracking session: {e}")
 
+    # Prepare Langfuse trace context
+    use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+    project_id = project_path.name
+    trace_name = f"insights-{project_id}"
+
     try:
         # Create Claude SDK client with appropriate settings for insights
         # Pass Azure Foundry env vars to SDK subprocess
@@ -237,6 +259,27 @@ Current question: {message}"""
                 env=sdk_env,  # Pass ANTHROPIC_BASE_URL, Azure Foundry vars, etc.
             )
         )
+
+        # Create Langfuse trace context if available
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        if use_langfuse and trace_context:
+            # Truncate prompt for trace input
+            trace_input = full_prompt[:2000] + "..." if len(full_prompt) > 2000 else full_prompt
+            trace_ctx = trace_context(
+                name=trace_name,
+                project_id=project_id,  # Required for data isolation filtering
+                agent_type="insights",
+                metadata={
+                    "model": model,
+                    "thinking_level": thinking_level,
+                    "history_length": len(history),
+                },
+                tags=["insights", f"project:{project_id}"],
+                input_data={"prompt": trace_input, "history_length": len(history)},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            debug("insights_runner", "Langfuse trace created", trace_name=trace_name)
 
         # Use async context manager pattern
         async with client:
@@ -308,11 +351,39 @@ Current question: {message}"""
                         current_tool = None
 
                 # Track result message for final totals
-                if tracker and msg_type == "ResultMessage":
-                    try:
-                        await tracker.track_message(msg)
-                    except Exception as e:
-                        debug_error("insights_runner", f"Failed to track result: {e}")
+                if msg_type == "ResultMessage":
+                    if tracker:
+                        try:
+                            await tracker.track_message(msg)
+                        except Exception as e:
+                            debug_error("insights_runner", f"Failed to track result: {e}")
+
+                    # Log to Langfuse if enabled
+                    if use_langfuse and hasattr(msg, "usage") and msg.usage:
+                        try:
+                            usage = msg.usage
+                            if isinstance(usage, dict):
+                                input_tokens = usage.get("input_tokens", 0)
+                                output_tokens = usage.get("output_tokens", 0)
+                            else:
+                                input_tokens = getattr(usage, "input_tokens", 0)
+                                output_tokens = getattr(usage, "output_tokens", 0)
+
+                            log_generation_in_current_trace(
+                                name="insights-generation",
+                                model=model,
+                                input_data=message[:500] + "..." if len(message) > 500 else message,
+                                output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                                usage={
+                                    "input": input_tokens,
+                                    "output": output_tokens,
+                                    "total": input_tokens + output_tokens,
+                                },
+                                metadata={"thinking_level": thinking_level},
+                            )
+                            debug("insights_runner", "Logged generation to Langfuse")
+                        except Exception as e:
+                            debug_error("insights_runner", f"Failed to log to Langfuse: {e}")
 
             # Ensure we have a newline at the end
             if response_text and not response_text.endswith("\n"):
@@ -339,6 +410,19 @@ Current question: {message}"""
                 except Exception as e:
                     debug_error("insights_runner", f"Failed to finalize tracking: {e}")
 
+            # Finalize Langfuse trace
+            if trace_ctx:
+                try:
+                    # Set trace output before exiting
+                    if langfuse_ctx_obj:
+                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                        langfuse_ctx_obj.set_output({"response": trace_output})
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                    debug("insights_runner", "Langfuse trace finalized")
+                except Exception as e:
+                    debug_error("insights_runner", f"Failed to finalize Langfuse trace: {e}")
+
     except Exception as e:
         print(f"Error using Claude SDK: {e}", file=sys.stderr)
         import traceback
@@ -348,6 +432,13 @@ Current question: {message}"""
         if tracker:
             try:
                 await tracker.finalize()
+            except Exception:
+                pass
+        # Still try to finalize Langfuse trace on error
+        if use_langfuse and trace_ctx:
+            try:
+                trace_ctx.__exit__(None, None, None)
+                flush_langfuse()
             except Exception:
                 pass
         run_simple(project_dir, message, history)

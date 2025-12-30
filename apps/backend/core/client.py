@@ -7,11 +7,26 @@ Functions for creating and configuring the Claude Agent SDK client.
 All AI interactions should use `create_client()` to ensure consistent OAuth authentication
 and proper tool/MCP configuration. For simple message calls without full agent sessions,
 use `ClaudeSDKClient` directly with `allowed_tools=[]` and `max_turns=1`.
+
+Analytics:
+----------
+All Claude Agent SDK calls are automatically traced to Langfuse when enabled.
+Set LANGFUSE_ENABLED=true in .env to enable. See docs/ANALYTICS_ROI_GUIDE.md.
 """
 
 import json
 import os
 from pathlib import Path
+
+# Initialize Langfuse early (before any SDK client is created)
+try:
+    from analytics.langfuse_integration import init_langfuse, is_langfuse_ready
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    # Langfuse not installed - continue without it
+    _langfuse_init_result = False
+    def is_langfuse_ready():
+        return False
 
 from auto_claude_tools import (
     create_auto_claude_mcp_server,
@@ -295,6 +310,12 @@ def create_client(
             if v
         ]
         print(f"   - Project capabilities: {', '.join(caps)}")
+
+    # Show Langfuse analytics status
+    if is_langfuse_ready():
+        print("   - Analytics: Langfuse (traces at LANGFUSE_HOST)")
+    else:
+        print("   - Analytics: disabled (set LANGFUSE_ENABLED=true)")
     print()
 
     # Configure MCP servers

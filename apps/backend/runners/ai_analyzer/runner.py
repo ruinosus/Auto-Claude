@@ -159,7 +159,7 @@ class AIAnalyzerRunner:
 
         # Run Claude query
         client = ClaudeAnalysisClient(self.project_dir)
-        response = await client.run_analysis_query(prompt)
+        response, _trace_id = await client.run_analysis_query(prompt)
 
         # Parse and return result
         return self.result_parser.parse_json_response(response, default_result)

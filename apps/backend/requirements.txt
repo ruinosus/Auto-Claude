@@ -2,7 +2,16 @@
 claude-agent-sdk>=0.1.16
 python-dotenv>=1.0.0
 
-# Analytics - async HTTP for pricing API
+# Analytics - Langfuse (LLM Observability)
+langfuse>=3.0.0
+langsmith[claude-agent-sdk]>=0.2.0
+langsmith[otel]>=0.2.0
+
+# Analytics API - FastAPI service
+fastapi>=0.115.0
+uvicorn>=0.34.0
+
+# Analytics - async HTTP for pricing API (legacy, kept for compatibility)
 aiohttp>=3.9.0
 
 # TOML parsing fallback for Python < 3.11

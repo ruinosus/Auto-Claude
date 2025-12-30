@@ -51,6 +51,20 @@ try:
 except ImportError:
     ANALYTICS_AVAILABLE = False
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+        get_current_trace_id,
+        get_trace_url,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -328,7 +342,9 @@ async def run_agent_session(
     spec_id: str | None = None,
     session_num: int = 1,
     project_dir: Path | None = None,
-) -> tuple[str, str]:
+    analytics_project_dir: Path | None = None,
+    agent_type: str = "coder",
+) -> tuple[str, str, str | None]:
     """
     Run a single agent session using Claude Agent SDK.
 
@@ -340,13 +356,16 @@ async def run_agent_session(
         phase: Current execution phase for logging
         spec_id: Spec identifier for analytics tracking
         session_num: Session number for analytics tracking
-        project_dir: Project directory for analytics database location
+        project_dir: Project directory for git operations (may be worktree)
+        analytics_project_dir: Original project directory for analytics DB (use when in worktree)
+        agent_type: Type of agent (planner, coder, qa_reviewer, qa_fixer)
 
     Returns:
-        (status, response_text) where status is:
+        (status, response_text, trace_id) where status is:
         - "continue" if agent should continue working
         - "complete" if all subtasks complete
         - "error" if an error occurred
+        trace_id is the Langfuse trace ID (or None if not available)
     """
     debug_section("session", f"Agent Session - {phase.value}")
     debug(
@@ -364,13 +383,20 @@ async def run_agent_session(
     current_tool = None
     message_count = 0
     tool_count = 0
+    generation_count = 0
+
+    # Langfuse trace ID (will be set if Langfuse is enabled)
+    langfuse_trace_id: str | None = None
 
     # Initialize analytics tracking (if available and enabled)
     usage_tracker = None
-    if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id:
+    storage = None  # Initialize storage outside try block to ensure it's always defined
+    # Use analytics_project_dir for DB path (original project, not worktree)
+    effective_analytics_dir = analytics_project_dir or project_dir
+    if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id and effective_analytics_dir:
         try:
-            # Determine database path
-            db_path = str(project_dir / ".auto-claude" / "analytics.db") if project_dir else ".auto-claude/analytics.db"
+            # Determine database path - use original project dir for correct location
+            db_path = str(effective_analytics_dir / ".auto-claude" / "analytics.db")
             storage = get_analytics_storage(db_path)
 
             # Map LogPhase to analytics phase
@@ -388,22 +414,63 @@ async def run_agent_session(
                 storage=storage
             )
             await usage_tracker.start_conversation()
-            debug("session", "Analytics tracking initialized", spec_id=spec_id)
+            debug("session", "Analytics tracking initialized", spec_id=spec_id, db_path=db_path)
         except Exception as e:
             logger.warning(f"Failed to initialize analytics tracking: {e}")
             usage_tracker = None
 
     # ROI tracking (if analytics available)
     roi_tracker: Optional[ROITracker] = None
-    if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id and project_dir:
+    if ANALYTICS_AVAILABLE and is_tracking_enabled() and spec_id and effective_analytics_dir and storage:
         try:
-            roi_tracker = await create_roi_tracker(spec_id, project_dir, storage)
+            roi_tracker = await create_roi_tracker(spec_id, effective_analytics_dir, storage)
             debug("session", "ROI tracking initialized", spec_id=spec_id)
         except Exception as e:
             logger.warning(f"Failed to initialize ROI tracking: {e}")
             roi_tracker = None
 
+    # Prepare Langfuse trace context
+    use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready() and spec_id
+    trace_name = f"spec-{spec_id}-{agent_type}-s{session_num}" if spec_id else f"{agent_type}-session"
+
+    # Map LogPhase to agent phase string
+    phase_str_map = {
+        LogPhase.PLANNING: "planning",
+        LogPhase.CODING: "coding",
+        LogPhase.VALIDATION: "validation",
+    }
+    phase_str = phase_str_map.get(phase, "coding")
+
     try:
+        # Create Langfuse trace context if available
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        # Derive project_id from project_dir for data isolation
+        project_id = project_dir.name if project_dir else None
+        if use_langfuse:
+            # Truncate message for trace input (keep it readable but not too long)
+            trace_input = message[:2000] + "..." if len(message) > 2000 else message
+            trace_ctx = trace_context(
+                name=trace_name,
+                spec_id=spec_id,
+                project_id=project_id,
+                agent_type=agent_type,
+                metadata={
+                    "phase": phase_str,
+                    "session_num": session_num,
+                    "project_dir": str(project_dir) if project_dir else None,
+                },
+                tags=[f"phase:{phase_str}"],
+                input_data={"prompt": trace_input, "agent_type": agent_type},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            langfuse_trace_id = get_current_trace_id()
+            if langfuse_trace_id:
+                debug("session", "Langfuse trace created", trace_id=langfuse_trace_id)
+                trace_url = get_trace_url(langfuse_trace_id)
+                if trace_url:
+                    print(f"  Langfuse: {trace_url}\n")
+
         # Send the query
         debug("session", "Sending query to Claude SDK...")
         await client.query(message)
@@ -429,6 +496,46 @@ async def run_agent_session(
                         await usage_tracker.track_message(msg)
                     except Exception as e:
                         logger.debug(f"Analytics tracking failed for message: {e}")
+
+                # Log generation to Langfuse (if enabled and has usage data)
+                if use_langfuse and hasattr(msg, "usage") and msg.usage:
+                    try:
+                        generation_count += 1
+                        usage = msg.usage
+                        model = getattr(msg, "model", "claude-sonnet-4-5")
+
+                        # Extract usage data
+                        if isinstance(usage, dict):
+                            input_tokens = usage.get("input_tokens", 0)
+                            output_tokens = usage.get("output_tokens", 0)
+                            cache_read = usage.get("cache_read_input_tokens", 0)
+                            cache_creation = usage.get("cache_creation_input_tokens", 0)
+                        else:
+                            input_tokens = getattr(usage, "input_tokens", 0)
+                            output_tokens = getattr(usage, "output_tokens", 0)
+                            cache_read = getattr(usage, "cache_read_input_tokens", 0)
+                            cache_creation = getattr(usage, "cache_creation_input_tokens", 0)
+
+                        # Log generation
+                        log_generation_in_current_trace(
+                            name=f"generation-{generation_count}",
+                            model=model,
+                            input_data=f"[{agent_type} prompt - {len(message)} chars]",
+                            output_data=f"[response chunk {generation_count}]",
+                            usage={
+                                "input": input_tokens,
+                                "output": output_tokens,
+                                "total": input_tokens + output_tokens,
+                                "cache_read": cache_read,
+                                "cache_creation": cache_creation,
+                            },
+                            metadata={
+                                "message_id": getattr(msg, "id", None),
+                                "phase": phase_str,
+                            }
+                        )
+                    except Exception as e:
+                        logger.debug(f"Langfuse generation logging failed: {e}")
 
                 for block in msg.content:
                     block_type = type(block).__name__
@@ -584,8 +691,9 @@ async def run_agent_session(
                 message_count=message_count,
                 tool_count=tool_count,
                 response_length=len(response_text),
+                langfuse_trace_id=langfuse_trace_id,
             )
-            return "complete", response_text
+            return "complete", response_text, langfuse_trace_id
 
         debug_success(
             "session",
@@ -593,8 +701,9 @@ async def run_agent_session(
             message_count=message_count,
             tool_count=tool_count,
             response_length=len(response_text),
+            langfuse_trace_id=langfuse_trace_id,
         )
-        return "continue", response_text
+        return "continue", response_text, langfuse_trace_id
 
     except Exception as e:
         debug_error(
@@ -607,7 +716,7 @@ async def run_agent_session(
         print(f"Error during agent session: {e}")
         if task_logger:
             task_logger.log_error(f"Session error: {e}", phase)
-        return "error", str(e)
+        return "error", str(e), langfuse_trace_id
 
     finally:
         # Finalize analytics tracking
@@ -633,3 +742,20 @@ async def run_agent_session(
                 debug("session", "ROI tracking finalized")
             except Exception as e:
                 logger.debug(f"Failed to finalize ROI tracking: {e}")
+
+        # Close Langfuse trace context
+        if use_langfuse and trace_ctx:
+            try:
+                # Set trace output before closing
+                if langfuse_ctx_obj:
+                    # Truncate response for trace output
+                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                    langfuse_ctx_obj.set_output({
+                        "response": trace_output,
+                        "message_count": message_count,
+                        "tool_count": tool_count,
+                    })
+                trace_ctx.__exit__(None, None, None)
+                debug("session", "Langfuse trace finalized", trace_id=langfuse_trace_id)
+            except Exception as e:
+                logger.debug(f"Failed to finalize Langfuse trace: {e}")

@@ -82,11 +82,11 @@ export function ROITable({ specs, isLoading, onSpecClick }: ROITableProps) {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('analytics:roi.table.spec')}</TableHead>
+                <TableHead className="text-right">{t('analytics:roi.table.hoursSaved')}</TableHead>
                 <TableHead className="text-right">{t('analytics:roi.table.actualCost')}</TableHead>
                 <TableHead className="text-right">{t('analytics:roi.table.savings')}</TableHead>
                 <TableHead className="text-right">{t('analytics:roi.table.roi')}</TableHead>
                 <TableHead className="text-center">{t('analytics:roi.table.status')}</TableHead>
-                <TableHead className="text-right">{t('analytics:roi.table.linesChanged')}</TableHead>
                 <TableHead>{t('analytics:roi.table.date')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -97,14 +97,19 @@ export function ROITable({ specs, isLoading, onSpecClick }: ROITableProps) {
                   className={onSpecClick ? 'cursor-pointer hover:bg-muted/50' : ''}
                   onClick={() => onSpecClick?.(spec.specId)}
                 >
-                  <TableCell className="font-mono text-sm">
-                    {spec.specId.slice(0, 16)}
+                  <TableCell className="font-medium text-sm max-w-[200px] truncate" title={spec.specId}>
+                    {spec.specId}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className="text-blue-600 font-medium">
+                      {(spec.estimatedHoursManual ?? 0).toFixed(1)}h
+                    </span>
                   </TableCell>
                   <TableCell className="text-right">
                     {formatCurrency(spec.actualCost)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <span className={spec.metrics.costSavings >= 0 ? 'text-green-600' : 'text-red-600'}>
+                    <span className={spec.metrics.costSavings >= 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
                       {formatCurrency(spec.metrics.costSavings)}
                     </span>
                   </TableCell>
@@ -119,9 +124,6 @@ export function ROITable({ specs, isLoading, onSpecClick }: ROITableProps) {
                     ) : (
                       <XCircle className="h-4 w-4 text-red-500 mx-auto" />
                     )}
-                  </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
-                    +{spec.linesAdded}/-{spec.linesRemoved}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(spec.completedAt || spec.createdAt)}

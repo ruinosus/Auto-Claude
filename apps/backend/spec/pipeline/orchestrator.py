@@ -173,11 +173,12 @@ class SpecOrchestrator:
                 return
 
             # Summarize the output
-            summary = await summarize_phase_output(
+            summary, _trace_id = await summarize_phase_output(
                 phase_name,
                 phase_output,
                 model="claude-sonnet-4-5-20250929",  # Use Sonnet for efficiency
                 target_words=500,
+                project_dir=self.project_dir,  # Pass project dir for analytics tracking
             )
 
             if summary:

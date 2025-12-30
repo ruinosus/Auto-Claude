@@ -51,6 +51,13 @@ try:
 except ImportError:
     ROI_TRACKING_AVAILABLE = False
 
+# Langfuse ROI score publishing (optional - graceful degradation)
+try:
+    from analytics.roi_score_publisher import publish_roi_scores
+    LANGFUSE_ROI_AVAILABLE = True
+except ImportError:
+    LANGFUSE_ROI_AVAILABLE = False
+
 # Configuration
 MAX_QA_ITERATIONS = 50
 MAX_CONSECUTIVE_ERRORS = 3  # Stop after 3 consecutive errors without progress
@@ -61,37 +68,71 @@ MAX_CONSECUTIVE_ERRORS = 3  # Stop after 3 consecutive errors without progress
 # =============================================================================
 
 
-async def _update_qa_roi(project_dir: Path, spec_id: str, qa_passed: bool, qa_attempts: int):
-    """Update ROI record with QA attempt results."""
-    if not ROI_TRACKING_AVAILABLE or not is_tracking_enabled():
-        return
+async def _update_qa_roi(
+    project_dir: Path,
+    spec_id: str,
+    qa_passed: bool,
+    qa_attempts: int,
+    analytics_project_dir: Path | None = None,
+    trace_id: str | None = None,
+):
+    """Update ROI record with QA attempt results and publish to Langfuse."""
+    # Use analytics_project_dir for DB path (original project, not worktree)
+    effective_dir = analytics_project_dir or project_dir
 
-    try:
-        from datetime import datetime
+    # 1. Update local analytics storage (if available)
+    if ROI_TRACKING_AVAILABLE and is_tracking_enabled():
+        try:
+            from datetime import datetime
 
-        db_path = str(project_dir / ".auto-claude" / "analytics.db")
-        storage = get_analytics_storage(db_path)
+            db_path = str(effective_dir / ".auto-claude" / "analytics.db")
+            storage = get_analytics_storage(db_path)
 
-        # Get existing ROI data
-        existing = await storage.get_spec_roi(spec_id)
+            # Get existing ROI data
+            existing = await storage.get_spec_roi(spec_id)
 
-        if existing:
-            # Update existing record
-            existing['qa_attempts'] = qa_attempts
-            existing['qa_passed'] = qa_passed
-            if qa_passed:
-                existing['completed_at'] = datetime.utcnow().isoformat()
-            await storage.save_spec_roi(spec_id, existing)
-        else:
-            # Create new record with just QA data
-            await storage.save_spec_roi(spec_id, {
-                'qa_attempts': qa_attempts,
-                'qa_passed': qa_passed,
-                'completed_at': datetime.utcnow().isoformat() if qa_passed else None
-            })
-    except Exception as e:
-        # Don't fail QA loop if ROI tracking fails
-        debug("qa_loop", f"Failed to update ROI tracking: {e}")
+            if existing:
+                # Update existing record
+                existing['qa_attempts'] = qa_attempts
+                existing['qa_passed'] = qa_passed
+                if qa_passed:
+                    existing['completed_at'] = datetime.utcnow().isoformat()
+                await storage.save_spec_roi(spec_id, existing)
+            else:
+                # Create new record with just QA data
+                await storage.save_spec_roi(spec_id, {
+                    'project_id': project_dir.name,  # Use project directory name as project_id
+                    'qa_attempts': qa_attempts,
+                    'qa_passed': qa_passed,
+                    'completed_at': datetime.utcnow().isoformat() if qa_passed else None
+                })
+        except Exception as e:
+            # Don't fail QA loop if ROI tracking fails
+            debug("qa_loop", f"Failed to update local ROI tracking: {e}")
+
+    # 2. Publish ROI scores to Langfuse (if available)
+    if LANGFUSE_ROI_AVAILABLE:
+        try:
+            result = await publish_roi_scores(
+                spec_id=spec_id,
+                project_dir=effective_dir,
+                qa_attempts=qa_attempts,
+                qa_passed=qa_passed,
+                trace_id=trace_id,  # Pass trace_id directly to avoid search
+            )
+            if result.get('success'):
+                debug(
+                    "qa_loop",
+                    f"Published ROI scores to Langfuse",
+                    trace_id=result.get('trace_id'),
+                    roi_percentage=result.get('roi_percentage'),
+                    business_value=result.get('business_value_usd'),
+                )
+            else:
+                debug("qa_loop", f"Failed to publish ROI scores: {result.get('error')}")
+        except Exception as e:
+            # Don't fail QA loop if Langfuse publishing fails
+            debug("qa_loop", f"Failed to publish ROI scores to Langfuse: {e}")
 
 
 # =============================================================================
@@ -104,6 +145,7 @@ async def run_qa_validation_loop(
     spec_dir: Path,
     model: str,
     verbose: bool = False,
+    analytics_project_dir: Path | None = None,
 ) -> bool:
     """
     Run the full QA validation loop.
@@ -120,10 +162,11 @@ async def run_qa_validation_loop(
     - No-test project handling
 
     Args:
-        project_dir: Project root directory
+        project_dir: Project root directory (may be worktree)
         spec_dir: Spec directory
         model: Claude model to use
         verbose: Whether to show detailed output
+        analytics_project_dir: Original project directory for analytics DB (use when in worktree)
 
     Returns:
         True if QA approved, False otherwise
@@ -191,7 +234,7 @@ async def run_qa_validation_loop(
         )
 
         async with fix_client:
-            fix_status, fix_response = await run_qa_fixer_session(
+            fix_status, fix_response, _ = await run_qa_fixer_session(
                 fix_client,
                 spec_dir,
                 0,
@@ -238,6 +281,7 @@ async def run_qa_validation_loop(
     qa_iteration = get_qa_iteration_count(spec_dir)
     consecutive_errors = 0
     last_error_context = None  # Track error for self-correction feedback
+    trace_id = None  # Will hold the last trace ID from QA sessions
 
     while qa_iteration < MAX_QA_ITERATIONS:
         qa_iteration += 1
@@ -275,7 +319,7 @@ async def run_qa_validation_loop(
 
         async with client:
             debug("qa_loop", "Running QA reviewer agent session...")
-            status, response = await run_qa_agent_session(
+            status, response, trace_id = await run_qa_agent_session(
                 client,
                 project_dir,  # Pass project_dir for capability-based tool injection
                 spec_dir,
@@ -284,6 +328,8 @@ async def run_qa_validation_loop(
                 verbose,
                 previous_error=last_error_context,  # Pass error context for self-correction
             )
+            if trace_id:
+                debug("qa_loop", f"QA reviewer trace: {trace_id}")
 
         iteration_duration = time_module.time() - iteration_start
         debug(
@@ -331,9 +377,9 @@ async def run_qa_validation_loop(
                 await linear_qa_approved(spec_dir)
                 print("\nLinear: Task marked as QA approved, awaiting human review")
 
-            # Update ROI tracking with QA result
+            # Update ROI tracking with QA result (use trace_id from QA session)
             spec_id = spec_dir.name
-            await _update_qa_roi(project_dir, spec_id, qa_passed=True, qa_attempts=qa_iteration)
+            await _update_qa_roi(project_dir, spec_id, qa_passed=True, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
 
             return True
 
@@ -405,7 +451,7 @@ async def run_qa_validation_loop(
 
                 # Update ROI tracking with QA result (recurring issues - failed)
                 spec_id = spec_dir.name
-                await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration)
+                await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
 
                 return False
 
@@ -439,9 +485,11 @@ async def run_qa_validation_loop(
             )
 
             async with fix_client:
-                fix_status, fix_response = await run_qa_fixer_session(
+                fix_status, fix_response, fix_trace_id = await run_qa_fixer_session(
                     fix_client, spec_dir, qa_iteration, verbose
                 )
+                if fix_trace_id:
+                    debug("qa_loop", f"QA fixer trace: {fix_trace_id}")
 
             debug(
                 "qa_loop",
@@ -516,7 +564,7 @@ async def run_qa_validation_loop(
 
                 # Update ROI tracking with QA result (max errors - failed)
                 spec_id = spec_dir.name
-                await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration)
+                await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
 
                 return False
 
@@ -580,7 +628,7 @@ async def run_qa_validation_loop(
 
     # Update ROI tracking with QA result (max iterations - failed)
     spec_id = spec_dir.name
-    await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration)
+    await _update_qa_roi(project_dir, spec_id, qa_passed=False, qa_attempts=qa_iteration, analytics_project_dir=analytics_project_dir, trace_id=trace_id)
 
     print("\nManual intervention required.")
     return False

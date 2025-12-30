@@ -16,7 +16,23 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-# Analytics tracking
+# Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Legacy analytics tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -33,11 +49,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def create_claude_resolver() -> AIResolver:
+def create_claude_resolver(project_dir: Path | None = None) -> AIResolver:
     """
     Create an AIResolver configured to use Claude via the Agent SDK.
 
     Uses the same OAuth token pattern as the rest of the auto-claude framework.
+
+    Args:
+        project_dir: Project directory for analytics tracking. If not provided,
+                    falls back to current working directory.
 
     Returns:
         Configured AIResolver instance
@@ -76,13 +96,15 @@ def create_claude_resolver() -> AIResolver:
                 )
             )
 
-            # Initialize tracker for this merge resolution
+            # Use project_dir if provided, otherwise fall back to cwd
+            effective_project_dir = project_dir or Path.cwd()
+            project_id = effective_project_dir.name
+
+            # Initialize legacy tracker for this merge resolution
             tracker = None
             if TRACKING_AVAILABLE and is_tracking_enabled():
                 try:
-                    # Use current directory as project ID for merge resolution
-                    project_id = Path.cwd().name
-                    db_path = str(Path.cwd() / ".auto-claude" / "analytics.db")
+                    db_path = str(effective_project_dir / ".auto-claude" / "analytics.db")
                     tracker = create_feature_tracker(
                         project_id=project_id,
                         feature_type=FEATURE_INSIGHTS,
@@ -92,8 +114,29 @@ def create_claude_resolver() -> AIResolver:
                 except Exception:
                     tracker = None
 
+            # Check Langfuse availability
+            use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+            trace_ctx = None
+            langfuse_ctx_obj = None
+            if use_langfuse and trace_context:
+                # Truncate user prompt for trace input
+                trace_input = user[:2000] + "..." if len(user) > 2000 else user
+                trace_ctx = trace_context(
+                    name=f"merge-resolver-{project_id}",
+                    project_id=project_id,  # Required for data isolation filtering
+                    agent_type="merge_resolver",
+                    metadata={
+                        "model": "sonnet",
+                        "operation": "merge_resolution",
+                    },
+                    tags=["merge", "conflict_resolution"],
+                    input_data={"prompt": trace_input, "operation": "merge_resolution"},
+                )
+                langfuse_ctx_obj = trace_ctx.__enter__()
+                logger.info(f"Langfuse trace created for merge resolution")
+
             try:
-                # Start tracking session
+                # Start legacy tracking session
                 if tracker:
                     try:
                         await tracker.start_session()
@@ -106,10 +149,13 @@ def create_claude_resolver() -> AIResolver:
                     await client.query(user)
 
                     response_text = ""
+                    total_input_tokens = 0
+                    total_output_tokens = 0
+
                     async for msg in client.receive_response():
                         msg_type = type(msg).__name__
 
-                        # Track message for analytics
+                        # Track message for legacy analytics
                         if tracker and msg_type in ("AssistantMessage", "ResultMessage"):
                             try:
                                 await tracker.track_message(msg)
@@ -121,10 +167,48 @@ def create_claude_resolver() -> AIResolver:
                                 if hasattr(block, "text"):
                                     response_text += block.text
 
-                    # Finalize tracking
+                        # Extract usage for Langfuse
+                        if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
+                            usage = msg.usage
+                            if hasattr(usage, "input_tokens"):
+                                total_input_tokens = usage.input_tokens
+                            if hasattr(usage, "output_tokens"):
+                                total_output_tokens = usage.output_tokens
+
+                    # Log to Langfuse if enabled
+                    if use_langfuse and LANGFUSE_AVAILABLE:
+                        try:
+                            log_generation_in_current_trace(
+                                name="merge-resolution",
+                                model="sonnet",
+                                input_data=user[:500] + "..." if len(user) > 500 else user,
+                                output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                                usage={
+                                    "input": total_input_tokens,
+                                    "output": total_output_tokens,
+                                    "total": total_input_tokens + total_output_tokens,
+                                },
+                                metadata={"operation": "merge_resolution"},
+                            )
+                        except Exception:
+                            pass
+
+                    # Finalize legacy tracking
                     if tracker:
                         try:
                             await tracker.finalize()
+                        except Exception:
+                            pass
+
+                    # Finalize Langfuse trace
+                    if trace_ctx:
+                        try:
+                            # Set trace output before exiting
+                            if langfuse_ctx_obj:
+                                trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                                langfuse_ctx_obj.set_output({"response": trace_output})
+                            trace_ctx.__exit__(None, None, None)
+                            flush_langfuse()
                         except Exception:
                             pass
 
@@ -136,6 +220,13 @@ def create_claude_resolver() -> AIResolver:
                 if tracker:
                     try:
                         await tracker.finalize()
+                    except Exception:
+                        pass
+                # Finalize Langfuse on error
+                if trace_ctx:
+                    try:
+                        trace_ctx.__exit__(None, None, None)
+                        flush_langfuse()
                     except Exception:
                         pass
                 logger.error(f"Claude SDK call failed: {e}")

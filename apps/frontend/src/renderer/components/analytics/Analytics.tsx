@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAnalyticsStore } from '../../stores/analytics-store';
-import { useAnalyticsData } from '../../hooks/useAnalyticsData';
+import { useProjectStore } from '../../stores/project-store';
+import { useUsageSummary, useAnalyticsHealth } from '../../hooks/useAnalyticsQuery';
 import { OverviewCards } from './OverviewCards';
 import { CostChart } from './CostChart';
 import { TokensChart } from './TokensChart';
@@ -19,50 +19,40 @@ interface AnalyticsProps {
 
 export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
   const { t } = useTranslation(['analytics']);
-  const data = useAnalyticsStore((state) => state.data);
   const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
-  const [dbPath, setDbPath] = useState<string | null>(null);
-  const [isLoadingPath, setIsLoadingPath] = useState(true);
   const [activeTab, setActiveTab] = useState<'usage' | 'roi'>(initialTab);
+
+  // Get project name from store - this is the directory name used by the backend
+  // IMPORTANT: Backend uses directory name (project.name), not UUID (project.id)
+  const projects = useProjectStore((state) => state.projects);
+  const project = projects.find((p) => p.id === projectId);
+  const projectName = project?.name;
+
+  // Fetch data from Langfuse via FastAPI service
+  // Use project name (directory name) for data isolation, not UUID
+  const health = useAnalyticsHealth();
+  const usageSummary = useUsageSummary(
+    { project_id: projectName },
+    { enabled: !!projectName && health.data?.langfuse_configured }
+  );
 
   // Sync activeTab with initialTab when navigation changes
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
 
-  // Fetch analytics DB path and budget from Electron
+  // Fetch saved budget from Electron
   useEffect(() => {
-    if (!projectId) {
-      setIsLoadingPath(false);
-      setDbPath(null);
-      return;
-    }
+    if (!projectId) return;
 
-    setIsLoadingPath(true);
-
-    // Fetch both DB path and saved budget in parallel
-    Promise.all([
-      window.electronAPI.getAnalyticsDbPath(projectId),
-      window.electronAPI.getBudget(projectId)
-    ])
-      .then(([dbPathResult, budgetResult]) => {
-        if (dbPathResult.success) {
-          setDbPath(dbPathResult.data ?? null);
-        } else {
-          console.error('Failed to get analytics DB path:', dbPathResult.error);
-          setDbPath(null);
-        }
-
+    window.electronAPI.getBudget(projectId)
+      .then((budgetResult) => {
         if (budgetResult.success && budgetResult.data !== undefined) {
           setBudgetLimit(budgetResult.data);
         }
       })
-      .catch((error) => {
-        console.error('Error fetching analytics data:', error);
-        setDbPath(null);
-      })
-      .finally(() => {
-        setIsLoadingPath(false);
+      .catch((error: Error) => {
+        console.error('Error fetching budget:', error);
       });
   }, [projectId]);
 
@@ -82,76 +72,97 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
       });
   };
 
-  // Start polling (polling interval is now handled by analytics service in main process)
-  useAnalyticsData(dbPath);
-
-  if (isLoadingPath) {
+  // Loading state
+  if (health.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Loading Analytics...</h2>
-          <p className="text-muted-foreground">Initializing analytics dashboard</p>
+          <h2 className="text-2xl font-bold mb-2">{t('analytics:loading.title', 'Loading Analytics...')}</h2>
+          <p className="text-muted-foreground">{t('analytics:loading.subtitle', 'Checking Langfuse connection')}</p>
         </div>
       </div>
     );
   }
 
-  if (!projectId) {
+  if (!projectId || !projectName) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">No Project Selected</h2>
-          <p className="text-muted-foreground">Please select a project to view analytics</p>
+          <h2 className="text-2xl font-bold mb-2">{t('analytics:noProject.title', 'No Project Selected')}</h2>
+          <p className="text-muted-foreground">{t('analytics:noProject.subtitle', 'Please select a project to view analytics')}</p>
         </div>
       </div>
     );
   }
 
-  if (!dbPath) {
+  // Check if Langfuse is configured
+  if (!health.data?.langfuse_configured) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">No Analytics Data</h2>
+          <h2 className="text-2xl font-bold mb-2">{t('analytics:notConfigured.title', 'Langfuse Not Configured')}</h2>
           <p className="text-muted-foreground">
-            Analytics database not found. Run some tasks to generate analytics data.
+            {t('analytics:notConfigured.subtitle', 'Please configure Langfuse in Settings to view analytics.')}
           </p>
         </div>
       </div>
     );
   }
 
-  if (!data) {
+  if (usageSummary.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Loading Analytics...</h2>
-          <p className="text-muted-foreground">Fetching analytics data</p>
+          <h2 className="text-2xl font-bold mb-2">{t('analytics:loading.title', 'Loading Analytics...')}</h2>
+          <p className="text-muted-foreground">{t('analytics:loading.fetching', 'Fetching analytics data')}</p>
         </div>
       </div>
     );
   }
 
-  // Transform data for TokensChart (by spec)
-  const tokensChartData = Object.entries(
-    data.conversations.reduce((acc, conv) => {
-      if (!acc[conv.specId]) {
-        acc[conv.specId] = { spec_id: conv.specId, input_tokens: 0, output_tokens: 0 };
-      }
-      acc[conv.specId].input_tokens += conv.tokens.input;
-      acc[conv.specId].output_tokens += conv.tokens.output;
-      return acc;
-    }, {} as Record<string, { spec_id: string; input_tokens: number; output_tokens: number }>)
-  ).map(([_, value]) => value);
+  // Get data from Langfuse
+  const data = usageSummary.data;
 
-  // Get model distribution from chartData (calculated in AnalyticsService)
-  const modelDistribution = data.chartData.modelDistribution || [];
+  // Transform cost over time data for CostChart
+  const costChartData = (data?.cost_over_time || []).map((point) => ({
+    timestamp: point.date, // Already in YYYY-MM-DD format
+    cost: point.cost
+  }));
 
-  // Get session duration from chartData (calculated in AnalyticsService)
-  const sessionDurationData = data.chartData.sessionDuration || [];
+  // Transform tokens by spec data for TokensChart
+  const tokensChartData = (data?.tokens_by_spec || []).map((item) => ({
+    spec_id: item.spec_id,
+    input_tokens: item.input_tokens,
+    output_tokens: item.output_tokens
+  }));
+
+  // Transform model distribution for ModelDistributionChart
+  const modelDistribution = (data?.model_distribution || []).map((item) => ({
+    model: item.model,
+    count: item.generation_count,
+    percentage: item.percentage
+  }));
+
+  // Transform duration by phase for SessionDurationChart (ms to seconds)
+  const sessionDurationData = (data?.duration_by_phase || []).map((item) => ({
+    phase: item.phase,
+    avg_duration_seconds: item.avg_duration_ms / 1000
+  }));
+
+  // Transform feature usage for FeatureUsageSection (mapping to expected format)
+  const featureUsage = (data?.feature_usage || []).map((item) => ({
+    featureType: item.feature,
+    totalSessions: item.trace_count,
+    totalCost: item.cost,
+    totalInputTokens: Math.floor(item.tokens * 0.3), // Estimate: 30% input tokens
+    totalOutputTokens: Math.floor(item.tokens * 0.7), // Estimate: 70% output tokens
+    lastUsed: null as Date | null // Not available from summary endpoint
+  }));
 
   // Calculate budget progress
-  const budgetProgress = budgetLimit ? (data.totalCost / budgetLimit) * 100 : undefined;
-  const budgetRemaining = budgetLimit ? budgetLimit - data.totalCost : 0;
+  const totalCost = data?.total_cost || 0;
+  const budgetProgress = budgetLimit ? (totalCost / budgetLimit) * 100 : undefined;
+  const budgetRemaining = budgetLimit ? budgetLimit - totalCost : 0;
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -170,14 +181,18 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
           </TabsList>
 
           <TabsContent value="usage" className="mt-6">
-            {/* Existing usage analytics content */}
+            {/* Usage analytics content - powered by Langfuse */}
             <div className="space-y-6">
               {/* Overview Cards */}
               <OverviewCards
                 data={{
-                  totalCost: data.totalCost,
-                  totalTokens: data.totalTokens,
-                  activeSessions: data.activeSessions,
+                  totalCost: totalCost,
+                  totalTokens: {
+                    // Estimate input/output split from total (30% input, 70% output is typical for LLM interactions)
+                    input: Math.floor((data?.total_tokens || 0) * 0.3),
+                    output: Math.floor((data?.total_tokens || 0) * 0.7)
+                  },
+                  activeSessions: data?.active_specs || 0,
                   budgetRemaining: budgetRemaining,
                   budgetProgress: budgetProgress
                 }}
@@ -186,10 +201,7 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
               {/* Charts Grid */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <CostChart
-                  data={data.chartData.costOverTime.map((point) => ({
-                    timestamp: point.timestamp.toISOString(),
-                    cost: point.value
-                  }))}
+                  data={costChartData}
                   budgetLimit={budgetLimit}
                 />
                 <TokensChart data={tokensChartData} />
@@ -198,16 +210,16 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
               </div>
 
               {/* Feature Usage Section */}
-              {data.featureUsage && data.featureUsage.length > 0 && (
+              {featureUsage.length > 0 && (
                 <FeatureUsageSection
-                  featureUsage={data.featureUsage}
-                  totalCost={data.totalCost}
+                  featureUsage={featureUsage}
+                  totalCost={totalCost}
                 />
               )}
 
               {/* Budget Manager */}
               <BudgetManager
-                currentCost={data.totalCost}
+                currentCost={totalCost}
                 budgetLimit={budgetLimit}
                 onBudgetChange={handleBudgetChange}
               />
@@ -215,7 +227,7 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
           </TabsContent>
 
           <TabsContent value="roi" className="mt-6">
-            <ROIDashboard projectId={projectId} />
+            <ROIDashboard projectName={projectName} />
           </TabsContent>
         </Tabs>
       </div>

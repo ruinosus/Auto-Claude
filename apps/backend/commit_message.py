@@ -20,7 +20,23 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-# Analytics tracking
+# Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Legacy analytics tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -239,6 +255,25 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
         )
     )
 
+    # Check Langfuse availability
+    use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+    project_id = project_dir.name if project_dir else Path.cwd().name
+    trace_name = f"commit-message-{project_id}"
+
+    # Create Langfuse trace context if available
+    trace_ctx = None
+    if use_langfuse and trace_context:
+        trace_ctx = trace_context(
+            name=trace_name,
+            project_id=project_id,  # Required for data isolation filtering
+            agent_type="commit_message_generator",
+            metadata={
+                "model": "claude-haiku-4-5-20251001",
+            },
+            tags=["commit_message", "haiku"],
+        )
+        trace_ctx.__enter__()
+
     try:
         # Start tracking session
         if tracker:
@@ -251,6 +286,9 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
             await client.query(prompt)
 
             response_text = ""
+            total_input_tokens = 0
+            total_output_tokens = 0
+
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
 
@@ -266,10 +304,44 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
                         if hasattr(block, "text"):
                             response_text += block.text
 
+                # Extract usage for Langfuse
+                if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
+                    usage = msg.usage
+                    if hasattr(usage, "input_tokens"):
+                        total_input_tokens = usage.input_tokens
+                    if hasattr(usage, "output_tokens"):
+                        total_output_tokens = usage.output_tokens
+
+            # Log to Langfuse if enabled
+            if use_langfuse and LANGFUSE_AVAILABLE:
+                try:
+                    log_generation_in_current_trace(
+                        name="commit-message",
+                        model="claude-haiku-4-5-20251001",
+                        input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                        output_data=response_text,
+                        usage={
+                            "input": total_input_tokens,
+                            "output": total_output_tokens,
+                            "total": total_input_tokens + total_output_tokens,
+                        },
+                        metadata={"operation": "commit_message"},
+                    )
+                except Exception:
+                    pass
+
             # Finalize tracking
             if tracker:
                 try:
                     await tracker.finalize()
+                except Exception:
+                    pass
+
+            # Finalize Langfuse trace
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
                 except Exception:
                     pass
 
@@ -281,6 +353,13 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
         if tracker:
             try:
                 await tracker.finalize()
+            except Exception:
+                pass
+        # Finalize Langfuse trace on error
+        if trace_ctx:
+            try:
+                trace_ctx.__exit__(None, None, None)
+                flush_langfuse()
             except Exception:
                 pass
         logger.error(f"Claude SDK call failed: {e}")

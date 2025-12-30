@@ -156,8 +156,16 @@
     "hoursSaved": "Hours Saved",
     "roiPercentage": "ROI",
     "successRate": "Success Rate",
+    "teamEfficiency": "Team Efficiency",
+    "capacityGained": "Additional capacity gained",
     "hours": "hrs",
     "specs": "specs",
+    "fteMonths": "FTE-months",
+    "workDays": "work days",
+    "vsHumanCost": "vs {{cost}} human cost",
+    "exceptionalROI": "Exceptional ROI!",
+    "aiCost": "AI cost: {{cost}}",
+    "completedTasks": "{{count}} tasks completed",
     "chart": {
       "title": "ROI by Spec",
       "description": "Return on investment for recent specs",
@@ -177,15 +185,22 @@
       "description": "Detailed ROI metrics for each spec",
       "noData": "No specs found",
       "spec": "Spec",
-      "actualCost": "Actual Cost",
+      "hoursSaved": "Hours Saved",
+      "actualCost": "AI Cost",
       "savings": "Savings",
       "roi": "ROI",
       "status": "Status",
-      "linesChanged": "Lines",
       "date": "Date"
     },
     "dashboard": {
-      "retry": "Retry"
+      "retry": "Retry",
+      "loading": "Loading ROI data...",
+      "error": "Failed to load ROI data",
+      "notConfigured": "Langfuse Not Configured",
+      "configureMessage": "To view ROI analytics, configure Langfuse in your environment variables:",
+      "dataSource": "Data source",
+      "refresh": "Refresh",
+      "hourlyRate": "Rate: ${{rate}}/hr"
     }
   }
 }

@@ -19,6 +19,18 @@ from task_logger import (
 
 from .criteria import get_qa_signoff_status
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+        get_session_trace_name,
+    )
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+
 # =============================================================================
 # QA REVIEWER SESSION
 # =============================================================================
@@ -32,7 +44,7 @@ async def run_qa_agent_session(
     max_iterations: int,
     verbose: bool = False,
     previous_error: dict | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, str | None]:
     """
     Run a QA reviewer agent session.
 
@@ -46,7 +58,7 @@ async def run_qa_agent_session(
         previous_error: Error context from previous iteration for self-correction
 
     Returns:
-        (status, response_text) where status is:
+        (status, response_text, langfuse_trace_id) where status is:
         - "approved" if QA approves
         - "rejected" if QA finds issues
         - "error" if an error occurred
@@ -162,12 +174,43 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
             f"\n⚠️  Retry with self-correction context (attempt {previous_error.get('consecutive_errors', 1) + 1})"
         )
 
+    # Initialize Langfuse trace context
+    spec_id = spec_dir.name
+    langfuse_trace_id = None
+    langfuse_ctx = None
+    # Derive project_id from project_dir for data isolation
+    project_id = project_dir.name if project_dir else None
+
+    # Create Langfuse trace if available
+    if LANGFUSE_AVAILABLE and is_langfuse_ready():
+        trace_name = get_session_trace_name(spec_id, "qa_reviewer", qa_session)
+        # Truncate prompt for trace input
+        trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+        langfuse_ctx = trace_context(
+            name=trace_name,
+            spec_id=spec_id,
+            project_id=project_id,
+            agent_type="qa_reviewer",
+            metadata={
+                "qa_session": qa_session,
+                "max_iterations": max_iterations,
+                "has_previous_error": previous_error is not None,
+            },
+            tags=["qa", "reviewer"],
+            input_data={"prompt": trace_input, "qa_session": qa_session},
+        )
+        ctx = langfuse_ctx.__enter__()
+        if ctx:
+            langfuse_trace_id = ctx.trace_id
+            debug("qa_reviewer", f"Langfuse trace created: {langfuse_trace_id}")
+
     try:
         debug("qa_reviewer", "Sending query to Claude SDK...")
         await client.query(prompt)
         debug_success("qa_reviewer", "Query sent successfully")
 
         response_text = ""
+        generation_count = 0
         debug("qa_reviewer", "Starting to receive response stream...")
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
@@ -192,6 +235,26 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
                                 LogEntryType.TEXT,
                                 LogPhase.VALIDATION,
                                 print_to_console=False,
+                            )
+
+                        # Log generation to Langfuse
+                        if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                            generation_count += 1
+                            # Extract usage if available
+                            usage = None
+                            if hasattr(msg, "usage"):
+                                usage = {
+                                    "input": getattr(msg.usage, "input_tokens", 0),
+                                    "output": getattr(msg.usage, "output_tokens", 0),
+                                    "total": getattr(msg.usage, "input_tokens", 0) + getattr(msg.usage, "output_tokens", 0),
+                                }
+                            log_generation_in_current_trace(
+                                name=f"qa-reviewer-gen-{generation_count}",
+                                model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
+                                input_data=prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                usage=usage,
+                                metadata={"qa_session": qa_session, "generation": generation_count}
                             )
                     elif block_type == "ToolUseBlock" and hasattr(block, "name"):
                         tool_name = block.name
@@ -307,10 +370,10 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
         )
         if status and status.get("status") == "approved":
             debug_success("qa_reviewer", "QA APPROVED")
-            return "approved", response_text
+            return "approved", response_text, langfuse_trace_id
         elif status and status.get("status") == "rejected":
             debug_error("qa_reviewer", "QA REJECTED")
-            return "rejected", response_text
+            return "rejected", response_text, langfuse_trace_id
         else:
             # Agent didn't update the status properly - provide detailed error
             debug_error(
@@ -334,7 +397,7 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
             if error_details:
                 error_msg += f" ({'; '.join(error_details)})"
 
-            return "error", error_msg
+            return "error", error_msg, langfuse_trace_id
 
     except Exception as e:
         debug_error(
@@ -345,4 +408,16 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
         print(f"Error during QA session: {e}")
         if task_logger:
             task_logger.log_error(f"QA session error: {e}", LogPhase.VALIDATION)
-        return "error", str(e)
+        return "error", str(e), langfuse_trace_id
+
+    finally:
+        # Close Langfuse trace context
+        if langfuse_ctx:
+            try:
+                # Set trace output before exiting
+                if ctx:
+                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                    ctx.set_output({"response": trace_output, "tool_count": tool_count})
+                langfuse_ctx.__exit__(None, None, None)
+            except Exception as e:
+                debug("qa_reviewer", f"Failed to close Langfuse trace: {e}")

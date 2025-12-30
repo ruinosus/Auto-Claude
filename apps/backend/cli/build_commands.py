@@ -231,6 +231,7 @@ def handle_build_command(
                 max_iterations=max_iterations,
                 verbose=verbose,
                 source_spec_dir=source_spec_dir,  # For syncing progress back to main project
+                analytics_project_dir=project_dir,  # Original project dir for analytics DB
             )
         )
         debug_success("run.py", "Agent execution completed")
@@ -252,6 +253,7 @@ def handle_build_command(
                         spec_dir=spec_dir,
                         model=model,
                         verbose=verbose,
+                        analytics_project_dir=project_dir,  # Original project dir for analytics DB
                     )
                 )
 
@@ -441,6 +443,7 @@ def _handle_build_interrupt(
                     model=model,
                     max_iterations=max_iterations,
                     verbose=verbose,
+                    analytics_project_dir=project_dir,  # Original project dir for analytics DB
                 )
             )
             # Build completed or was interrupted again - exit

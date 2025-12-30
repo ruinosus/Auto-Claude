@@ -24,7 +24,23 @@ from typing import Any
 backend_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_path))
 
-# Import feature tracker for token tracking
+# Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Legacy feature tracker for token tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -60,18 +76,22 @@ class ClaudeBatchAnalyzer:
         """Initialize Claude batch analyzer."""
         self.project_dir = project_dir or Path.cwd()
         self.tracker = None
+        self.project_id = self.project_dir.name
+
+        # Check Langfuse availability
+        self.langfuse_enabled = LANGFUSE_AVAILABLE and is_langfuse_ready()
+        logger.info(f"[BATCH_ANALYZER] Langfuse integration: available={LANGFUSE_AVAILABLE}, ready={self.langfuse_enabled}")
 
         # Initialize feature tracker for token usage
         if TRACKING_AVAILABLE and is_tracking_enabled():
-            project_id = self.project_dir.name
             db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
             self.tracker = create_feature_tracker(
-                project_id=project_id,
+                project_id=self.project_id,
                 feature_type=FEATURE_ISSUE_TRIAGE,
                 db_path=db_path,
                 metadata={"component": "batch_analyzer"}
             )
-            logger.info(f"[BATCH_ANALYZER] Feature tracker initialized for project: {project_id}")
+            logger.info(f"[BATCH_ANALYZER] Feature tracker initialized for project: {self.project_id}")
 
         logger.info(
             f"[BATCH_ANALYZER] Initialized with project_dir: {self.project_dir}"
@@ -81,11 +101,14 @@ class ClaudeBatchAnalyzer:
         self,
         issues: list[dict[str, Any]],
         max_batch_size: int = 5,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         """
         Analyze a group of issues and suggest optimal batches.
 
         Uses a SINGLE Claude call to analyze all issues and group them intelligently.
+
+        Returns:
+            Tuple of (batches_list, langfuse_trace_id)
 
         Args:
             issues: List of issues to analyze
@@ -172,6 +195,31 @@ Respond with JSON only:
   ]
 }}"""
 
+        # Create Langfuse trace context if available
+        trace_name = f"batch-analyzer-{self.project_id}"
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        langfuse_trace_id = None
+        if self.langfuse_enabled and trace_context:
+            # Truncate prompt for trace input
+            trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+            trace_ctx = trace_context(
+                name=trace_name,
+                project_id=self.project_id,  # Required for data isolation filtering
+                agent_type="batch_analyzer",
+                metadata={
+                    "issues_count": len(issues),
+                    "max_batch_size": max_batch_size,
+                    "model": "claude-sonnet-4-20250514",
+                },
+                tags=["github", "batch_analyzer", "issue_triage"],
+                input_data={"prompt": trace_input, "issues_count": len(issues)},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            if langfuse_ctx_obj:
+                langfuse_trace_id = langfuse_ctx_obj.trace_id
+            logger.info(f"[BATCH_ANALYZER] Langfuse trace created: {trace_name}, trace_id: {langfuse_trace_id}")
+
         try:
             ensure_claude_code_oauth_token()
 
@@ -202,11 +250,30 @@ Respond with JSON only:
 
             async with client:
                 await client.query(prompt)
-                response_text = await self._collect_response(client)
+                response_text, total_input_tokens, total_output_tokens = await self._collect_response_with_usage(client)
 
             logger.info(
                 f"[BATCH_ANALYZER] Received response: {len(response_text)} chars"
             )
+
+            # Log to Langfuse if enabled
+            if self.langfuse_enabled and LANGFUSE_AVAILABLE:
+                try:
+                    log_generation_in_current_trace(
+                        name="batch-analyzer",
+                        model="claude-sonnet-4-20250514",
+                        input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                        output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                        usage={
+                            "input": total_input_tokens,
+                            "output": total_output_tokens,
+                            "total": total_input_tokens + total_output_tokens,
+                        },
+                        metadata={"issues_count": len(issues)},
+                    )
+                    logger.info("[BATCH_ANALYZER] Logged generation to Langfuse")
+                except Exception as e:
+                    logger.error(f"[BATCH_ANALYZER] Failed to log to Langfuse: {e}")
 
             # Parse JSON response
             result = self._parse_json_response(response_text)
@@ -219,13 +286,26 @@ Respond with JSON only:
                 except Exception as e:
                     logger.error(f"[BATCH_ANALYZER] Failed to finalize tracking: {e}")
 
+            # Finalize Langfuse trace
+            if trace_ctx:
+                try:
+                    # Set trace output before exiting
+                    if langfuse_ctx_obj:
+                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                        langfuse_ctx_obj.set_output({"response": trace_output, "batches_count": len(result.get("batches", []))})
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                    logger.info("[BATCH_ANALYZER] Langfuse trace finalized")
+                except Exception as e:
+                    logger.error(f"[BATCH_ANALYZER] Failed to finalize Langfuse: {e}")
+
             if "batches" in result:
-                return result["batches"]
+                return result["batches"], langfuse_trace_id
             else:
                 logger.warning(
                     "[BATCH_ANALYZER] No batches in response, using fallback"
                 )
-                return self._fallback_batches(issues)
+                return self._fallback_batches(issues), langfuse_trace_id
 
         except Exception as e:
             logger.error(f"[BATCH_ANALYZER] Error: {e}")
@@ -240,7 +320,15 @@ Respond with JSON only:
                 except Exception:
                     pass
 
-            return self._fallback_batches(issues)
+            # Finalize Langfuse trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
+
+            return self._fallback_batches(issues), langfuse_trace_id
 
     def _parse_json_response(self, response_text: str) -> dict[str, Any]:
         """Parse JSON from Claude response, handling various formats."""
@@ -282,9 +370,15 @@ Respond with JSON only:
             for issue in issues
         ]
 
-    async def _collect_response(self, client: Any) -> str:
-        """Collect text response from Claude client."""
+    async def _collect_response_with_usage(self, client: Any) -> tuple[str, int, int]:
+        """Collect text response and usage data from Claude client.
+
+        Returns:
+            Tuple of (response_text, input_tokens, output_tokens)
+        """
         response_text = ""
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
@@ -301,7 +395,15 @@ Respond with JSON only:
                     if type(block).__name__ == "TextBlock" and hasattr(block, "text"):
                         response_text += block.text
 
-        return response_text
+            # Extract usage for Langfuse
+            if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
+                usage = msg.usage
+                if hasattr(usage, "input_tokens"):
+                    total_input_tokens = usage.input_tokens
+                if hasattr(usage, "output_tokens"):
+                    total_output_tokens = usage.output_tokens
+
+        return response_text, total_input_tokens, total_output_tokens
 
 
 class BatchStatus(str, Enum):
@@ -731,7 +833,7 @@ class IssueBatcher:
             # Use Claude to analyze this group and suggest batches
             logger.info(f"Analyzing pre-group of {len(group)} issues with Claude agent")
 
-            batch_suggestions = await self.analyzer.analyze_and_batch_issues(
+            batch_suggestions, _trace_id = await self.analyzer.analyze_and_batch_issues(
                 issues=group,
                 max_batch_size=self.max_batch_size,
             )

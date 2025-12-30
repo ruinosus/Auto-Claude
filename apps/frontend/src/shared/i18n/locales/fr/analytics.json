@@ -156,8 +156,16 @@
     "hoursSaved": "Heures économisées",
     "roiPercentage": "ROI",
     "successRate": "Taux de réussite",
+    "teamEfficiency": "Efficacité d'équipe",
+    "capacityGained": "Capacité additionnelle gagnée",
     "hours": "hrs",
     "specs": "specs",
+    "fteMonths": "ETP-mois",
+    "workDays": "jours ouvrés",
+    "vsHumanCost": "vs {{cost}} coût humain",
+    "exceptionalROI": "ROI exceptionnel !",
+    "aiCost": "Coût IA : {{cost}}",
+    "completedTasks": "{{count}} tâches complétées",
     "chart": {
       "title": "ROI par spec",
       "description": "Retour sur investissement pour les specs récentes",
@@ -177,15 +185,22 @@
       "description": "Métriques ROI détaillées pour chaque spec",
       "noData": "Aucun spec trouvé",
       "spec": "Spec",
-      "actualCost": "Coût réel",
+      "hoursSaved": "Heures économisées",
+      "actualCost": "Coût IA",
       "savings": "Économies",
       "roi": "ROI",
       "status": "Statut",
-      "linesChanged": "Lignes",
       "date": "Date"
     },
     "dashboard": {
-      "retry": "Réessayer"
+      "retry": "Réessayer",
+      "loading": "Chargement des données ROI...",
+      "error": "Échec du chargement des données ROI",
+      "notConfigured": "Langfuse non configuré",
+      "configureMessage": "Pour voir les analyses ROI, configurez Langfuse dans vos variables d'environnement :",
+      "hourlyRate": "Taux: ${{rate}}/h",
+      "dataSource": "Source de données",
+      "refresh": "Actualiser"
     }
   }
 }

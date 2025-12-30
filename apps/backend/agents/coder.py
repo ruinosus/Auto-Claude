@@ -75,6 +75,7 @@ async def run_autonomous_agent(
     max_iterations: int | None = None,
     verbose: bool = False,
     source_spec_dir: Path | None = None,
+    analytics_project_dir: Path | None = None,
 ) -> None:
     """
     Run the autonomous agent loop with automatic memory management.
@@ -89,6 +90,7 @@ async def run_autonomous_agent(
         max_iterations: Maximum number of iterations (None for unlimited)
         verbose: Whether to show detailed output
         source_spec_dir: Original spec directory in main project (for syncing from worktree)
+        analytics_project_dir: Original project directory for analytics DB (when using worktrees)
     """
     # Initialize recovery manager (handles memory persistence)
     recovery_manager = RecoveryManager(spec_dir, project_dir)
@@ -340,10 +342,18 @@ async def run_autonomous_agent(
             task_logger.set_subtask(subtask_id)
             task_logger.set_session(iteration)
 
+        # Determine agent type based on phase
+        agent_type = "planner" if is_planning_phase else "coder"
+
         # Run session with async context manager
         async with client:
-            status, response = await run_agent_session(
-                client, prompt, spec_dir, verbose, phase=current_log_phase
+            status, response, trace_id = await run_agent_session(
+                client, prompt, spec_dir, verbose, phase=current_log_phase,
+                spec_id=spec_dir.name,
+                session_num=iteration,
+                project_dir=project_dir,
+                analytics_project_dir=analytics_project_dir or project_dir,
+                agent_type=agent_type,
             )
 
         # === POST-SESSION PROCESSING (100% reliable) ===

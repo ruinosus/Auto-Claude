@@ -1,0 +1,65 @@
+# Langfuse Local Development Setup
+# =================================
+#
+# This docker-compose file sets up Langfuse with PostgreSQL for local development.
+# Langfuse provides LLM observability, tracing, and analytics.
+#
+# Usage:
+#   cd infra/langfuse
+#   docker-compose up -d
+#
+# Access:
+#   - Langfuse UI: http://localhost:3001
+#   - Create account on first access
+#   - Get API keys from Project Settings > API Keys
+#
+# Documentation: https://langfuse.com/docs/deployment/local
+
+version: "3.9"
+
+services:
+  langfuse-db:
+    image: postgres:15-alpine
+    container_name: langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: langfuse
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: auto-claude-langfuse-secret-change-in-production
+      NEXTAUTH_URL: http://localhost:3001
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      SALT: auto-claude-salt-change-in-production
+      TELEMETRY_ENABLED: "false"
+      NEXT_PUBLIC_SIGN_UP_DISABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/public/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  langfuse_postgres_data:
+    driver: local

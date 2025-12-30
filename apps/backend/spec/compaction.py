@@ -12,7 +12,23 @@ from pathlib import Path
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from core.auth import get_sdk_env_vars, require_auth_token
 
-# Analytics tracking
+# Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Legacy analytics tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -30,7 +46,7 @@ async def summarize_phase_output(
     model: str = "claude-sonnet-4-5-20250929",
     target_words: int = 500,
     project_dir: Path | None = None,
-) -> str:
+) -> tuple[str, str | None]:
     """
     Summarize phase output to a concise summary for subsequent phases.
 
@@ -44,7 +60,7 @@ async def summarize_phase_output(
         project_dir: Project directory for analytics tracking (optional)
 
     Returns:
-        Concise summary of key findings, decisions, and insights from the phase
+        Tuple of (summary_text, langfuse_trace_id)
     """
     # Validate auth token
     require_auth_token()
@@ -100,6 +116,34 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
         )
     )
 
+    # Check Langfuse availability
+    use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+    project_id = project_dir.name if project_dir else Path.cwd().name
+    trace_name = f"compaction-{project_id}-{phase_name}"
+
+    # Create Langfuse trace context if available
+    trace_ctx = None
+    langfuse_ctx_obj = None
+    langfuse_trace_id = None
+    if use_langfuse and trace_context:
+        # Truncate prompt for trace input
+        trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+        trace_ctx = trace_context(
+            name=trace_name,
+            project_id=project_id,  # Required for data isolation filtering
+            agent_type="phase_compaction",
+            metadata={
+                "phase_name": phase_name,
+                "model": model,
+                "target_words": target_words,
+            },
+            tags=["compaction", f"phase:{phase_name}"],
+            input_data={"prompt": trace_input, "phase_name": phase_name},
+        )
+        langfuse_ctx_obj = trace_ctx.__enter__()
+        if langfuse_ctx_obj:
+            langfuse_trace_id = langfuse_ctx_obj.trace_id
+
     try:
         # Start tracking session
         if tracker:
@@ -111,6 +155,9 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
         async with client:
             await client.query(prompt)
             response_text = ""
+            total_input_tokens = 0
+            total_output_tokens = 0
+
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
 
@@ -126,6 +173,32 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
                         if hasattr(block, "text"):
                             response_text += block.text
 
+                # Extract usage for Langfuse
+                if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
+                    usage = msg.usage
+                    if hasattr(usage, "input_tokens"):
+                        total_input_tokens = usage.input_tokens
+                    if hasattr(usage, "output_tokens"):
+                        total_output_tokens = usage.output_tokens
+
+            # Log to Langfuse if enabled
+            if use_langfuse and LANGFUSE_AVAILABLE:
+                try:
+                    log_generation_in_current_trace(
+                        name=f"compaction-{phase_name}",
+                        model=model,
+                        input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                        output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                        usage={
+                            "input": total_input_tokens,
+                            "output": total_output_tokens,
+                            "total": total_input_tokens + total_output_tokens,
+                        },
+                        metadata={"phase_name": phase_name},
+                    )
+                except Exception:
+                    pass
+
             # Finalize tracking
             if tracker:
                 try:
@@ -133,7 +206,19 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
                 except Exception:
                     pass
 
-            return response_text.strip()
+            # Finalize Langfuse trace
+            if trace_ctx:
+                try:
+                    # Set trace output before exiting
+                    if langfuse_ctx_obj:
+                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                        langfuse_ctx_obj.set_output({"response": trace_output})
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
+
+            return response_text.strip(), langfuse_trace_id
     except Exception as e:
         # Finalize tracking on error
         if tracker:
@@ -141,12 +226,19 @@ Be concise and use bullet points. Skip boilerplate and meta-commentary.
                 await tracker.finalize()
             except Exception:
                 pass
+        # Finalize Langfuse trace on error
+        if trace_ctx:
+            try:
+                trace_ctx.__exit__(None, None, None)
+                flush_langfuse()
+            except Exception:
+                pass
         # Fallback: return truncated raw output on error
         # This ensures we don't block the pipeline if summarization fails
         fallback = phase_output[:2000]
         if len(phase_output) > 2000:
             fallback += "\n\n[... truncated ...]"
-        return f"[Summarization failed: {e}]\n\n{fallback}"
+        return f"[Summarization failed: {e}]\n\n{fallback}", langfuse_trace_id
 
 
 def format_phase_summaries(summaries: dict[str, str]) -> str:

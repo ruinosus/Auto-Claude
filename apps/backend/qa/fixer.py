@@ -17,6 +17,18 @@ from task_logger import (
 
 from .criteria import get_qa_signoff_status
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+        get_session_trace_name,
+    )
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+
 # Configuration
 QA_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -44,7 +56,7 @@ async def run_qa_fixer_session(
     spec_dir: Path,
     fix_session: int,
     verbose: bool = False,
-) -> tuple[str, str]:
+) -> tuple[str, str, str | None]:
     """
     Run a QA fixer agent session.
 
@@ -55,7 +67,7 @@ async def run_qa_fixer_session(
         verbose: Whether to show detailed output
 
     Returns:
-        (status, response_text) where status is:
+        (status, response_text, langfuse_trace_id) where status is:
         - "fixed" if fixes were applied
         - "error" if an error occurred
     """
@@ -82,7 +94,7 @@ async def run_qa_fixer_session(
     fix_request_file = spec_dir / "QA_FIX_REQUEST.md"
     if not fix_request_file.exists():
         debug_error("qa_fixer", "QA_FIX_REQUEST.md not found")
-        return "error", "QA_FIX_REQUEST.md not found"
+        return "error", "QA_FIX_REQUEST.md not found", None
 
     # Load fixer prompt
     prompt = load_qa_fixer_prompt()
@@ -95,12 +107,46 @@ async def run_qa_fixer_session(
     prompt += f"\n**IMPORTANT**: All spec files are located in: `{spec_dir}/`\n"
     prompt += f"The fix request file is at: `{spec_dir}/QA_FIX_REQUEST.md`\n"
 
+    # Initialize Langfuse trace context
+    spec_id = spec_dir.name
+    langfuse_trace_id = None
+    langfuse_ctx = None
+    # Derive project_id from spec_dir path for data isolation
+    # spec_dir is typically: /path/to/project/.auto-claude/specs/XXX-name
+    # We go up 3 levels to get the project dir
+    try:
+        project_id = spec_dir.parent.parent.parent.name
+    except Exception:
+        project_id = None
+
+    # Create Langfuse trace if available
+    if LANGFUSE_AVAILABLE and is_langfuse_ready():
+        trace_name = get_session_trace_name(spec_id, "qa_fixer", fix_session)
+        # Truncate prompt for trace input
+        trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+        langfuse_ctx = trace_context(
+            name=trace_name,
+            spec_id=spec_id,
+            project_id=project_id,
+            agent_type="qa_fixer",
+            metadata={
+                "fix_session": fix_session,
+            },
+            tags=["qa", "fixer"],
+            input_data={"prompt": trace_input, "fix_session": fix_session},
+        )
+        ctx = langfuse_ctx.__enter__()
+        if ctx:
+            langfuse_trace_id = ctx.trace_id
+            debug("qa_fixer", f"Langfuse trace created: {langfuse_trace_id}")
+
     try:
         debug("qa_fixer", "Sending query to Claude SDK...")
         await client.query(prompt)
         debug_success("qa_fixer", "Query sent successfully")
 
         response_text = ""
+        generation_count = 0
         debug("qa_fixer", "Starting to receive response stream...")
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
@@ -125,6 +171,26 @@ async def run_qa_fixer_session(
                                 LogEntryType.TEXT,
                                 LogPhase.VALIDATION,
                                 print_to_console=False,
+                            )
+
+                        # Log generation to Langfuse
+                        if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                            generation_count += 1
+                            # Extract usage if available
+                            usage = None
+                            if hasattr(msg, "usage"):
+                                usage = {
+                                    "input": getattr(msg.usage, "input_tokens", 0),
+                                    "output": getattr(msg.usage, "output_tokens", 0),
+                                    "total": getattr(msg.usage, "input_tokens", 0) + getattr(msg.usage, "output_tokens", 0),
+                                }
+                            log_generation_in_current_trace(
+                                name=f"qa-fixer-gen-{generation_count}",
+                                model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
+                                input_data=prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                usage=usage,
+                                metadata={"fix_session": fix_session, "generation": generation_count}
                             )
                     elif block_type == "ToolUseBlock" and hasattr(block, "name"):
                         tool_name = block.name
@@ -244,11 +310,11 @@ async def run_qa_fixer_session(
         )
         if status and status.get("ready_for_qa_revalidation"):
             debug_success("qa_fixer", "Fixes applied, ready for QA revalidation")
-            return "fixed", response_text
+            return "fixed", response_text, langfuse_trace_id
         else:
             # Fixer didn't update the status properly, but we'll trust it worked
             debug_success("qa_fixer", "Fixes assumed applied (status not updated)")
-            return "fixed", response_text
+            return "fixed", response_text, langfuse_trace_id
 
     except Exception as e:
         debug_error(
@@ -259,4 +325,16 @@ async def run_qa_fixer_session(
         print(f"Error during fixer session: {e}")
         if task_logger:
             task_logger.log_error(f"QA fixer error: {e}", LogPhase.VALIDATION)
-        return "error", str(e)
+        return "error", str(e), langfuse_trace_id
+
+    finally:
+        # Close Langfuse trace context
+        if langfuse_ctx:
+            try:
+                # Set trace output before exiting
+                if ctx:
+                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                    ctx.set_output({"response": trace_output, "tool_count": tool_count})
+                langfuse_ctx.__exit__(None, None, None)
+            except Exception as e:
+                debug("qa_fixer", f"Failed to close Langfuse trace: {e}")

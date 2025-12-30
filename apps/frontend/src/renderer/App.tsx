@@ -15,6 +15,7 @@ import {
   horizontalListSortingStrategy
 } from '@dnd-kit/sortable';
 import { TooltipProvider } from './components/ui/tooltip';
+import { QueryProvider } from './providers/QueryProvider';
 import { Button } from './components/ui/button';
 import {
   Dialog,
@@ -584,6 +585,7 @@ export function App() {
   };
 
   return (
+    <QueryProvider>
     <TooltipProvider>
       <ProactiveSwapListener />
       <div className="flex h-screen bg-background">
@@ -897,5 +899,6 @@ export function App() {
         <AppUpdateNotification />
       </div>
     </TooltipProvider>
+    </QueryProvider>
   );
 }

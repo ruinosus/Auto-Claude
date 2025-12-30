@@ -22,7 +22,24 @@ from phase_config import get_thinking_budget
 from ui import print_status
 from debug import debug, debug_error
 
-# Import feature tracker for token tracking
+# Import Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Import legacy feature tracker for token tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -84,7 +101,16 @@ class IdeationGenerator:
         # Generate a project ID from the project directory
         self.project_id = self.project_dir.name
 
-        # Feature tracker for token usage
+        # Check Langfuse availability
+        self.langfuse_enabled = LANGFUSE_AVAILABLE and is_langfuse_ready()
+        debug(
+            "ideation_generator",
+            "Langfuse integration status",
+            langfuse_available=LANGFUSE_AVAILABLE,
+            langfuse_ready=self.langfuse_enabled,
+        )
+
+        # Legacy feature tracker for token usage (backwards compatibility)
         self.tracker = None
         if TRACKING_AVAILABLE and is_tracking_enabled():
             db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
@@ -94,7 +120,7 @@ class IdeationGenerator:
                 db_path=db_path,
                 metadata={"model": self.model, "thinking_level": self.thinking_level}
             )
-            debug("ideation_generator", "Feature tracker initialized", project_id=self.project_id)
+            debug("ideation_generator", "Legacy feature tracker initialized", project_id=self.project_id)
 
     async def run_agent(
         self,
@@ -126,20 +152,50 @@ class IdeationGenerator:
             max_thinking_tokens=self.thinking_budget,
         )
 
-        # Start tracking session if tracker is available
+        # Start legacy tracking session if tracker is available
         if self.tracker:
             try:
                 self.tracker.update_metadata("prompt_file", prompt_file)
                 await self.tracker.start_session()
-                debug("ideation_generator", "Feature tracking session started")
+                debug("ideation_generator", "Legacy feature tracking session started")
             except Exception as e:
                 debug_error("ideation_generator", f"Failed to start tracking session: {e}")
+
+        # Derive ideation type from prompt file name
+        ideation_type = prompt_file.replace(".md", "").replace("ideation_", "")
+        trace_name = f"ideation-{self.project_id}-{ideation_type}"
+
+        # Create Langfuse trace context if available
+        # IMPORTANT: project_id MUST be passed as parameter (not in metadata) for data isolation
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        if self.langfuse_enabled and trace_context:
+            # Truncate prompt for trace input
+            trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+            trace_ctx = trace_context(
+                name=trace_name,
+                project_id=self.project_id,  # Required for data isolation filtering
+                agent_type=f"ideation_{ideation_type}",
+                metadata={
+                    "prompt_file": prompt_file,
+                    "model": self.model,
+                    "thinking_level": self.thinking_level,
+                    "max_ideas": self.max_ideas_per_type,
+                },
+                tags=["ideation", f"type:{ideation_type}"],
+                input_data={"prompt": trace_input, "ideation_type": ideation_type},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            debug("ideation_generator", f"Langfuse trace created: {trace_name}")
 
         try:
             async with client:
                 await client.query(prompt)
 
                 response_text = ""
+                total_input_tokens = 0
+                total_output_tokens = 0
+
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
 
@@ -162,28 +218,73 @@ class IdeationGenerator:
                                 print(f"\n[Tool: {block.name}]", flush=True)
 
                     # Track result message for final totals
-                    if self.tracker and msg_type == "ResultMessage":
-                        try:
-                            await self.tracker.track_message(msg)
-                        except Exception as e:
-                            debug_error("ideation_generator", f"Failed to track result: {e}")
+                    if msg_type == "ResultMessage":
+                        if self.tracker:
+                            try:
+                                await self.tracker.track_message(msg)
+                            except Exception as e:
+                                debug_error("ideation_generator", f"Failed to track result: {e}")
+
+                        # Extract usage for Langfuse
+                        if hasattr(msg, "usage") and msg.usage:
+                            usage = msg.usage
+                            if hasattr(usage, "input_tokens"):
+                                total_input_tokens = usage.input_tokens
+                            if hasattr(usage, "output_tokens"):
+                                total_output_tokens = usage.output_tokens
 
                 print()
 
-                # Finalize tracking
+                # Log to Langfuse if enabled
+                if self.langfuse_enabled and LANGFUSE_AVAILABLE:
+                    try:
+                        log_generation_in_current_trace(
+                            name=f"ideation-{ideation_type}",
+                            model=self.model,
+                            input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                            output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                            usage={
+                                "input": total_input_tokens,
+                                "output": total_output_tokens,
+                                "total": total_input_tokens + total_output_tokens,
+                            },
+                            metadata={"prompt_file": prompt_file},
+                        )
+                        debug("ideation_generator", "Logged generation to Langfuse")
+                    except Exception as e:
+                        debug_error("ideation_generator", f"Failed to log to Langfuse: {e}")
+
+                # Finalize legacy tracking
                 if self.tracker:
                     try:
                         await self.tracker.finalize()
                         totals = self.tracker.get_totals()
                         debug(
                             "ideation_generator",
-                            "Feature tracking finalized",
+                            "Legacy feature tracking finalized",
                             total_cost_usd=totals.get("total_cost_usd", 0),
                             total_input_tokens=totals.get("total_input_tokens", 0),
                             total_output_tokens=totals.get("total_output_tokens", 0),
                         )
                     except Exception as e:
                         debug_error("ideation_generator", f"Failed to finalize tracking: {e}")
+
+                # Finalize Langfuse trace
+                if trace_ctx:
+                    try:
+                        # Set trace output before closing
+                        if langfuse_ctx_obj:
+                            trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                            langfuse_ctx_obj.set_output({
+                                "response": trace_output,
+                                "total_input_tokens": total_input_tokens,
+                                "total_output_tokens": total_output_tokens,
+                            })
+                        trace_ctx.__exit__(None, None, None)
+                        flush_langfuse()
+                        debug("ideation_generator", "Langfuse trace finalized")
+                    except Exception as e:
+                        debug_error("ideation_generator", f"Failed to finalize Langfuse: {e}")
 
                 return True, response_text
 
@@ -192,6 +293,15 @@ class IdeationGenerator:
             if self.tracker:
                 try:
                     await self.tracker.finalize()
+                except Exception:
+                    pass
+            # Still try to finalize Langfuse trace on error
+            if trace_ctx:
+                try:
+                    if langfuse_ctx_obj:
+                        langfuse_ctx_obj.set_output({"error": str(e)})
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
                 except Exception:
                     pass
             return False, str(e)

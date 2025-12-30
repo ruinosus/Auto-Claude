@@ -30,7 +30,23 @@ except ImportError:
     ClaudeAgentOptions = None
     ClaudeSDKClient = None
 
-# Analytics tracking
+# Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Legacy analytics tracking (backwards compatibility)
 try:
     from analytics import (
         create_feature_tracker,
@@ -42,9 +58,11 @@ except ImportError:
     TRACKING_AVAILABLE = False
 
 from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
+from phase_config import resolve_model_id
 
 # Default model for insight extraction (fast and cheap)
-DEFAULT_EXTRACTION_MODEL = "claude-3-5-haiku-latest"
+# Using "haiku" shorthand - resolved via resolve_model_id for Azure Foundry compatibility
+DEFAULT_EXTRACTION_MODEL = "haiku"
 
 # Maximum diff size to send to the LLM (avoid context limits)
 MAX_DIFF_CHARS = 15000
@@ -65,8 +83,12 @@ def is_extraction_enabled() -> bool:
 
 
 def get_extraction_model() -> str:
-    """Get the model to use for insight extraction."""
-    return os.environ.get("INSIGHT_EXTRACTOR_MODEL", DEFAULT_EXTRACTION_MODEL)
+    """Get the model to use for insight extraction.
+
+    Uses resolve_model_id for Azure Foundry compatibility.
+    """
+    model = os.environ.get("INSIGHT_EXTRACTOR_MODEL", DEFAULT_EXTRACTION_MODEL)
+    return resolve_model_id(model)
 
 
 # =============================================================================
@@ -348,7 +370,7 @@ def _format_attempt_history(attempts: list[dict]) -> str:
 
 async def run_insight_extraction(
     inputs: dict, project_dir: Path | None = None
-) -> dict | None:
+) -> tuple[dict | None, str | None]:
     """
     Run the insight extraction using Claude Agent SDK.
 
@@ -357,15 +379,15 @@ async def run_insight_extraction(
         project_dir: Project directory for SDK context (optional)
 
     Returns:
-        Extracted insights dict or None if failed
+        Tuple of (extracted_insights, langfuse_trace_id)
     """
     if not SDK_AVAILABLE:
         logger.warning("Claude SDK not available, skipping insight extraction")
-        return None
+        return None, None
 
     if not get_auth_token():
         logger.warning("No authentication token found, skipping insight extraction")
-        return None
+        return None, None
 
     # Ensure SDK can find the token
     ensure_claude_code_oauth_token()
@@ -390,6 +412,34 @@ async def run_insight_extraction(
             )
         except Exception:
             tracker = None
+
+    # Check Langfuse availability
+    use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+    project_id = project_dir.name if project_dir else Path.cwd().name
+    subtask_id = inputs.get("subtask_id", "unknown")
+    trace_name = f"insight-extraction-{project_id}-{subtask_id}"
+
+    # Create Langfuse trace context if available
+    trace_ctx = None
+    langfuse_ctx_obj = None
+    langfuse_trace_id = None
+    if use_langfuse and trace_context:
+        # Truncate prompt for trace input
+        trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+        trace_ctx = trace_context(
+            name=trace_name,
+            project_id=project_id,  # Required for data isolation filtering
+            agent_type="insight_extractor",
+            metadata={
+                "subtask_id": subtask_id,
+                "model": model,
+            },
+            tags=["insight_extraction", "haiku"],
+            input_data={"prompt": trace_input, "subtask_id": subtask_id},
+        )
+        langfuse_ctx_obj = trace_ctx.__enter__()
+        if langfuse_ctx_obj:
+            langfuse_trace_id = langfuse_ctx_obj.trace_id
 
     try:
         # Create a minimal SDK client for insight extraction
@@ -421,6 +471,9 @@ async def run_insight_extraction(
 
             # Collect the response
             response_text = ""
+            total_input_tokens = 0
+            total_output_tokens = 0
+
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
 
@@ -436,6 +489,32 @@ async def run_insight_extraction(
                         if hasattr(block, "text"):
                             response_text += block.text
 
+                # Extract usage for Langfuse
+                if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
+                    usage = msg.usage
+                    if hasattr(usage, "input_tokens"):
+                        total_input_tokens = usage.input_tokens
+                    if hasattr(usage, "output_tokens"):
+                        total_output_tokens = usage.output_tokens
+
+        # Log to Langfuse if enabled
+        if use_langfuse and LANGFUSE_AVAILABLE:
+            try:
+                log_generation_in_current_trace(
+                    name="insight-extraction",
+                    model=model,
+                    input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                    output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                    usage={
+                        "input": total_input_tokens,
+                        "output": total_output_tokens,
+                        "total": total_input_tokens + total_output_tokens,
+                    },
+                    metadata={"subtask_id": subtask_id},
+                )
+            except Exception:
+                pass
+
         # Finalize tracking
         if tracker:
             try:
@@ -443,8 +522,20 @@ async def run_insight_extraction(
             except Exception:
                 pass
 
+        # Finalize Langfuse trace
+        if trace_ctx:
+            try:
+                # Set trace output before exiting
+                if langfuse_ctx_obj:
+                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                    langfuse_ctx_obj.set_output({"response": trace_output})
+                trace_ctx.__exit__(None, None, None)
+                flush_langfuse()
+            except Exception:
+                pass
+
         # Parse JSON from response
-        return parse_insights(response_text)
+        return parse_insights(response_text), langfuse_trace_id
 
     except Exception as e:
         # Finalize tracking on error
@@ -453,8 +544,15 @@ async def run_insight_extraction(
                 await tracker.finalize()
             except Exception:
                 pass
+        # Finalize Langfuse trace on error
+        if trace_ctx:
+            try:
+                trace_ctx.__exit__(None, None, None)
+                flush_langfuse()
+            except Exception:
+                pass
         logger.warning(f"Insight extraction failed: {e}")
-        return None
+        return None, langfuse_trace_id
 
 
 def parse_insights(response_text: str) -> dict | None:
@@ -563,7 +661,7 @@ async def extract_session_insights(
         )
 
         # Run extraction
-        extracted = await run_insight_extraction(inputs, project_dir=project_dir)
+        extracted, _trace_id = await run_insight_extraction(inputs, project_dir=project_dir)
 
         if extracted:
             # Add metadata

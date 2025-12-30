@@ -19,7 +19,11 @@
     "package": "cd apps/frontend && npm run package",
     "package:mac": "cd apps/frontend && npm run package:mac",
     "package:win": "cd apps/frontend && npm run package:win",
-    "package:linux": "cd apps/frontend && npm run package:linux"
+    "package:linux": "cd apps/frontend && npm run package:linux",
+    "langfuse:start": "./infra/langfuse/setup.sh start",
+    "langfuse:stop": "./infra/langfuse/setup.sh stop",
+    "langfuse:status": "./infra/langfuse/setup.sh status",
+    "analytics:api": "./scripts/start-analytics-api.sh"
   },
   "engines": {
     "node": ">=24.0.0",

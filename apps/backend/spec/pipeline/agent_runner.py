@@ -20,6 +20,23 @@ from task_logger import (
     TaskLogger,
 )
 
+# Import Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        log_generation_in_current_trace,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
 
 class AgentRunner:
     """Manages agent execution with logging and error handling."""
@@ -44,6 +61,15 @@ class AgentRunner:
         self.model = model
         self.task_logger = task_logger
 
+        # Check Langfuse availability
+        self.langfuse_enabled = LANGFUSE_AVAILABLE and is_langfuse_ready()
+        debug(
+            "agent_runner",
+            "Langfuse integration status",
+            langfuse_available=LANGFUSE_AVAILABLE,
+            langfuse_ready=self.langfuse_enabled,
+        )
+
     async def run_agent(
         self,
         prompt_file: str,
@@ -51,7 +77,7 @@ class AgentRunner:
         interactive: bool = False,
         thinking_budget: int | None = None,
         prior_phase_summaries: str | None = None,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, str | None]:
         """Run an agent with the given prompt.
 
         Args:
@@ -62,7 +88,7 @@ class AgentRunner:
             prior_phase_summaries: Summaries from previous phases for context
 
         Returns:
-            Tuple of (success, response_text)
+            Tuple of (success, response_text, langfuse_trace_id)
         """
         debug_section("agent_runner", f"Spec Agent - {prompt_file}")
         debug(
@@ -78,7 +104,7 @@ class AgentRunner:
 
         if not prompt_path.exists():
             debug_error("agent_runner", f"Prompt file not found: {prompt_path}")
-            return False, f"Prompt not found: {prompt_path}"
+            return False, f"Prompt not found: {prompt_path}", None
 
         # Load prompt
         prompt = prompt_path.read_text()
@@ -126,6 +152,39 @@ class AgentRunner:
         message_count = 0
         tool_count = 0
 
+        # Derive phase name from prompt file
+        phase_name = prompt_file.replace(".md", "").replace("spec_", "")
+        spec_id = self.spec_dir.name
+        trace_name = f"spec-{spec_id}-{phase_name}"
+
+        # Create Langfuse trace context if available
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        langfuse_trace_id = None
+        if self.langfuse_enabled and trace_context:
+            # Derive project_id from project_dir
+            project_id = self.project_dir.name if self.project_dir else None
+            # Truncate prompt for trace input
+            trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
+            trace_ctx = trace_context(
+                name=trace_name,
+                spec_id=spec_id,  # Required for spec-level filtering
+                project_id=project_id,  # Required for data isolation filtering
+                agent_type=f"spec_{phase_name}",
+                metadata={
+                    "prompt_file": prompt_file,
+                    "model": self.model,
+                    "thinking_budget": thinking_budget,
+                    "interactive": interactive,
+                },
+                tags=["spec", f"phase:{phase_name}"],
+                input_data={"prompt": trace_input, "phase": phase_name},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            if langfuse_ctx_obj:
+                langfuse_trace_id = langfuse_ctx_obj.trace_id
+            debug("agent_runner", f"Langfuse trace created: {trace_name}", trace_id=langfuse_trace_id)
+
         try:
             async with client:
                 debug("agent_runner", "Sending query to Claude SDK...")
@@ -133,6 +192,9 @@ class AgentRunner:
                 debug_success("agent_runner", "Query sent successfully")
 
                 response_text = ""
+                total_input_tokens = 0
+                total_output_tokens = 0
+
                 debug("agent_runner", "Starting to receive response stream...")
                 async for msg in client.receive_response():
                     msg_type = type(msg).__name__
@@ -216,7 +278,35 @@ class AgentRunner:
                                     )
                                 current_tool = None
 
+                    # Extract usage for Langfuse
+                    if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
+                        usage = msg.usage
+                        if hasattr(usage, "input_tokens"):
+                            total_input_tokens = usage.input_tokens
+                        if hasattr(usage, "output_tokens"):
+                            total_output_tokens = usage.output_tokens
+
                 print()
+
+                # Log to Langfuse if enabled
+                if self.langfuse_enabled and LANGFUSE_AVAILABLE:
+                    try:
+                        log_generation_in_current_trace(
+                            name=f"spec-{phase_name}",
+                            model=self.model,
+                            input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
+                            output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                            usage={
+                                "input": total_input_tokens,
+                                "output": total_output_tokens,
+                                "total": total_input_tokens + total_output_tokens,
+                            },
+                            metadata={"prompt_file": prompt_file, "tool_count": tool_count},
+                        )
+                        debug("agent_runner", "Logged generation to Langfuse")
+                    except Exception as e:
+                        debug_error("agent_runner", f"Failed to log to Langfuse: {e}")
+
                 debug_success(
                     "agent_runner",
                     "Agent session completed successfully",
@@ -224,7 +314,25 @@ class AgentRunner:
                     tool_count=tool_count,
                     response_length=len(response_text),
                 )
-                return True, response_text
+
+                # Finalize Langfuse trace
+                if trace_ctx:
+                    try:
+                        # Set trace output before closing
+                        if langfuse_ctx_obj:
+                            trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                            langfuse_ctx_obj.set_output({
+                                "response": trace_output,
+                                "message_count": message_count,
+                                "tool_count": tool_count,
+                            })
+                        trace_ctx.__exit__(None, None, None)
+                        flush_langfuse()
+                        debug("agent_runner", "Langfuse trace finalized")
+                    except Exception as e:
+                        debug_error("agent_runner", f"Failed to finalize Langfuse: {e}")
+
+                return True, response_text, langfuse_trace_id
 
         except Exception as e:
             debug_error(
@@ -234,7 +342,16 @@ class AgentRunner:
             )
             if self.task_logger:
                 self.task_logger.log_error(f"Agent error: {e}", LogPhase.PLANNING)
-            return False, str(e)
+            # Still try to finalize Langfuse trace on error
+            if trace_ctx:
+                try:
+                    if langfuse_ctx_obj:
+                        langfuse_ctx_obj.set_output({"error": str(e)})
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
+            return False, str(e), langfuse_trace_id
 
     @staticmethod
     def _extract_tool_input_display(inp: dict) -> str | None:

@@ -132,6 +132,30 @@ npm run test:backend
 python apps/backend/validate_spec.py --spec-dir apps/backend/specs/001-feature --checkpoint all
 ```
 
+### Analytics (Langfuse)
+```bash
+# Start Langfuse (Docker - first time setup)
+npm run langfuse:start
+# Then: Create account at http://localhost:3001, get API keys
+
+# Start Analytics API (FastAPI)
+npm run analytics:api
+
+# Check Langfuse status
+npm run langfuse:status
+
+# Stop Langfuse
+npm run langfuse:stop
+```
+
+Configure in `apps/backend/.env`:
+```bash
+LANGFUSE_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-xxx
+LANGFUSE_SECRET_KEY=sk-lf-xxx
+LANGFUSE_HOST=http://localhost:3001
+```
+
 ### Releases
 ```bash
 # 1. Bump version on your branch (creates commit, no tag)
@@ -199,6 +223,15 @@ See [RELEASE.md](RELEASE.md) for detailed release process documentation.
   - Enabled with `ELECTRON_MCP_ENABLED=true` in `.env`
   - Allows QA agents to interact with running Electron app
   - See "End-to-End Testing" section for details
+
+**Analytics (Langfuse):**
+- **analytics/langfuse_integration.py** - Langfuse tracing for all agents
+- **analytics/api/** - FastAPI REST service for frontend
+  - `app.py` - FastAPI application
+  - `langfuse_client.py` - Langfuse v3 API wrapper
+  - `routes.py` - REST endpoints
+  - `roi_calculator.py` - Hybrid ROI calculation
+  - `models.py` - Pydantic models
 
 ### Agent Prompts (apps/backend/prompts/)
 
