@@ -254,3 +254,50 @@ def test_propagate_attributes_nested():
 
         # Back to level 1
         assert _get_propagated_metadata()["level"] == "1"
+
+
+def test_trace_sampling_rate():
+    """Test trace sampling configuration."""
+    from analytics.langfuse_integration import configure_sampling, get_sample_rate
+
+    # Default should be 1.0 (100%)
+    # Note: reset to default first
+    configure_sampling(1.0)
+    assert get_sample_rate() == 1.0
+
+    # Configure to 10%
+    configure_sampling(0.1)
+    assert get_sample_rate() == 0.1
+
+    # Reset to 100%
+    configure_sampling(1.0)
+    assert get_sample_rate() == 1.0
+
+
+def test_trace_sampling_skips_traces():
+    """Test that sampling actually skips traces."""
+    from analytics.langfuse_integration import configure_sampling, should_sample_trace
+
+    # At 0% sampling, all traces should be skipped
+    configure_sampling(0.0)
+
+    results = [should_sample_trace() for _ in range(100)]
+    assert all(r is False for r in results)
+
+    # At 100% sampling, all traces should be included
+    configure_sampling(1.0)
+
+    results = [should_sample_trace() for _ in range(100)]
+    assert all(r is True for r in results)
+
+
+def test_configure_sampling_invalid_rate():
+    """Test that invalid sampling rates raise error."""
+    import pytest
+    from analytics.langfuse_integration import configure_sampling
+
+    with pytest.raises(ValueError):
+        configure_sampling(1.5)  # > 1.0
+
+    with pytest.raises(ValueError):
+        configure_sampling(-0.1)  # < 0.0

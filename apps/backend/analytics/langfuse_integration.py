@@ -31,6 +31,7 @@ References:
 
 import os
 import logging
+import random
 from typing import Optional, Any, Dict, List
 from dataclasses import dataclass
 from datetime import datetime
@@ -97,6 +98,61 @@ def propagate_attributes(
         # Restore previous context
         _propagated_context.metadata = prev_metadata
         _propagated_context.tags = prev_tags
+
+
+# =============================================================================
+# Trace Sampling
+# =============================================================================
+
+_sample_rate: float = 1.0  # Default: sample 100%
+
+
+def configure_sampling(rate: float) -> None:
+    """
+    Configure the trace sampling rate.
+
+    Args:
+        rate: Float between 0.0 (sample 0%) and 1.0 (sample 100%)
+    """
+    global _sample_rate
+    if not 0.0 <= rate <= 1.0:
+        raise ValueError(f"Sample rate must be between 0.0 and 1.0, got {rate}")
+    _sample_rate = rate
+    logger.info(f"Trace sampling rate configured to {rate * 100:.0f}%")
+
+
+def get_sample_rate() -> float:
+    """Get the current trace sampling rate."""
+    return _sample_rate
+
+
+def should_sample_trace() -> bool:
+    """
+    Determine if the current trace should be sampled.
+
+    Returns:
+        True if trace should be recorded, False if it should be skipped
+    """
+    if _sample_rate >= 1.0:
+        return True
+    if _sample_rate <= 0.0:
+        return False
+    return random.random() < _sample_rate
+
+
+def get_sampling_from_env() -> float:
+    """
+    Get sampling rate from environment variable.
+
+    Environment variable: LANGFUSE_SAMPLE_RATE (default: 1.0)
+    """
+    rate_str = os.environ.get("LANGFUSE_SAMPLE_RATE", "1.0")
+    try:
+        rate = float(rate_str)
+        return max(0.0, min(1.0, rate))
+    except ValueError:
+        logger.warning(f"Invalid LANGFUSE_SAMPLE_RATE: {rate_str}, using 1.0")
+        return 1.0
 
 
 def is_langfuse_enabled() -> bool:
@@ -173,6 +229,11 @@ def init_langfuse() -> bool:
 
         _langfuse_initialized = True
         logger.info(f"Langfuse integration initialized (host: {host})")
+
+        # Apply sampling rate from environment
+        env_rate = get_sampling_from_env()
+        if env_rate < 1.0:
+            configure_sampling(env_rate)
 
         # Try to configure Claude Agent SDK instrumentation (optional)
         _configure_claude_sdk_instrumentation()
@@ -343,6 +404,12 @@ def trace_context(
     Yields:
         TraceContext object with trace_id and methods to update input/output
     """
+    # Check sampling
+    if not should_sample_trace():
+        logger.debug(f"Trace '{name}' skipped due to sampling (rate: {_sample_rate})")
+        yield None
+        return
+
     global _current_trace_id, _trace_context_stack
 
     span = None
