@@ -22,14 +22,18 @@ from .criteria import get_qa_signoff_status
 # Langfuse integration (optional - graceful degradation if not available)
 try:
     from analytics.langfuse_integration import (
+        init_langfuse,
         is_langfuse_ready,
         trace_context,
         log_generation_in_current_trace,
         get_session_trace_name,
     )
     LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
 except ImportError:
     LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
 
 # =============================================================================
 # QA REVIEWER SESSION
