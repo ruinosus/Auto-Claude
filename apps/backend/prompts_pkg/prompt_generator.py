@@ -15,6 +15,13 @@ This approach:
 import json
 from pathlib import Path
 
+# Prompt registry (optional - graceful degradation if not available)
+try:
+    from analytics.prompt_registry import get_agent_prompt
+    PROMPT_REGISTRY_AVAILABLE = True
+except ImportError:
+    PROMPT_REGISTRY_AVAILABLE = False
+
 
 def get_relative_spec_path(spec_dir: Path, project_dir: Path) -> str:
     """
@@ -248,16 +255,25 @@ def generate_planner_prompt(spec_dir: Path, project_dir: Path | None = None) -> 
     Returns:
         Planner prompt string
     """
-    # Load the full planner prompt from file
-    prompts_dir = Path(__file__).parent / "prompts"
-    planner_file = prompts_dir / "planner.md"
+    # Try prompt registry first (supports Langfuse), fallback to direct file read
+    prompt = None
+    if PROMPT_REGISTRY_AVAILABLE:
+        try:
+            prompt = get_agent_prompt("planner", label="production")
+        except FileNotFoundError:
+            pass  # Fall through to direct file read
 
-    if planner_file.exists():
-        prompt = planner_file.read_text()
-    else:
-        prompt = (
-            "Read spec.md and create implementation_plan.json with phases and subtasks."
-        )
+    if prompt is None:
+        # Load the full planner prompt from file
+        prompts_dir = Path(__file__).parent / "prompts"
+        planner_file = prompts_dir / "planner.md"
+
+        if planner_file.exists():
+            prompt = planner_file.read_text()
+        else:
+            prompt = (
+                "Read spec.md and create implementation_plan.json with phases and subtasks."
+            )
 
     # Use project_dir for relative paths, or infer from spec_dir
     if project_dir is None:

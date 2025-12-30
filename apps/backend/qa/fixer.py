@@ -33,6 +33,13 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
+# Prompt registry (optional - graceful degradation if not available)
+try:
+    from analytics.prompt_registry import get_agent_prompt
+    PROMPT_REGISTRY_AVAILABLE = True
+except ImportError:
+    PROMPT_REGISTRY_AVAILABLE = False
+
 # Configuration
 QA_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -44,6 +51,13 @@ QA_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 def load_qa_fixer_prompt() -> str:
     """Load the QA fixer agent prompt."""
+    # Try prompt registry first (supports Langfuse), fallback to direct file read
+    if PROMPT_REGISTRY_AVAILABLE:
+        try:
+            return get_agent_prompt("qa_fixer", label="production")
+        except FileNotFoundError:
+            pass  # Fall through to direct file read
+
     prompt_file = QA_PROMPTS_DIR / "qa_fixer.md"
     if not prompt_file.exists():
         raise FileNotFoundError(f"QA fixer prompt not found: {prompt_file}")

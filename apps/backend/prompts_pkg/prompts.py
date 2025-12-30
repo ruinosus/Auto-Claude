@@ -20,6 +20,13 @@ from .project_context import (
 # prompts/ is a sibling directory of prompts_pkg/, so go up one level first
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
+# Prompt registry (optional - graceful degradation if not available)
+try:
+    from analytics.prompt_registry import get_agent_prompt
+    PROMPT_REGISTRY_AVAILABLE = True
+except ImportError:
+    PROMPT_REGISTRY_AVAILABLE = False
+
 
 def get_planner_prompt(spec_dir: Path) -> str:
     """
@@ -32,15 +39,22 @@ def get_planner_prompt(spec_dir: Path) -> str:
     Returns:
         The planner prompt content with spec path
     """
-    prompt_file = PROMPTS_DIR / "planner.md"
+    # Try prompt registry first (supports Langfuse), fallback to direct file read
+    prompt = None
+    if PROMPT_REGISTRY_AVAILABLE:
+        try:
+            prompt = get_agent_prompt("planner", label="production")
+        except FileNotFoundError:
+            pass  # Fall through to direct file read
 
-    if not prompt_file.exists():
-        raise FileNotFoundError(
-            f"Planner prompt not found at {prompt_file}\n"
-            "Make sure the auto-claude/prompts/planner.md file exists."
-        )
-
-    prompt = prompt_file.read_text()
+    if prompt is None:
+        prompt_file = PROMPTS_DIR / "planner.md"
+        if not prompt_file.exists():
+            raise FileNotFoundError(
+                f"Planner prompt not found at {prompt_file}\n"
+                "Make sure the auto-claude/prompts/planner.md file exists."
+            )
+        prompt = prompt_file.read_text()
 
     # Inject spec directory information at the beginning
     spec_context = f"""## SPEC LOCATION
@@ -75,15 +89,22 @@ def get_coding_prompt(spec_dir: Path) -> str:
     Returns:
         The coding agent prompt content with spec path
     """
-    prompt_file = PROMPTS_DIR / "coder.md"
+    # Try prompt registry first (supports Langfuse), fallback to direct file read
+    prompt = None
+    if PROMPT_REGISTRY_AVAILABLE:
+        try:
+            prompt = get_agent_prompt("coder", label="production")
+        except FileNotFoundError:
+            pass  # Fall through to direct file read
 
-    if not prompt_file.exists():
-        raise FileNotFoundError(
-            f"Coding prompt not found at {prompt_file}\n"
-            "Make sure the auto-claude/prompts/coder.md file exists."
-        )
-
-    prompt = prompt_file.read_text()
+    if prompt is None:
+        prompt_file = PROMPTS_DIR / "coder.md"
+        if not prompt_file.exists():
+            raise FileNotFoundError(
+                f"Coding prompt not found at {prompt_file}\n"
+                "Make sure the auto-claude/prompts/coder.md file exists."
+            )
+        prompt = prompt_file.read_text()
 
     spec_context = f"""## SPEC LOCATION
 
@@ -203,15 +224,25 @@ def get_followup_planner_prompt(spec_dir: Path) -> str:
     Returns:
         The follow-up planner prompt content with paths injected
     """
-    prompt_file = PROMPTS_DIR / "followup_planner.md"
+    # Try prompt registry first (supports Langfuse), fallback to direct file read
+    # Note: followup_planner is not in the standard agent mapping, so we use the name directly
+    prompt = None
+    if PROMPT_REGISTRY_AVAILABLE:
+        try:
+            # Use "followup_planner" as the agent type since it's not in standard mapping
+            from analytics.prompt_registry import get_prompt_text
+            prompt = get_prompt_text("followup_planner", label="production")
+        except (FileNotFoundError, ImportError):
+            pass  # Fall through to direct file read
 
-    if not prompt_file.exists():
-        raise FileNotFoundError(
-            f"Follow-up planner prompt not found at {prompt_file}\n"
-            "Make sure the auto-claude/prompts/followup_planner.md file exists."
-        )
-
-    prompt = prompt_file.read_text()
+    if prompt is None:
+        prompt_file = PROMPTS_DIR / "followup_planner.md"
+        if not prompt_file.exists():
+            raise FileNotFoundError(
+                f"Follow-up planner prompt not found at {prompt_file}\n"
+                "Make sure the auto-claude/prompts/followup_planner.md file exists."
+            )
+        prompt = prompt_file.read_text()
 
     # Inject spec directory information at the beginning
     spec_context = f"""## SPEC LOCATION (FOLLOW-UP MODE)
@@ -281,6 +312,8 @@ def _load_prompt_file(filename: str) -> str:
     """
     Load a prompt file from the prompts directory.
 
+    Tries prompt registry first (for Langfuse integration), falls back to direct file read.
+
     Args:
         filename: Relative path to prompt file (e.g., "qa_reviewer.md" or "mcp_tools/electron_validation.md")
 
@@ -290,6 +323,15 @@ def _load_prompt_file(filename: str) -> str:
     Raises:
         FileNotFoundError: If prompt file doesn't exist
     """
+    # Try prompt registry first for standard prompts (not subdirectory files)
+    if PROMPT_REGISTRY_AVAILABLE and "/" not in filename:
+        try:
+            # Extract agent name from filename (e.g., "qa_reviewer.md" -> "qa_reviewer")
+            agent_name = filename.replace(".md", "")
+            return get_agent_prompt(agent_name, label="production")
+        except FileNotFoundError:
+            pass  # Fall through to direct file read
+
     prompt_file = PROMPTS_DIR / filename
     if not prompt_file.exists():
         raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
