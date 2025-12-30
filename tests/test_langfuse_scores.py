@@ -211,3 +211,46 @@ def test_save_qa_first_attempt_failed():
         result = save_qa_first_attempt("trace-456", False)
 
         assert result is True
+
+
+def test_propagate_attributes_context():
+    """Test metadata propagation context manager."""
+    with patch('analytics.langfuse_integration._langfuse_client') as mock_client:
+        mock_client.start_as_current_span = MagicMock()
+        mock_client.get_current_trace_id = MagicMock(return_value="trace-123")
+        mock_client.update_current_trace = MagicMock()
+
+        from analytics.langfuse_integration import propagate_attributes, _get_propagated_metadata, _get_propagated_tags
+
+        with propagate_attributes(
+            metadata={"spec_id": "001", "project": "test-project"},
+            tags=["kanban", "production"]
+        ):
+            # Check propagated values are available
+            meta = _get_propagated_metadata()
+            tags = _get_propagated_tags()
+
+            assert meta["spec_id"] == "001"
+            assert meta["project"] == "test-project"
+            assert "kanban" in tags
+            assert "production" in tags
+
+        # After context, values should be cleared
+        meta = _get_propagated_metadata()
+        assert "spec_id" not in meta
+
+
+def test_propagate_attributes_nested():
+    """Test nested metadata propagation."""
+    from analytics.langfuse_integration import propagate_attributes, _get_propagated_metadata
+
+    with propagate_attributes(metadata={"level": "1"}):
+        assert _get_propagated_metadata()["level"] == "1"
+
+        with propagate_attributes(metadata={"level": "2", "nested": True}):
+            meta = _get_propagated_metadata()
+            assert meta["level"] == "2"  # Overwritten
+            assert meta["nested"] == True  # Added
+
+        # Back to level 1
+        assert _get_propagated_metadata()["level"] == "1"

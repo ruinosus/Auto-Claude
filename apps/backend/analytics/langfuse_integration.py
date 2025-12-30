@@ -42,6 +42,62 @@ logger = logging.getLogger(__name__)
 _langfuse_initialized = False
 _langfuse_client = None
 
+# =============================================================================
+# Metadata Propagation
+# =============================================================================
+
+# Thread-local storage for propagated attributes
+import threading
+_propagated_context = threading.local()
+
+
+def _get_propagated_metadata() -> Dict:
+    """Get currently propagated metadata."""
+    return getattr(_propagated_context, 'metadata', {})
+
+
+def _get_propagated_tags() -> List[str]:
+    """Get currently propagated tags."""
+    return getattr(_propagated_context, 'tags', [])
+
+
+@contextmanager
+def propagate_attributes(
+    metadata: Optional[Dict] = None,
+    tags: Optional[List[str]] = None,
+):
+    """
+    Context manager for propagating metadata and tags to all nested traces.
+
+    Usage:
+        with propagate_attributes(
+            metadata={"spec_id": "001", "project": "my-project"},
+            tags=["kanban", "production"],
+        ):
+            # All traces created here inherit these attributes
+            await run_coder_session()
+            await run_qa_session()
+
+    Args:
+        metadata: Metadata dict to propagate
+        tags: Tags list to propagate
+    """
+    # Save previous context
+    prev_metadata = getattr(_propagated_context, 'metadata', {})
+    prev_tags = getattr(_propagated_context, 'tags', [])
+
+    try:
+        # Merge with new context
+        _propagated_context.metadata = {**prev_metadata, **(metadata or {})}
+        _propagated_context.tags = list(set(prev_tags + (tags or [])))
+
+        yield
+
+    finally:
+        # Restore previous context
+        _propagated_context.metadata = prev_metadata
+        _propagated_context.tags = prev_tags
+
 
 def is_langfuse_enabled() -> bool:
     """Check if Langfuse integration is enabled via environment variable."""
@@ -307,6 +363,16 @@ def trace_context(
                 trace_metadata["agent_type"] = agent_type
             trace_metadata["started_at"] = datetime.utcnow().isoformat()
 
+            # Merge with propagated context
+            propagated_meta = _get_propagated_metadata()
+            trace_metadata = {**propagated_meta, **trace_metadata}
+
+            propagated_tags = _get_propagated_tags()
+            if tags:
+                all_tags = list(set(propagated_tags + list(tags)))
+            else:
+                all_tags = propagated_tags if propagated_tags else None
+
             # Use start_as_current_span (correct API per Langfuse docs)
             span_cm = _langfuse_client.start_as_current_span(
                 name=name,
@@ -328,8 +394,8 @@ def trace_context(
 
             # Set trace-level attributes using update_current_trace
             try:
-                # Build tags
-                trace_tags = list(tags) if tags else []
+                # Build tags (start from merged all_tags)
+                trace_tags = list(all_tags) if all_tags else []
                 if project_id:
                     trace_tags.append(f"project:{project_id}")
                 if spec_id:
