@@ -29,6 +29,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Any, List, Tuple
 
+# Initialize Langfuse early (idempotent - safe to call multiple times)
+try:
+    from analytics.langfuse_integration import init_langfuse
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    _langfuse_init_result = False
+
 logger = logging.getLogger(__name__)
 
 
