@@ -26,6 +26,21 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
 try:
     from ...analysis.test_discovery import TestDiscovery
     from ...core.client import create_client
@@ -207,33 +222,77 @@ async def spawn_security_review(
             except Exception:
                 pass
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = project_root.name if project_root else None
+
+        # Create Langfuse trace if available
+        if LANGFUSE_AVAILABLE and is_langfuse_ready():
+            langfuse_ctx = trace_context(
+                name=f"pr-security-review-{pr_context.pr_number}",
+                spec_id=f"pr-{pr_context.pr_number}",
+                project_id=project_id,
+                agent_type="security_reviewer",
+                metadata={
+                    "pr_number": pr_context.pr_number,
+                    "files_count": len(files),
+                    "focus_areas": focus_areas,
+                },
+                tags=["github", "pr_review", "security"],
+                input_data={"prompt": full_prompt[:2000] if len(full_prompt) > 2000 else full_prompt},
+            )
+            ctx = langfuse_ctx.__enter__()
+            if ctx:
+                langfuse_trace_id = ctx.trace_id
+
         # Run review session
         result_text = ""
-        async with client:
-            await client.query(full_prompt)
+        generation_count = 0
+        try:
+            async with client:
+                await client.query(full_prompt)
 
-            async for msg in client.receive_response():
-                msg_type = type(msg).__name__
-                if msg_type in ("AssistantMessage", "ResultMessage"):
-                    await _track_session(tracker, msg)
-                if msg_type == "AssistantMessage" and hasattr(msg, "content"):
-                    for block in msg.content:
-                        if hasattr(block, "text"):
-                            result_text += block.text
+                async for msg in client.receive_response():
+                    msg_type = type(msg).__name__
+                    if msg_type in ("AssistantMessage", "ResultMessage"):
+                        await _track_session(tracker, msg)
+                    if msg_type == "AssistantMessage" and hasattr(msg, "content"):
+                        for block in msg.content:
+                            if hasattr(block, "text"):
+                                result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    log_generation_in_current_trace(
+                                        name=f"security-gen-{generation_count}",
+                                        model=model,
+                                        input_data=full_prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        metadata={"subagent": "security_review", "generation": generation_count}
+                                    )
 
-        # Finalize tracking
-        if tracker:
-            try:
-                await tracker.finalize()
-            except Exception:
-                pass
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                except Exception:
+                    pass
 
-        # Parse findings
-        findings = _parse_findings_from_response(result_text, source="security_agent")
-        logger.info(
-            f"[Orchestrator] Security review complete: {len(findings)} findings"
-        )
-        return findings
+            # Parse findings
+            findings = _parse_findings_from_response(result_text, source="security_agent")
+            logger.info(
+                f"[Orchestrator] Security review complete: {len(findings)} findings"
+            )
+            return findings
+
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     except Exception as e:
         logger.error(f"[Orchestrator] Security review failed: {e}")
@@ -308,29 +367,73 @@ async def spawn_quality_review(
             except Exception:
                 pass
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = project_root.name if project_root else None
+
+        # Create Langfuse trace if available
+        if LANGFUSE_AVAILABLE and is_langfuse_ready():
+            langfuse_ctx = trace_context(
+                name=f"pr-quality-review-{pr_context.pr_number}",
+                spec_id=f"pr-{pr_context.pr_number}",
+                project_id=project_id,
+                agent_type="quality_reviewer",
+                metadata={
+                    "pr_number": pr_context.pr_number,
+                    "files_count": len(files),
+                    "focus_areas": focus_areas,
+                },
+                tags=["github", "pr_review", "quality"],
+                input_data={"prompt": full_prompt[:2000] if len(full_prompt) > 2000 else full_prompt},
+            )
+            ctx = langfuse_ctx.__enter__()
+            if ctx:
+                langfuse_trace_id = ctx.trace_id
+
         result_text = ""
-        async with client:
-            await client.query(full_prompt)
+        generation_count = 0
+        try:
+            async with client:
+                await client.query(full_prompt)
 
-            async for msg in client.receive_response():
-                msg_type = type(msg).__name__
-                if msg_type in ("AssistantMessage", "ResultMessage"):
-                    await _track_session(tracker, msg)
-                if msg_type == "AssistantMessage" and hasattr(msg, "content"):
-                    for block in msg.content:
-                        if hasattr(block, "text"):
-                            result_text += block.text
+                async for msg in client.receive_response():
+                    msg_type = type(msg).__name__
+                    if msg_type in ("AssistantMessage", "ResultMessage"):
+                        await _track_session(tracker, msg)
+                    if msg_type == "AssistantMessage" and hasattr(msg, "content"):
+                        for block in msg.content:
+                            if hasattr(block, "text"):
+                                result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    log_generation_in_current_trace(
+                                        name=f"quality-gen-{generation_count}",
+                                        model=model,
+                                        input_data=full_prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        metadata={"subagent": "quality_review", "generation": generation_count}
+                                    )
 
-        # Finalize tracking
-        if tracker:
-            try:
-                await tracker.finalize()
-            except Exception:
-                pass
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                except Exception:
+                    pass
 
-        findings = _parse_findings_from_response(result_text, source="quality_agent")
-        logger.info(f"[Orchestrator] Quality review complete: {len(findings)} findings")
-        return findings
+            findings = _parse_findings_from_response(result_text, source="quality_agent")
+            logger.info(f"[Orchestrator] Quality review complete: {len(findings)} findings")
+            return findings
+
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     except Exception as e:
         logger.error(f"[Orchestrator] Quality review failed: {e}")
@@ -418,29 +521,73 @@ Output findings in JSON format:
             except Exception:
                 pass
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = project_root.name if project_root else None
+
+        # Create Langfuse trace if available
+        if LANGFUSE_AVAILABLE and is_langfuse_ready():
+            langfuse_ctx = trace_context(
+                name=f"pr-deep-analysis-{pr_context.pr_number}",
+                spec_id=f"pr-{pr_context.pr_number}",
+                project_id=project_id,
+                agent_type="deep_analyzer",
+                metadata={
+                    "pr_number": pr_context.pr_number,
+                    "files_count": len(files),
+                    "focus_question": focus_question[:200] if len(focus_question) > 200 else focus_question,
+                },
+                tags=["github", "pr_review", "deep_analysis"],
+                input_data={"prompt": full_prompt[:2000] if len(full_prompt) > 2000 else full_prompt},
+            )
+            ctx = langfuse_ctx.__enter__()
+            if ctx:
+                langfuse_trace_id = ctx.trace_id
+
         result_text = ""
-        async with client:
-            await client.query(full_prompt)
+        generation_count = 0
+        try:
+            async with client:
+                await client.query(full_prompt)
 
-            async for msg in client.receive_response():
-                msg_type = type(msg).__name__
-                if msg_type in ("AssistantMessage", "ResultMessage"):
-                    await _track_session(tracker, msg)
-                if msg_type == "AssistantMessage" and hasattr(msg, "content"):
-                    for block in msg.content:
-                        if hasattr(block, "text"):
-                            result_text += block.text
+                async for msg in client.receive_response():
+                    msg_type = type(msg).__name__
+                    if msg_type in ("AssistantMessage", "ResultMessage"):
+                        await _track_session(tracker, msg)
+                    if msg_type == "AssistantMessage" and hasattr(msg, "content"):
+                        for block in msg.content:
+                            if hasattr(block, "text"):
+                                result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    log_generation_in_current_trace(
+                                        name=f"deep-analysis-gen-{generation_count}",
+                                        model=model,
+                                        input_data=full_prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        metadata={"subagent": "deep_analysis", "generation": generation_count}
+                                    )
 
-        # Finalize tracking
-        if tracker:
-            try:
-                await tracker.finalize()
-            except Exception:
-                pass
+            # Finalize tracking
+            if tracker:
+                try:
+                    await tracker.finalize()
+                except Exception:
+                    pass
 
-        findings = _parse_findings_from_response(result_text, source="deep_analysis")
-        logger.info(f"[Orchestrator] Deep analysis complete: {len(findings)} findings")
-        return findings
+            findings = _parse_findings_from_response(result_text, source="deep_analysis")
+            logger.info(f"[Orchestrator] Deep analysis complete: {len(findings)} findings")
+            return findings
+
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     except Exception as e:
         logger.error(f"[Orchestrator] Deep analysis failed: {e}")

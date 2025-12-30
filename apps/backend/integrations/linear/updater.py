@@ -40,6 +40,21 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
 # Linear status constants (matching Valma AI team setup)
 STATUS_TODO = "Todo"
 STATUS_IN_PROGRESS = "In Progress"
@@ -188,6 +203,10 @@ async def _run_linear_agent(prompt: str, spec_dir: Path | None = None) -> str | 
         except Exception:
             tracker = None
 
+    # Initialize Langfuse trace context
+    langfuse_ctx = None
+    project_id = spec_dir.parent.parent.parent.name if spec_dir else None
+
     try:
         client = _create_linear_client()
 
@@ -198,10 +217,24 @@ async def _run_linear_agent(prompt: str, spec_dir: Path | None = None) -> str | 
             except Exception:
                 pass
 
+        # Create Langfuse trace if available
+        if LANGFUSE_AVAILABLE and is_langfuse_ready():
+            langfuse_ctx = trace_context(
+                name="linear-update",
+                spec_id=spec_dir.name if spec_dir else None,
+                project_id=project_id,
+                agent_type="linear_updater",
+                metadata={"operation": "linear_update"},
+                tags=["linear", "integration"],
+                input_data={"prompt": prompt[:500] if len(prompt) > 500 else prompt},
+            )
+            langfuse_ctx.__enter__()
+
         async with client:
             await client.query(prompt)
 
             response_text = ""
+            generation_count = 0
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
 
@@ -217,6 +250,16 @@ async def _run_linear_agent(prompt: str, spec_dir: Path | None = None) -> str | 
                         block_type = type(block).__name__
                         if block_type == "TextBlock" and hasattr(block, "text"):
                             response_text += block.text
+                            # Log generation to Langfuse
+                            if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                                generation_count += 1
+                                log_generation_in_current_trace(
+                                    name=f"linear-gen-{generation_count}",
+                                    model="claude-haiku-4-5",
+                                    input_data=prompt[:300] if generation_count == 1 else f"[continuation {generation_count}]",
+                                    output_data=block.text[:500] if len(block.text) > 500 else block.text,
+                                    metadata={"operation": "linear_update", "generation": generation_count}
+                                )
 
             # Finalize tracking
             if tracker:
@@ -236,6 +279,13 @@ async def _run_linear_agent(prompt: str, spec_dir: Path | None = None) -> str | 
                 pass
         print(f"Linear update failed: {e}")
         return None
+    finally:
+        # Close Langfuse trace context
+        if langfuse_ctx:
+            try:
+                langfuse_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
 
 
 async def create_linear_task(

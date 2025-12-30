@@ -19,6 +19,21 @@ from typing import Any
 # Check if debug mode is enabled (via DEBUG=true env var)
 DEBUG_MODE = os.environ.get("DEBUG", "").lower() in ("true", "1", "yes")
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
 try:
     from ...core.client import create_client
     from ...phase_config import get_thinking_budget
@@ -169,6 +184,11 @@ class OrchestratorReviewer:
             f"[Orchestrator] Starting strategic review for PR #{context.pr_number}"
         )
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = self.project_dir.name if self.project_dir else None
+
         try:
             self._report_progress(
                 "orchestrating",
@@ -209,6 +229,27 @@ class OrchestratorReviewer:
                 },
             )
 
+            # Create Langfuse trace if available
+            if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                langfuse_ctx = trace_context(
+                    name=f"pr-orchestrator-{context.pr_number}",
+                    spec_id=f"pr-{context.pr_number}",
+                    project_id=project_id,
+                    agent_type="orchestrator_reviewer",
+                    metadata={
+                        "pr_number": context.pr_number,
+                        "model": model,
+                        "thinking_level": thinking_level,
+                        "files_count": len(context.changed_files),
+                    },
+                    tags=["github", "pr_review", "orchestrator"],
+                    input_data={"prompt": prompt[:2000] if len(prompt) > 2000 else prompt},
+                )
+                ctx = langfuse_ctx.__enter__()
+                if ctx:
+                    langfuse_trace_id = ctx.trace_id
+                    logger.info(f"[Orchestrator] Langfuse trace created: {langfuse_trace_id}")
+
             self._report_progress(
                 "orchestrating",
                 30,
@@ -222,6 +263,7 @@ class OrchestratorReviewer:
             result_text = ""
             tool_calls_made = []
             structured_output = None  # For SDK structured outputs
+            generation_count = 0
 
             logger.info(f"[Orchestrator] Sending prompt (length: {len(prompt)} chars)")
             logger.debug(f"[Orchestrator] Prompt preview: {prompt[:500]}...")
@@ -381,6 +423,25 @@ class OrchestratorReviewer:
                                 logger.debug(
                                     f"[Orchestrator] Received text block (length: {len(block.text)})"
                                 )
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    # Extract usage if available
+                                    usage = None
+                                    if hasattr(msg, "usage"):
+                                        usage = {
+                                            "input": getattr(msg.usage, "input_tokens", 0),
+                                            "output": getattr(msg.usage, "output_tokens", 0),
+                                            "total": getattr(msg.usage, "input_tokens", 0) + getattr(msg.usage, "output_tokens", 0),
+                                        }
+                                    log_generation_in_current_trace(
+                                        name=f"orchestrator-gen-{generation_count}",
+                                        model=model,
+                                        input_data=prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        usage=usage,
+                                        metadata={"pr_number": context.pr_number, "generation": generation_count}
+                                    )
                             # Also check for StructuredOutput in AssistantMessage content
                             if block_type == "ToolUseBlock":
                                 tool_name = getattr(block, "name", "")
@@ -522,6 +583,13 @@ class OrchestratorReviewer:
                 error=str(e),
             )
             return result
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception as e:
+                    logger.debug(f"[Orchestrator] Failed to close Langfuse trace: {e}")
 
     async def _handle_tool_call(self, tool_msg, context: PRContext) -> dict[str, Any]:
         """

@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 # Check for Claude SDK availability without importing (avoids unused import warning)
 CLAUDE_SDK_AVAILABLE = importlib.util.find_spec("claude_agent_sdk") is not None
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
 # Default model and thinking configuration
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
 DEFAULT_THINKING_BUDGET = 10000  # Medium thinking
@@ -193,6 +208,10 @@ class BatchValidator:
             issues_formatted=self._format_issues(issues),
         )
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        project_id = self.project_dir.name if self.project_dir else None
+
         try:
             # Create settings for minimal permissions (no tools needed)
             settings = {
@@ -218,9 +237,36 @@ class BatchValidator:
                     max_thinking_tokens=self.thinking_budget,  # Extended thinking
                 )
 
+                # Create Langfuse trace if available
+                if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                    langfuse_ctx = trace_context(
+                        name=f"batch-validation-{batch_id}",
+                        spec_id=batch_id,
+                        project_id=project_id,
+                        agent_type="batch_validator",
+                        metadata={
+                            "primary_issue": primary_issue,
+                            "issues_count": len(issues),
+                            "themes": themes,
+                        },
+                        tags=["github", "batch_validation"],
+                        input_data={"prompt": prompt[:1000] if len(prompt) > 1000 else prompt},
+                    )
+                    langfuse_ctx.__enter__()
+
                 async with client:
                     await client.query(prompt)
                     result_text = await self._collect_response(client)
+
+                    # Log generation to Langfuse
+                    if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                        log_generation_in_current_trace(
+                            name="batch-validation-gen",
+                            model=self.model,
+                            input_data=prompt[:500],
+                            output_data=result_text[:1000] if len(result_text) > 1000 else result_text,
+                            metadata={"batch_id": batch_id}
+                        )
 
                 # Parse JSON response
                 result_json = self._parse_json_response(result_text)
@@ -251,6 +297,13 @@ class BatchValidator:
                 suggested_splits=None,
                 common_theme=themes[0] if themes else "",
             )
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     async def _collect_response(self, client: Any) -> str:
         """Collect text response from Claude client."""

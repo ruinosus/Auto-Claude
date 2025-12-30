@@ -23,6 +23,21 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
 try:
     from ..context_gatherer import PRContext
     from ..models import (
@@ -264,8 +279,33 @@ class PRReviewEngine:
             except Exception:
                 pass
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = self.project_dir.name if self.project_dir else None
+
         result_text = ""
+        generation_count = 0
         try:
+            # Create Langfuse trace if available
+            if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                langfuse_ctx = trace_context(
+                    name=f"pr-review-{review_pass.value}-{context.pr_number}",
+                    spec_id=f"pr-{context.pr_number}",
+                    project_id=project_id,
+                    agent_type="pr_review_engine",
+                    metadata={
+                        "pr_number": context.pr_number,
+                        "review_pass": review_pass.value,
+                        "model": self.config.model,
+                    },
+                    tags=["github", "pr_review", review_pass.value],
+                    input_data={"prompt": full_prompt[:2000] if len(full_prompt) > 2000 else full_prompt},
+                )
+                ctx = langfuse_ctx.__enter__()
+                if ctx:
+                    langfuse_trace_id = ctx.trace_id
+
             async with client:
                 await client.query(full_prompt)
 
@@ -283,6 +323,24 @@ class PRReviewEngine:
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    usage = None
+                                    if hasattr(msg, "usage"):
+                                        usage = {
+                                            "input": getattr(msg.usage, "input_tokens", 0),
+                                            "output": getattr(msg.usage, "output_tokens", 0),
+                                            "total": getattr(msg.usage, "input_tokens", 0) + getattr(msg.usage, "output_tokens", 0),
+                                        }
+                                    log_generation_in_current_trace(
+                                        name=f"review-{review_pass.value}-gen-{generation_count}",
+                                        model=self.config.model,
+                                        input_data=full_prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        usage=usage,
+                                        metadata={"pass": review_pass.value, "generation": generation_count}
+                                    )
 
                     # Track result message
                     if self.tracker and msg_type == "ResultMessage":
@@ -322,6 +380,13 @@ class PRReviewEngine:
 
             # Re-raise to allow caller to handle or track partial failures
             raise RuntimeError(error_msg) from e
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
     async def run_multi_pass_review(
         self, context: PRContext
@@ -565,8 +630,33 @@ class PRReviewEngine:
             except Exception:
                 pass
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = self.project_dir.name if self.project_dir else None
+
         result_text = ""
+        generation_count = 0
         try:
+            # Create Langfuse trace if available
+            if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                langfuse_ctx = trace_context(
+                    name=f"pr-structural-{context.pr_number}",
+                    spec_id=f"pr-{context.pr_number}",
+                    project_id=project_id,
+                    agent_type="pr_review_engine",
+                    metadata={
+                        "pr_number": context.pr_number,
+                        "review_pass": "structural",
+                        "model": self.config.model,
+                    },
+                    tags=["github", "pr_review", "structural"],
+                    input_data={"prompt": full_prompt[:2000] if len(full_prompt) > 2000 else full_prompt},
+                )
+                ctx = langfuse_ctx.__enter__()
+                if ctx:
+                    langfuse_trace_id = ctx.trace_id
+
             async with client:
                 await client.query(full_prompt)
                 async for msg in client.receive_response():
@@ -583,6 +673,16 @@ class PRReviewEngine:
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    log_generation_in_current_trace(
+                                        name=f"structural-gen-{generation_count}",
+                                        model=self.config.model,
+                                        input_data=full_prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        metadata={"pass": "structural", "generation": generation_count}
+                                    )
 
                     if self.tracker and msg_type == "ResultMessage":
                         try:
@@ -602,6 +702,13 @@ class PRReviewEngine:
                 except Exception:
                     pass
             print(f"[AI] Structural pass error: {e}", flush=True)
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
         return result_text
 
@@ -654,8 +761,34 @@ class PRReviewEngine:
             except Exception:
                 pass
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = self.project_dir.name if self.project_dir else None
+
         result_text = ""
+        generation_count = 0
         try:
+            # Create Langfuse trace if available
+            if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                langfuse_ctx = trace_context(
+                    name=f"pr-ai-triage-{context.pr_number}",
+                    spec_id=f"pr-{context.pr_number}",
+                    project_id=project_id,
+                    agent_type="pr_review_engine",
+                    metadata={
+                        "pr_number": context.pr_number,
+                        "review_pass": "ai_triage",
+                        "model": self.config.model,
+                        "ai_comments_count": len(context.ai_bot_comments),
+                    },
+                    tags=["github", "pr_review", "ai_triage"],
+                    input_data={"prompt": full_prompt[:2000] if len(full_prompt) > 2000 else full_prompt},
+                )
+                ctx = langfuse_ctx.__enter__()
+                if ctx:
+                    langfuse_trace_id = ctx.trace_id
+
             async with client:
                 await client.query(full_prompt)
                 async for msg in client.receive_response():
@@ -672,6 +805,16 @@ class PRReviewEngine:
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    generation_count += 1
+                                    log_generation_in_current_trace(
+                                        name=f"ai-triage-gen-{generation_count}",
+                                        model=self.config.model,
+                                        input_data=full_prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        metadata={"pass": "ai_triage", "generation": generation_count}
+                                    )
 
                     if self.tracker and msg_type == "ResultMessage":
                         try:
@@ -691,6 +834,13 @@ class PRReviewEngine:
                 except Exception:
                     pass
             print(f"[AI] AI triage pass error: {e}", flush=True)
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
 
         return result_text
 
