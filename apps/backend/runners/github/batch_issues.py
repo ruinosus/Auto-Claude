@@ -138,7 +138,7 @@ class ClaudeBatchAnalyzer:
         try:
             import sys
 
-            from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+            import claude_agent_sdk  # noqa: F401 - check availability
 
             backend_path = Path(__file__).parent.parent.parent
             sys.path.insert(0, str(backend_path))
@@ -237,15 +237,13 @@ Respond with JSON only:
                     logger.error(f"[BATCH_ANALYZER] Failed to start tracking session: {e}")
 
             # Using Sonnet for better analysis (still just 1 call)
-            client = ClaudeSDKClient(
-                options=ClaudeAgentOptions(
-                    model="claude-sonnet-4-20250514",
-                    system_prompt="You are an expert at analyzing GitHub issues and grouping related ones. Respond ONLY with valid JSON. Do NOT use any tools.",
-                    allowed_tools=[],
-                    max_turns=1,
-                    cwd=str(self.project_dir.resolve()),
-                    env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
-                )
+            from core.simple_client import create_simple_client
+
+            client = create_simple_client(
+                agent_type="batch_analysis",
+                model="claude-sonnet-4-20250514",
+                system_prompt="You are an expert at analyzing GitHub issues and grouping related ones. Respond ONLY with valid JSON. Do NOT use any tools.",
+                cwd=self.project_dir,
             )
 
             async with client:

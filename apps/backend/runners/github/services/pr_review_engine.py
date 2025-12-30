@@ -536,7 +536,7 @@ class PRReviewEngine:
             / "pr_structural.md"
         )
         if prompt_file.exists():
-            prompt = prompt_file.read_text()
+            prompt = prompt_file.read_text(encoding="utf-8")
         else:
             prompt = self.prompt_manager.get_review_pass_prompt(ReviewPass.STRUCTURAL)
 
@@ -620,7 +620,7 @@ class PRReviewEngine:
             / "pr_ai_triage.md"
         )
         if prompt_file.exists():
-            prompt = prompt_file.read_text()
+            prompt = prompt_file.read_text(encoding="utf-8")
         else:
             prompt = self.prompt_manager.get_review_pass_prompt(
                 ReviewPass.AI_COMMENT_TRIAGE

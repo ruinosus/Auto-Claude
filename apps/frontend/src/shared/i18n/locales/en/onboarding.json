@@ -67,6 +67,7 @@
     "auth": "OAuth",
     "azureFoundry": "Azure",
     "authToken": "Token",
+    "devtools": "Dev Tools",
     "memory": "Memory",
     "done": "Done"
   },
@@ -116,5 +117,27 @@
       "invalidUrl": "Base URL should be an Azure OpenAI endpoint (e.g., https://your-resource.openai.azure.com)",
       "failed": "Validation failed. Please check your credentials."
     }
+  },
+  "devtools": {
+    "title": "Developer Tools",
+    "description": "Choose your preferred IDE and terminal for working with Auto Claude worktrees",
+    "detecting": "Detecting installed tools...",
+    "detectAgain": "Detect Again",
+    "whyConfigure": "Why configure these?",
+    "whyConfigureDescription": "When Auto Claude builds features in isolated worktrees, you can open them directly in your preferred IDE or terminal to test and review changes.",
+    "ide": {
+      "label": "Preferred IDE",
+      "description": "Auto Claude will open worktrees in this editor",
+      "customPath": "Custom IDE Path"
+    },
+    "terminal": {
+      "label": "Preferred Terminal",
+      "description": "Auto Claude will open terminal sessions here",
+      "customPath": "Custom Terminal Path"
+    },
+    "detectedSummary": "Detected on your system:",
+    "noToolsDetected": "No additional tools detected (VS Code and system terminal will be used)",
+    "custom": "Custom...",
+    "saveAndContinue": "Save & Continue"
   }
 }

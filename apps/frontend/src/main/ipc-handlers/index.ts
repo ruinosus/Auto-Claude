@@ -22,6 +22,7 @@ import { registerContextHandlers } from './context-handlers';
 import { registerEnvHandlers } from './env-handlers';
 import { registerLinearHandlers } from './linear-handlers';
 import { registerGithubHandlers } from './github-handlers';
+import { registerGitlabHandlers } from './gitlab-handlers';
 import { registerAutobuildSourceHandlers } from './autobuild-source-handlers';
 import { registerIdeationHandlers } from './ideation-handlers';
 import { registerChangelogHandlers } from './changelog-handlers';
@@ -36,6 +37,7 @@ import { registerInstallSkillHandler } from './skills/install-skill';
 import { registerRemoveSkillHandler } from './skills/remove-skill';
 import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { registerMCPHandlers } from '../mcp-manager';
+import { registerDebugHandlers } from './debug-handlers';
 import { notificationService } from '../notification-service';
 import { setupNotificationHandlers } from './notification-handlers';
 
@@ -89,6 +91,9 @@ export function setupIpcHandlers(
   // GitHub integration handlers
   registerGithubHandlers(agentManager, getMainWindow);
 
+  // GitLab integration handlers
+  registerGitlabHandlers(agentManager, getMainWindow);
+
   // Auto-build source update handlers
   registerAutobuildSourceHandlers(getMainWindow);
 
@@ -128,6 +133,9 @@ export function setupIpcHandlers(
   // Notification handlers (for in-app notification center)
   setupNotificationHandlers();
 
+  // Debug handlers (logs, debug info, etc.)
+  registerDebugHandlers();
+
   console.warn('[IPC] All handler modules registered successfully');
 }
 
@@ -144,6 +152,7 @@ export {
   registerEnvHandlers,
   registerLinearHandlers,
   registerGithubHandlers,
+  registerGitlabHandlers,
   registerAutobuildSourceHandlers,
   registerIdeationHandlers,
   registerChangelogHandlers,
@@ -158,5 +167,6 @@ export {
   registerRemoveSkillHandler,
   registerGetSkillContentHandler,
   registerMCPHandlers,
-  setupNotificationHandlers
+  setupNotificationHandlers,
+  registerDebugHandlers
 };

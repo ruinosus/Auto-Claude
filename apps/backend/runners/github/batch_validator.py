@@ -8,6 +8,7 @@ Reviews whether semantically grouped issues actually belong together.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import sys
@@ -21,26 +22,8 @@ sys.path.insert(0, str(backend_path))
 
 logger = logging.getLogger(__name__)
 
-# Import feature tracker for token tracking
-try:
-    from analytics import (
-        create_feature_tracker,
-        FEATURE_PR_REVIEW,
-        is_tracking_enabled,
-    )
-    TRACKING_AVAILABLE = True
-except ImportError as e:
-    TRACKING_AVAILABLE = False
-
-# Check for Claude SDK availability
-try:
-    from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-    from core.auth import get_sdk_env_vars
-
-    CLAUDE_SDK_AVAILABLE = True
-except (ImportError, ValueError, SystemError):
-    CLAUDE_SDK_AVAILABLE = False
-    get_sdk_env_vars = lambda: {}  # Fallback
+# Check for Claude SDK availability without importing (avoids unused import warning)
+CLAUDE_SDK_AVAILABLE = importlib.util.find_spec("claude_agent_sdk") is not None
 
 # Default model and thinking configuration
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -137,19 +120,6 @@ class BatchValidator:
         self.model = model
         self.thinking_budget = thinking_budget
         self.project_dir = project_dir or Path.cwd()
-        self.tracker = None
-
-        # Initialize feature tracker for token usage
-        if TRACKING_AVAILABLE and is_tracking_enabled():
-            project_id = self.project_dir.name
-            db_path = str(self.project_dir / ".auto-claude" / "analytics.db")
-            self.tracker = create_feature_tracker(
-                project_id=project_id,
-                feature_type=FEATURE_PR_REVIEW,
-                db_path=db_path,
-                metadata={"component": "batch_validator", "model": model}
-            )
-            logger.info(f"[BATCH_VALIDATOR] Feature tracker initialized for project: {project_id}")
 
         if not CLAUDE_SDK_AVAILABLE:
             logger.warning(
@@ -224,16 +194,6 @@ class BatchValidator:
         )
 
         try:
-            # Start tracking session if tracker is available
-            if self.tracker:
-                try:
-                    self.tracker.update_metadata("batch_id", batch_id)
-                    self.tracker.update_metadata("issues_count", len(issues))
-                    await self.tracker.start_session()
-                    logger.info("[BATCH_VALIDATOR] Feature tracking session started")
-                except Exception as e:
-                    logger.error(f"[BATCH_VALIDATOR] Failed to start tracking session: {e}")
-
             # Create settings for minimal permissions (no tools needed)
             settings = {
                 "permissions": {
@@ -248,17 +208,14 @@ class BatchValidator:
 
             try:
                 # Create Claude SDK client with extended thinking
-                client = ClaudeSDKClient(
-                    options=ClaudeAgentOptions(
-                        model=self.model,
-                        system_prompt="You are an expert at analyzing GitHub issues and determining if they should be grouped together for a combined fix.",
-                        allowed_tools=[],  # No tools needed for this analysis
-                        max_turns=1,
-                        cwd=str(self.project_dir.resolve()),
-                        settings=str(settings_file.resolve()),
-                        max_thinking_tokens=self.thinking_budget,  # Extended thinking
-                        env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
-                    )
+                from core.simple_client import create_simple_client
+
+                client = create_simple_client(
+                    agent_type="batch_validation",
+                    model=self.model,
+                    system_prompt="You are an expert at analyzing GitHub issues and determining if they should be grouped together for a combined fix.",
+                    cwd=self.project_dir,
+                    max_thinking_tokens=self.thinking_budget,  # Extended thinking
                 )
 
                 async with client:
@@ -267,14 +224,6 @@ class BatchValidator:
 
                 # Parse JSON response
                 result_json = self._parse_json_response(result_text)
-
-                # Finalize tracking
-                if self.tracker:
-                    try:
-                        await self.tracker.finalize()
-                        logger.info("[BATCH_VALIDATOR] Feature tracking session finalized")
-                    except Exception as e:
-                        logger.error(f"[BATCH_VALIDATOR] Failed to finalize tracking: {e}")
 
                 return BatchValidationResult(
                     batch_id=batch_id,
@@ -293,13 +242,6 @@ class BatchValidator:
         except Exception as e:
             logger.error(f"Batch validation failed: {e}")
 
-            # Finalize tracking even on error
-            if self.tracker:
-                try:
-                    await self.tracker.finalize()
-                except Exception:
-                    pass
-
             # On error, assume valid to not block the flow
             return BatchValidationResult(
                 batch_id=batch_id,
@@ -316,13 +258,6 @@ class BatchValidator:
 
         async for msg in client.receive_response():
             msg_type = type(msg).__name__
-
-            # Track message for token usage
-            if self.tracker:
-                try:
-                    await self.tracker.track_message(msg)
-                except Exception as e:
-                    logger.error(f"[BATCH_VALIDATOR] Failed to track message: {e}")
 
             if msg_type == "AssistantMessage":
                 for content in msg.content:

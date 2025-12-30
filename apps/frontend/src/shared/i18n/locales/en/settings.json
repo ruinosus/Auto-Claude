@@ -17,6 +17,10 @@
       "title": "Language",
       "description": "Choose your preferred language"
     },
+    "devtools": {
+      "title": "Developer Tools",
+      "description": "IDE and terminal preferences"
+    },
     "agent": {
       "title": "Agent Settings",
       "description": "Default model and framework"
@@ -48,6 +52,10 @@
     "roi": {
       "title": "ROI Settings",
       "description": "Configure ROI calculation parameters"
+    },
+    "debug": {
+      "title": "Debug & Logs",
+      "description": "Troubleshooting tools"
     }
   },
   "language": {
@@ -116,6 +124,30 @@
     "colorTheme": "Color Theme",
     "colorThemeDescription": "Choose your preferred color palette"
   },
+  "devtools": {
+    "title": "Developer Tools",
+    "description": "Configure your preferred IDE and terminal for working with worktrees",
+    "detecting": "Detecting installed tools...",
+    "detectAgain": "Detect Again",
+    "ide": {
+      "label": "Preferred IDE",
+      "description": "Auto Claude will open worktrees in this editor",
+      "placeholder": "Select IDE...",
+      "customPath": "Custom IDE Path",
+      "customPathPlaceholder": "/path/to/your/ide"
+    },
+    "terminal": {
+      "label": "Preferred Terminal",
+      "description": "Auto Claude will open terminal sessions here",
+      "placeholder": "Select terminal...",
+      "customPath": "Custom Terminal Path",
+      "customPathPlaceholder": "/path/to/your/terminal"
+    },
+    "detected": "Detected",
+    "notInstalled": "Not installed",
+    "detectedSummary": "Detected on your system:",
+    "noToolsDetected": "No additional tools detected (VS Code and system terminal will be used)"
+  },
   "updates": {
     "title": "Updates",
     "description": "Manage Auto Claude updates",
@@ -159,7 +191,9 @@
   "projectSections": {
     "general": {
       "title": "General",
-      "description": "Auto-Build and agent config"
+      "description": "Auto-Build and agent config",
+      "useClaudeMd": "Use CLAUDE.md",
+      "useClaudeMdDescription": "Include CLAUDE.md instructions in agent context"
     },
     "claude": {
       "title": "Claude Auth",
@@ -167,15 +201,31 @@
     },
     "linear": {
       "title": "Linear",
-      "description": "Linear integration"
+      "description": "Linear integration",
+      "integrationTitle": "Linear Integration",
+      "integrationDescription": "Connect to Linear for issue tracking and task import",
+      "syncDescription": "Sync with Linear for issue tracking"
     },
     "github": {
       "title": "GitHub",
-      "description": "GitHub issues sync"
+      "description": "GitHub issues sync",
+      "integrationTitle": "GitHub Integration",
+      "integrationDescription": "Connect to GitHub for issue tracking",
+      "syncDescription": "Sync with GitHub Issues"
+    },
+    "gitlab": {
+      "title": "GitLab",
+      "description": "GitLab issues sync",
+      "integrationTitle": "GitLab Integration",
+      "integrationDescription": "Connect to GitLab for issue tracking",
+      "syncDescription": "Sync with GitLab Issues"
     },
     "memory": {
       "title": "Memory",
-      "description": "Graphiti memory backend"
+      "description": "Graphiti memory backend",
+      "integrationTitle": "Memory",
+      "integrationDescription": "Configure persistent cross-session memory for agents",
+      "syncDescription": "Configure persistent memory"
     }
   },
   "agentProfile": {
@@ -312,5 +362,19 @@
     "invalidEndpoint": "Invalid endpoint URL format",
     "connectionFailed": "Failed to connect to OTEL endpoint",
     "infoText": "OpenTelemetry allows you to collect and export telemetry data (metrics, traces, logs) to your observability platform for enhanced analytics and debugging."
+  },
+  "debug": {
+    "title": "Debug & Logs",
+    "description": "Access logs and debug information for troubleshooting",
+    "openLogsFolder": "Open Logs Folder",
+    "copyDebugInfo": "Copy Debug Info",
+    "copied": "Copied!",
+    "loadInfo": "Load Debug Info",
+    "systemInfo": "System Information",
+    "logsLocation": "Logs Location",
+    "recentErrors": "Recent Errors",
+    "noRecentErrors": "No recent errors",
+    "helpTitle": "Reporting Issues",
+    "helpText": "When reporting bugs, click \"Copy Debug Info\" to get system information and recent errors that help us diagnose the issue."
   }
 }

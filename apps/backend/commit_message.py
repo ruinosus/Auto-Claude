@@ -224,9 +224,9 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
     ensure_claude_code_oauth_token()
 
     try:
-        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+        from core.simple_client import create_simple_client
     except ImportError:
-        logger.warning("claude_agent_sdk not installed")
+        logger.warning("core.simple_client not available")
         return ""
 
     # Initialize tracker
@@ -244,15 +244,11 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
         except Exception:
             tracker = None
 
-    client = ClaudeSDKClient(
-        options=ClaudeAgentOptions(
-            model="claude-haiku-4-5-20251001",
-            system_prompt=SYSTEM_PROMPT,
-            allowed_tools=[],
-            max_turns=1,
-            max_thinking_tokens=1024,  # Low thinking for speed
-            env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
-        )
+    client = create_simple_client(
+        agent_type="commit_message",
+        model="claude-haiku-4-5-20251001",
+        system_prompt=SYSTEM_PROMPT,
+        max_thinking_tokens=1024,  # Low thinking for speed
     )
 
     # Check Langfuse availability

@@ -24,6 +24,8 @@ export interface ProjectSettings {
   graphitiMcpUrl?: string;
   /** Main branch name for worktree creation (default: auto-detected or 'main') */
   mainBranch?: string;
+  /** Include CLAUDE.md instructions in agent system prompt (default: true) */
+  useClaudeMd?: boolean;
 }
 
 export interface NotificationSettings {
@@ -315,6 +317,13 @@ export interface ProjectEnvConfig {
   githubRepo?: string; // Format: owner/repo
   githubAutoSync?: boolean; // Auto-sync issues on project load
   githubAuthMethod?: 'oauth' | 'pat'; // How the token was obtained
+
+  // GitLab Integration
+  gitlabEnabled: boolean;
+  gitlabInstanceUrl?: string; // Default: https://gitlab.com, or self-hosted URL
+  gitlabToken?: string;
+  gitlabProject?: string; // Format: group/project or numeric ID
+  gitlabAutoSync?: boolean; // Auto-sync issues on project load
 
   // Git/Worktree Settings
   defaultBranch?: string; // Base branch for worktree creation (e.g., 'main', 'develop')

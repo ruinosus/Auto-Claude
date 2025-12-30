@@ -8,11 +8,13 @@ import { IdeationAPI, createIdeationAPI } from './modules/ideation-api';
 import { InsightsAPI, createInsightsAPI } from './modules/insights-api';
 import { AppUpdateAPI, createAppUpdateAPI } from './app-update-api';
 import { GitHubAPI, createGitHubAPI } from './modules/github-api';
+import { GitLabAPI, createGitLabAPI } from './modules/gitlab-api';
 import { SkillsAPI, createSkillsAPI } from './modules/skills-api';
 import { MCPAPI, createMCPAPI } from './modules/mcp-api';
 import { ROIAPI, createROIAPI } from './modules/roi-api';
 import { NotificationAPI, createNotificationAPI } from './modules/notification-api';
 import { ExportAPI, createExportAPI } from './modules/export-api';
+import { DebugAPI, createDebugAPI } from './modules/debug-api';
 
 export interface ElectronAPI extends
   ProjectAPI,
@@ -24,11 +26,13 @@ export interface ElectronAPI extends
   IdeationAPI,
   InsightsAPI,
   AppUpdateAPI,
+  GitLabAPI,
   SkillsAPI,
   MCPAPI,
   ROIAPI,
   NotificationAPI,
-  ExportAPI {
+  ExportAPI,
+  DebugAPI {
   github: GitHubAPI;
 }
 
@@ -42,11 +46,13 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createIdeationAPI(),
   ...createInsightsAPI(),
   ...createAppUpdateAPI(),
+  ...createGitLabAPI(),
   ...createSkillsAPI(),
   ...createMCPAPI(),
   ...createROIAPI(),
   ...createNotificationAPI(),
   ...createExportAPI(),
+  ...createDebugAPI(),
   github: createGitHubAPI()
 });
 
@@ -62,11 +68,13 @@ export {
   createInsightsAPI,
   createAppUpdateAPI,
   createGitHubAPI,
+  createGitLabAPI,
   createSkillsAPI,
   createMCPAPI,
   createROIAPI,
   createNotificationAPI,
-  createExportAPI
+  createExportAPI,
+  createDebugAPI
 };
 
 export type {
@@ -80,9 +88,11 @@ export type {
   InsightsAPI,
   AppUpdateAPI,
   GitHubAPI,
+  GitLabAPI,
   SkillsAPI,
   MCPAPI,
   ROIAPI,
   NotificationAPI,
-  ExportAPI
+  ExportAPI,
+  DebugAPI
 };

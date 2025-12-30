@@ -442,20 +442,19 @@ async def run_insight_extraction(
             langfuse_trace_id = langfuse_ctx_obj.trace_id
 
     try:
-        # Create a minimal SDK client for insight extraction
-        # No tools needed - just text generation
-        client = ClaudeSDKClient(
-            options=ClaudeAgentOptions(
-                model=model,
-                system_prompt=(
-                    "You are an expert code analyst. You extract structured insights from coding sessions. "
-                    "Always respond with valid JSON only, no markdown formatting or explanations."
-                ),
-                allowed_tools=[],  # No tools needed for extraction
-                max_turns=1,  # Single turn extraction
-                cwd=cwd,
-                env=get_sdk_env_vars(),  # Pass Azure Foundry env vars
-            )
+        # Use simple_client for insight extraction
+        from pathlib import Path
+
+        from core.simple_client import create_simple_client
+
+        client = create_simple_client(
+            agent_type="insights",
+            model=model,
+            system_prompt=(
+                "You are an expert code analyst. You extract structured insights from coding sessions. "
+                "Always respond with valid JSON only, no markdown formatting or explanations."
+            ),
+            cwd=Path(cwd) if cwd else None,
         )
 
         # Start tracking session

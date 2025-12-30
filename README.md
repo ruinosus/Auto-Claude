@@ -4,7 +4,9 @@
 
 ![Auto Claude Kanban Board](.github/assets/Auto-Claude-Kanban.png)
 
-[![Version](https://img.shields.io/badge/version-2.7.2--beta.10-blue?style=flat-square)](https://github.com/AndyMik90/Auto-Claude/releases/tag/v2.7.2-beta.10)
+<!-- TOP_VERSION_BADGE -->
+[![Version](https://img.shields.io/badge/version-2.7.1-blue?style=flat-square)](https://github.com/AndyMik90/Auto-Claude/releases/tag/v2.7.1)
+<!-- TOP_VERSION_BADGE_END -->
 [![License](https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square)](./agpl-3.0.txt)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/KCXaPBr4Dj)
 [![CI](https://img.shields.io/github/actions/workflow/status/AndyMik90/Auto-Claude/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/AndyMik90/Auto-Claude/actions)
@@ -13,15 +15,40 @@
 
 ## Download
 
-Get the latest pre-built release for your platform:
+### Stable Release
 
-| Platform | Download | Notes |
-|----------|----------|-------|
-| **Windows** | [Auto-Claude-2.7.2-beta.10-win32-x64.exe](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-win32-x64.exe) | Installer (NSIS) |
-| **macOS (Apple Silicon)** | [Auto-Claude-2.7.2-beta.10-darwin-arm64.dmg](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-darwin-arm64.dmg) | M1/M2/M3 Macs |
-| **macOS (Intel)** | [Auto-Claude-2.7.2-beta.10-darwin-x64.dmg](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-darwin-x64.dmg) | Intel Macs |
-| **Linux** | [Auto-Claude-2.7.2-beta.10-linux-x86_64.AppImage](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-linux-x86_64.AppImage) | Universal |
-| **Linux (Debian)** | [Auto-Claude-2.7.2-beta.10-linux-amd64.deb](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-linux-amd64.deb) | Ubuntu/Debian |
+<!-- STABLE_VERSION_BADGE -->
+[![Stable](https://img.shields.io/badge/stable-2.7.1-blue?style=flat-square)](https://github.com/AndyMik90/Auto-Claude/releases/tag/v2.7.1)
+<!-- STABLE_VERSION_BADGE_END -->
+
+<!-- STABLE_DOWNLOADS -->
+| Platform | Download |
+|----------|----------|
+| **Windows** | [Auto-Claude-2.7.1-win32-x64.exe](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.1/Auto-Claude-2.7.1-win32-x64.exe) |
+| **macOS (Apple Silicon)** | [Auto-Claude-2.7.1-darwin-arm64.dmg](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.1/Auto-Claude-2.7.1-darwin-arm64.dmg) |
+| **macOS (Intel)** | [Auto-Claude-2.7.1-darwin-x64.dmg](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.1/Auto-Claude-2.7.1-darwin-x64.dmg) |
+| **Linux** | [Auto-Claude-2.7.1-linux-x86_64.AppImage](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.1/Auto-Claude-2.7.1-linux-x86_64.AppImage) |
+| **Linux (Debian)** | [Auto-Claude-2.7.1-linux-amd64.deb](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.1/Auto-Claude-2.7.1-linux-amd64.deb) |
+<!-- STABLE_DOWNLOADS_END -->
+
+### Beta Release
+
+> ⚠️ Beta releases may contain bugs and breaking changes. [View all releases](https://github.com/AndyMik90/Auto-Claude/releases)
+
+<!-- BETA_VERSION_BADGE -->
+[![Beta](https://img.shields.io/badge/beta-2.7.2--beta.10-orange?style=flat-square)](https://github.com/AndyMik90/Auto-Claude/releases/tag/v2.7.2-beta.10)
+<!-- BETA_VERSION_BADGE_END -->
+
+<!-- BETA_DOWNLOADS -->
+| Platform | Download |
+|----------|----------|
+| **Windows** | [Auto-Claude-2.7.2-beta.10-win32-x64.exe](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-win32-x64.exe) |
+| **macOS (Apple Silicon)** | [Auto-Claude-2.7.2-beta.10-darwin-arm64.dmg](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-darwin-arm64.dmg) |
+| **macOS (Intel)** | [Auto-Claude-2.7.2-beta.10-darwin-x64.dmg](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-darwin-x64.dmg) |
+| **Linux** | [Auto-Claude-2.7.2-beta.10-linux-x86_64.AppImage](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-linux-x86_64.AppImage) |
+| **Linux (Debian)** | [Auto-Claude-2.7.2-beta.10-linux-amd64.deb](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-linux-amd64.deb) |
+| **Linux (Flatpak)** | [Auto-Claude-2.7.2-beta.10-linux-x86_64.flatpak](https://github.com/AndyMik90/Auto-Claude/releases/download/v2.7.2-beta.10/Auto-Claude-2.7.2-beta.10-linux-x86_64.flatpak) |
+<!-- BETA_DOWNLOADS_END -->
 
 > All releases include SHA256 checksums and VirusTotal scan results for security verification.
 
@@ -56,7 +83,8 @@ Get the latest pre-built release for your platform:
 | **Self-Validating QA** | Built-in quality assurance loop catches issues before you review |
 | **AI-Powered Merge** | Automatic conflict resolution when integrating back to main |
 | **Memory Layer** | Agents retain insights across sessions for smarter builds |
-| **Analytics Dashboard** | Track costs, tokens, and budgets in real-time with visual charts |
+| **GitHub/GitLab Integration** | Import issues, investigate with AI, create merge requests |
+| **Linear Integration** | Sync tasks with Linear for team progress tracking |
 | **Cross-Platform** | Native desktop apps for Windows, macOS, and Linux |
 | **Auto-Updates** | App updates automatically when new versions are released |
 
@@ -145,6 +173,9 @@ cp apps/backend/.env.example apps/backend/.env
 | `CLAUDE_CODE_OAUTH_TOKEN` | Yes | OAuth token from `claude setup-token` |
 | `GRAPHITI_ENABLED` | No | Enable Memory Layer for cross-session context |
 | `AUTO_BUILD_MODEL` | No | Override the default Claude model |
+| `GITLAB_TOKEN` | No | GitLab Personal Access Token for GitLab integration |
+| `GITLAB_INSTANCE_URL` | No | GitLab instance URL (defaults to gitlab.com) |
+| `LINEAR_API_KEY` | No | Linear API key for task sync |
 
 ---
 
@@ -172,7 +203,70 @@ npm start
 - Python 3.12+
 - npm 10+
 
+**Installing dependencies by platform:**
+
+<details>
+<summary><b>Windows</b></summary>
+
+```bash
+winget install Python.Python.3.12
+winget install OpenJS.NodeJS.LTS
+```
+
+</details>
+
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+brew install python@3.12 node@24
+```
+
+</details>
+
+<details>
+<summary><b>Linux (Ubuntu/Debian)</b></summary>
+
+```bash
+sudo apt install python3.12 python3.12-venv
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt install -y nodejs
+```
+
+</details>
+
+<details>
+<summary><b>Linux (Fedora)</b></summary>
+
+```bash
+sudo dnf install python3.12 nodejs npm
+```
+
+</details>
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development setup.
+
+### Building Flatpak
+
+To build the Flatpak package, you need additional dependencies:
+
+```bash
+# Fedora/RHEL
+sudo dnf install flatpak-builder
+
+# Ubuntu/Debian
+sudo apt install flatpak-builder
+
+# Install required Flatpak runtimes
+flatpak install flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
+flatpak install flathub org.electronjs.Electron2.BaseApp//25.08
+
+# Build the Flatpak
+cd apps/frontend
+npm run package:flatpak
+```
+
+The Flatpak will be created in `apps/frontend/dist/`.
 
 ---
 
@@ -202,6 +296,7 @@ All releases are:
 | `npm run package:mac` | Package for macOS |
 | `npm run package:win` | Package for Windows |
 | `npm run package:linux` | Package for Linux |
+| `npm run package:flatpak` | Package as Flatpak |
 | `npm run lint` | Run linter |
 | `npm test` | Run frontend tests |
 | `npm run test:backend` | Run backend tests |
