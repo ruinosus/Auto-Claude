@@ -188,9 +188,9 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
                 data={{
                   totalCost: totalCost,
                   totalTokens: {
-                    // Estimate input/output split from total (30% input, 70% output is typical for LLM interactions)
-                    input: Math.floor((data?.total_tokens || 0) * 0.3),
-                    output: Math.floor((data?.total_tokens || 0) * 0.7)
+                    // Use real token counts when available from API, fallback to estimated split
+                    input: data?.total_input_tokens ?? Math.floor((data?.total_tokens || 0) * 0.3),
+                    output: data?.total_output_tokens ?? Math.floor((data?.total_tokens || 0) * 0.7)
                   },
                   activeSessions: data?.active_specs || 0,
                   budgetRemaining: budgetRemaining,

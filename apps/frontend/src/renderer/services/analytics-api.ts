@@ -247,6 +247,8 @@ export interface FeatureUsage {
 export interface UsageSummaryResponse {
   total_cost: number;
   total_tokens: number;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
   total_traces: number;
   active_specs: number;
   cost_over_time: CostOverTimePoint[];
