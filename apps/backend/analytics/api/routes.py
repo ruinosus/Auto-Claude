@@ -7,7 +7,7 @@ REST API endpoints for accessing Langfuse analytics data.
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -35,8 +35,12 @@ from .models import (
     BillingExportResponse,
     ServiceHealth,
     HealthStatusResponse,
+    HourlyMetric,
+    HourlyMetricsResponse,
     ActivityEvent,
     RecentActivityResponse,
+    ErrorBreakdown,
+    ErrorMetricsResponse,
 )
 from .langfuse_client import TraceFilter
 
@@ -842,6 +846,44 @@ async def get_project_cost(
             "to": end_date.isoformat(),
         },
     }
+
+
+@router.get("/metrics/hourly", response_model=HourlyMetricsResponse)
+async def get_hourly_metrics(hours: int = Query(default=24, le=168)) -> HourlyMetricsResponse:
+    """Get metrics aggregated by hour for the last N hours."""
+    from .app import get_langfuse_client
+
+    client = get_langfuse_client()
+    if not client or not client.is_configured():
+        return HourlyMetricsResponse(period_hours=hours)
+
+    try:
+        from_date = datetime.utcnow() - timedelta(hours=hours)
+        filter = TraceFilter(from_timestamp=from_date)
+        traces = await client.get_traces(filter)
+
+        # Aggregate by hour
+        hourly_data: Dict[str, HourlyMetric] = {}
+        for trace in traces:
+            hour_key = trace.timestamp.strftime("%Y-%m-%dT%H:00:00")
+            if hour_key not in hourly_data:
+                hourly_data[hour_key] = HourlyMetric(hour=hour_key)
+
+            metric = hourly_data[hour_key]
+            metric.requests += 1
+            metric.tokens += trace.total_tokens
+            metric.cost += trace.total_cost
+            # Check for errors in trace metadata
+            if trace.metadata and trace.metadata.get("error"):
+                metric.errors += 1
+
+        # Sort by hour
+        sorted_metrics = sorted(hourly_data.values(), key=lambda m: m.hour)
+
+        return HourlyMetricsResponse(metrics=sorted_metrics, period_hours=hours)
+    except Exception as e:
+        logger.error(f"Failed to get hourly metrics: {e}")
+        return HourlyMetricsResponse(period_hours=hours)
 
 
 # =============================================================================

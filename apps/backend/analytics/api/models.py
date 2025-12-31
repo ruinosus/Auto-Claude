@@ -321,6 +321,26 @@ class HourlyMetricsResponse(BaseModel):
 
 
 # =============================================================================
+# Error Metrics Models
+# =============================================================================
+
+class ErrorBreakdown(BaseModel):
+    """Breakdown of errors by type."""
+    error_type: str
+    count: int = 0
+    percentage: float = 0.0
+    last_occurrence: Optional[datetime] = None
+
+
+class ErrorMetricsResponse(BaseModel):
+    """Response for error metrics."""
+    total_errors: int = 0
+    error_rate: float = 0.0  # percentage of traces with errors
+    breakdown: List[ErrorBreakdown] = Field(default_factory=list)
+    recent_errors: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+# =============================================================================
 # Activity Models
 # =============================================================================
 
