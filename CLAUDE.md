@@ -225,13 +225,22 @@ See [RELEASE.md](RELEASE.md) for detailed release process documentation.
   - See "End-to-End Testing" section for details
 
 **Analytics (Langfuse):**
-- **analytics/langfuse_integration.py** - Langfuse tracing for all agents
+
+> **See:** [docs/LANGFUSE_INTEGRATION.md](docs/LANGFUSE_INTEGRATION.md) for comprehensive documentation.
+
+- **analytics/langfuse_integration.py** - Core tracing, scores, sampling, metadata propagation
+- **analytics/prompt_registry.py** - Prompt management (Langfuse + local fallback)
+- **analytics/metrics_client.py** - Daily Metrics & Observations API
+- **analytics/evaluators.py** - LLM-as-a-Judge configuration
+- **analytics/datasets.py** - Experiment datasets for A/B testing
+- **analytics/roi_tracker.py** - ROI calculation and tracking
 - **analytics/api/** - FastAPI REST service for frontend
   - `app.py` - FastAPI application
   - `langfuse_client.py` - Langfuse v3 API wrapper
-  - `routes.py` - REST endpoints
+  - `routes.py` - REST endpoints (traces, ROI, metrics)
   - `roi_calculator.py` - Hybrid ROI calculation
   - `models.py` - Pydantic models
+- **scripts/migrate_prompts_to_langfuse.py** - Prompt migration tool
 
 ### Agent Prompts (apps/backend/prompts/)
 

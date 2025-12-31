@@ -256,13 +256,30 @@ def _configure_claude_sdk_instrumentation():
     Configure automatic instrumentation for Claude Agent SDK.
 
     This uses LangSmith's OTEL integration to automatically capture
-    all Claude Agent SDK calls.
+    all Claude Agent SDK calls. The integration is optional - if it
+    fails, manual tracing via trace_context() is used instead.
+
+    Note: LangSmith warnings about "Run compression" and "Invalid type dict"
+    are suppressed as they don't affect Langfuse integration.
     """
+    # Check if instrumentation is explicitly disabled
+    if os.environ.get("LANGFUSE_DISABLE_SDK_INSTRUMENTATION", "").lower() == "true":
+        logger.debug("Claude SDK instrumentation disabled via LANGFUSE_DISABLE_SDK_INSTRUMENTATION")
+        return
+
     try:
+        # Suppress LangSmith warnings that don't affect Langfuse
+        os.environ.setdefault("LANGSMITH_SILENCE_WARNINGS", "true")
+
         # Set required environment variables for OTEL instrumentation
         os.environ.setdefault("LANGSMITH_OTEL_ENABLED", "true")
         os.environ.setdefault("LANGSMITH_OTEL_ONLY", "true")
         os.environ.setdefault("LANGSMITH_TRACING", "true")
+
+        # Suppress insights/compression warnings
+        import warnings
+        warnings.filterwarnings("ignore", message=".*Run compression.*")
+        warnings.filterwarnings("ignore", message=".*Invalid type dict.*")
 
         from langsmith.integrations.claude_agent_sdk import configure_claude_agent_sdk
         configure_claude_agent_sdk()
