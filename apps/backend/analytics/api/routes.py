@@ -885,33 +885,28 @@ async def get_health_status() -> HealthStatusResponse:
     """
     Get health status of all connected services.
 
-    Checks:
-    - Langfuse API connectivity
-    - Claude API connectivity (basic check)
+    Checks Langfuse API configuration status.
+    Returns overall_status: "healthy", "degraded", or "unhealthy".
     """
     from .app import get_langfuse_client
 
     services = []
     overall_status = "healthy"
 
-    # Check Langfuse
+    # Check Langfuse configuration
     try:
         client = get_langfuse_client()
         if client and client.is_configured():
-            # Try a simple operation to verify connectivity
-            start = datetime.utcnow()
-            # Just checking if client is configured is enough
-            latency = (datetime.utcnow() - start).total_seconds() * 1000
             services.append(ServiceHealth(
                 name="langfuse",
                 status="healthy",
-                latency_ms=latency
+                message="Configured and ready"
             ))
         else:
             services.append(ServiceHealth(
                 name="langfuse",
-                status="unhealthy",
-                message="Not configured"
+                status="degraded",
+                message="Not configured - analytics features limited"
             ))
             overall_status = "degraded"
     except Exception as e:
