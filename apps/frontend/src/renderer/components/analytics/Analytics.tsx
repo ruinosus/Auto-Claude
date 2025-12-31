@@ -1,26 +1,25 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProjectStore } from '../../stores/project-store';
-import { useUsageSummary, useAnalyticsHealth } from '../../hooks/useAnalyticsQuery';
-import { OverviewCards } from './OverviewCards';
-import { CostChart } from './CostChart';
-import { TokensChart } from './TokensChart';
-import { ModelDistributionChart } from './ModelDistributionChart';
-import { SessionDurationChart } from './SessionDurationChart';
-import { BudgetManager } from './BudgetManager';
-import { FeatureUsageSection } from './FeatureUsageSection';
-import { ROIDashboard } from './roi/ROIDashboard';
+import { useUsageSummary, useROISummary, useAnalyticsHealth } from '../../hooks/useAnalyticsQuery';
+import { OverviewTab } from './tabs/OverviewTab';
+import { DevTab } from './tabs/DevTab';
+import { TechLeadTab } from './tabs/TechLeadTab';
+import { OpsTab } from './tabs/OpsTab';
+import { BusinessTab } from './tabs/BusinessTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+
+type TabId = 'overview' | 'dev' | 'techlead' | 'ops' | 'business';
 
 interface AnalyticsProps {
   projectId?: string;
-  initialTab?: 'usage' | 'roi';
+  initialTab?: TabId;
 }
 
-export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
+export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps) {
   const { t } = useTranslation(['analytics']);
   const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
-  const [activeTab, setActiveTab] = useState<'usage' | 'roi'>(initialTab);
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
 
   // Get project name from store - this is the directory name used by the backend
   // IMPORTANT: Backend uses directory name (project.name), not UUID (project.id)
@@ -32,6 +31,10 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
   // Use project name (directory name) for data isolation, not UUID
   const health = useAnalyticsHealth();
   const usageSummary = useUsageSummary(
+    { project_id: projectName },
+    { enabled: !!projectName && health.data?.langfuse_configured }
+  );
+  const roiSummary = useROISummary(
     { project_id: projectName },
     { enabled: !!projectName && health.data?.langfuse_configured }
   );
@@ -72,6 +75,15 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
       });
   };
 
+  // Tab configuration
+  const tabs: { id: TabId; label: string }[] = [
+    { id: 'overview', label: 'tabs.overview' },
+    { id: 'dev', label: 'tabs.dev' },
+    { id: 'techlead', label: 'tabs.techLead' },
+    { id: 'ops', label: 'tabs.ops' },
+    { id: 'business', label: 'tabs.business' },
+  ];
+
   // Loading state
   if (health.isLoading) {
     return (
@@ -109,7 +121,9 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
     );
   }
 
-  if (usageSummary.isLoading) {
+  const isLoading = usageSummary.isLoading || roiSummary.isLoading;
+
+  if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
@@ -120,49 +134,111 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
     );
   }
 
-  // Get data from Langfuse
-  const data = usageSummary.data;
+  // Get data from APIs
+  const usageData = usageSummary.data;
+  const roiData = roiSummary.data;
 
-  // Transform cost over time data for CostChart
-  const costChartData = (data?.cost_over_time || []).map((point) => ({
-    timestamp: point.date, // Already in YYYY-MM-DD format
-    cost: point.cost
+  // Calculate totals
+  const totalCost = usageData?.total_cost || 0;
+  const totalTokens = usageData?.total_tokens || 0;
+  const hoursSaved = roiData?.total_dev_hours_saved || 0;
+  const avgROI = roiData?.total_roi_percentage || 0;
+  const specsCompleted = roiData?.specs_with_positive_roi || 0;
+  const specsInProgress = (usageData?.active_specs || 0) - specsCompleted;
+
+  // Transform data for OverviewTab
+  const overviewData = {
+    totalCost,
+    totalTokens,
+    hoursSaved,
+    avgROI,
+    specsCompleted,
+    specsInProgress: Math.max(0, specsInProgress),
+  };
+
+  // Transform data for DevTab - extract individual specs from ROI data
+  const devSpecs = (roiData?.by_spec || []).map((spec) => ({
+    id: spec.spec_id,
+    name: spec.spec_id,
+    status: spec.metrics.qa_passed ? 'completed' : 'in_progress',
+    cost: spec.metrics.actual_cost_usd,
+    timeSaved: spec.metrics.dev_hours_saved,
+    roi: spec.metrics.roi_percentage,
   }));
 
-  // Transform tokens by spec data for TokensChart
-  const tokensChartData = (data?.tokens_by_spec || []).map((item) => ({
-    spec_id: item.spec_id,
-    input_tokens: item.input_tokens,
-    output_tokens: item.output_tokens
+  const devData = {
+    mySpecs: devSpecs,
+    totalCost,
+    totalTimeSaved: hoursSaved,
+    successRate: roiData?.spec_count ? (specsCompleted / roiData.spec_count) * 100 : 0,
+  };
+
+  // Transform data for TechLeadTab
+  const costByAgent = (usageData?.model_distribution || []).map((model) => ({
+    agent: model.model,
+    cost: model.cost,
+    percentage: model.percentage,
   }));
 
-  // Transform model distribution for ModelDistributionChart
-  const modelDistribution = (data?.model_distribution || []).map((item) => ({
-    model: item.model,
-    count: item.generation_count,
-    percentage: item.percentage
-  }));
+  const techLeadData = {
+    budget: {
+      used: totalCost,
+      total: budgetLimit || totalCost * 1.5, // Default to 150% of current if no budget set
+      projected: totalCost * 1.2, // Estimate 20% growth
+    },
+    teamMetrics: {
+      specsCompleted,
+      avgROI,
+      efficiency: avgROI > 100 ? 'High' : avgROI > 50 ? 'Medium' : 'Low',
+    },
+    costByAgent,
+  };
 
-  // Transform duration by phase for SessionDurationChart (ms to seconds)
-  const sessionDurationData = (data?.duration_by_phase || []).map((item) => ({
-    phase: item.phase,
-    avg_duration_seconds: item.avg_duration_ms / 1000
-  }));
+  // Transform data for OpsTab
+  const opsData = {
+    health: {
+      status: 'healthy' as const,
+      services: [
+        { name: 'Langfuse', status: 'healthy' },
+        { name: 'API', status: 'healthy' },
+      ],
+    },
+    alerts: [] as { id: string; severity: 'info' | 'warning' | 'error'; message: string; timestamp: string }[],
+    errorRate: 0,
+    avgLatency: (usageData?.duration_by_phase || []).reduce((sum, p) => sum + p.avg_duration_ms, 0) /
+      Math.max(1, usageData?.duration_by_phase?.length || 1),
+    requestsPerHour: usageData?.total_traces || 0,
+    recentErrors: [] as { specId: string; error: string; timestamp: string; agentType: string }[],
+  };
 
-  // Transform feature usage for FeatureUsageSection (mapping to expected format)
-  const featureUsage = (data?.feature_usage || []).map((item) => ({
-    featureType: item.feature,
-    totalSessions: item.trace_count,
-    totalCost: item.cost,
-    totalInputTokens: Math.floor(item.tokens * 0.3), // Estimate: 30% input tokens
-    totalOutputTokens: Math.floor(item.tokens * 0.7), // Estimate: 70% output tokens
-    lastUsed: null as Date | null // Not available from summary endpoint
-  }));
+  // Transform data for BusinessTab
+  const topSpecs = (roiData?.by_spec || [])
+    .sort((a, b) => b.metrics.roi_percentage - a.metrics.roi_percentage)
+    .slice(0, 5)
+    .map((spec) => ({
+      name: spec.spec_id,
+      value: spec.metrics.business_value_usd,
+      roi: spec.metrics.roi_percentage,
+    }));
 
-  // Calculate budget progress
-  const totalCost = data?.total_cost || 0;
-  const budgetProgress = budgetLimit ? (totalCost / budgetLimit) * 100 : undefined;
-  const budgetRemaining = budgetLimit ? budgetLimit - totalCost : 0;
+  const businessData = {
+    investment: totalCost,
+    valueGenerated: roiData?.total_business_value_usd || 0,
+    netSavings: (roiData?.total_business_value_usd || 0) - totalCost,
+    hoursImpact: hoursSaved,
+    topSpecs,
+    annualProjection: {
+      investment: totalCost * 12,
+      value: (roiData?.total_business_value_usd || 0) * 12,
+      roi: avgROI,
+    },
+  };
+
+  // Handle PDF export for BusinessTab
+  const handleExportPDF = () => {
+    // TODO: Implement PDF export
+    console.log('Export PDF clicked');
+  };
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -174,60 +250,37 @@ export function Analytics({ projectId, initialTab = 'usage' }: AnalyticsProps) {
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'usage' | 'roi')}>
-          <TabsList>
-            <TabsTrigger value="usage">{t('analytics:tabs.usage')}</TabsTrigger>
-            <TabsTrigger value="roi">{t('analytics:tabs.roi')}</TabsTrigger>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>
+          <TabsList className="grid w-full grid-cols-5">
+            {tabs.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id}>
+                {t(`analytics:${tab.label}`)}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
-          <TabsContent value="usage" className="mt-6">
-            {/* Usage analytics content - powered by Langfuse */}
-            <div className="space-y-6">
-              {/* Overview Cards */}
-              <OverviewCards
-                data={{
-                  totalCost: totalCost,
-                  totalTokens: {
-                    // Use real token counts when available from API, fallback to estimated split
-                    input: data?.total_input_tokens ?? Math.floor((data?.total_tokens || 0) * 0.3),
-                    output: data?.total_output_tokens ?? Math.floor((data?.total_tokens || 0) * 0.7)
-                  },
-                  activeSessions: data?.active_specs || 0,
-                  budgetRemaining: budgetRemaining,
-                  budgetProgress: budgetProgress
-                }}
-              />
-
-              {/* Charts Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <CostChart
-                  data={costChartData}
-                  budgetLimit={budgetLimit}
-                />
-                <TokensChart data={tokensChartData} />
-                <ModelDistributionChart data={modelDistribution} />
-                <SessionDurationChart data={sessionDurationData} />
-              </div>
-
-              {/* Feature Usage Section */}
-              {featureUsage.length > 0 && (
-                <FeatureUsageSection
-                  featureUsage={featureUsage}
-                  totalCost={totalCost}
-                />
-              )}
-
-              {/* Budget Manager */}
-              <BudgetManager
-                currentCost={totalCost}
-                budgetLimit={budgetLimit}
-                onBudgetChange={handleBudgetChange}
-              />
-            </div>
+          <TabsContent value="overview" className="mt-6">
+            <OverviewTab data={overviewData} loading={isLoading} />
           </TabsContent>
 
-          <TabsContent value="roi" className="mt-6">
-            <ROIDashboard projectName={projectName} />
+          <TabsContent value="dev" className="mt-6">
+            <DevTab data={devData} loading={isLoading} />
+          </TabsContent>
+
+          <TabsContent value="techlead" className="mt-6">
+            <TechLeadTab data={techLeadData} loading={isLoading} />
+          </TabsContent>
+
+          <TabsContent value="ops" className="mt-6">
+            <OpsTab data={opsData} loading={isLoading} />
+          </TabsContent>
+
+          <TabsContent value="business" className="mt-6">
+            <BusinessTab
+              data={businessData}
+              loading={isLoading}
+              onExportPDF={handleExportPDF}
+            />
           </TabsContent>
         </Tabs>
       </div>

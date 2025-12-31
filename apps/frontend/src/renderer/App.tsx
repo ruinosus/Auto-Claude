@@ -740,7 +740,7 @@ export function App() {
                 {(activeView === 'analytics' || activeView === 'roi') && (
                   <Analytics
                     projectId={activeProjectId || selectedProjectId || undefined}
-                    initialTab={activeView === 'roi' ? 'roi' : 'usage'}
+                    initialTab={activeView === 'roi' ? 'business' : 'overview'}
                   />
                 )}
                 {activeView === 'agent-tools' && <AgentTools />}
