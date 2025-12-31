@@ -628,7 +628,7 @@ export function App() {
       <ViewStateProvider>
         <TooltipProvider>
           <ProactiveSwapListener />
-      <div className="flex h-screen bg-background">
+          <div className="flex h-screen bg-background">
         {/* Sidebar */}
         <Sidebar
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
@@ -745,10 +745,10 @@ export function App() {
                 {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
                   <Worktrees projectId={activeProjectId || selectedProjectId!} />
                 )}
-                {(activeView === 'analytics' || activeView === 'roi') && (
+                {activeView === 'analytics' && (
                   <Analytics
                     projectId={activeProjectId || selectedProjectId || undefined}
-                    initialTab={activeView === 'roi' ? 'business' : 'overview'}
+                    initialTab="overview"
                   />
                 )}
                 {activeView === 'agent-tools' && <AgentTools />}
@@ -928,7 +928,7 @@ export function App() {
 
         {/* Global Download Indicator - shows Ollama model download progress */}
         <GlobalDownloadIndicator />
-      </div>
+          </div>
         </TooltipProvider>
       </ViewStateProvider>
     </QueryProvider>
