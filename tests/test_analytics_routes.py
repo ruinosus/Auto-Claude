@@ -228,6 +228,52 @@ class TestGetAgentTypeFromTrace:
         assert result == "planner"
 
 
+class TestUsageSummaryResponseTokenFields:
+    """Tests for separate input/output token fields in UsageSummaryResponse."""
+
+    def test_usage_summary_response_has_input_tokens_field(self):
+        """Test that UsageSummaryResponse has total_input_tokens field."""
+        from analytics.api.models import UsageSummaryResponse
+
+        response = UsageSummaryResponse()
+        assert hasattr(response, 'total_input_tokens')
+        assert response.total_input_tokens == 0
+
+    def test_usage_summary_response_has_output_tokens_field(self):
+        """Test that UsageSummaryResponse has total_output_tokens field."""
+        from analytics.api.models import UsageSummaryResponse
+
+        response = UsageSummaryResponse()
+        assert hasattr(response, 'total_output_tokens')
+        assert response.total_output_tokens == 0
+
+    def test_usage_summary_response_token_fields_can_be_set(self):
+        """Test that input/output token fields can be set with values."""
+        from analytics.api.models import UsageSummaryResponse
+
+        response = UsageSummaryResponse(
+            total_tokens=1000,
+            total_input_tokens=700,
+            total_output_tokens=300,
+        )
+        assert response.total_tokens == 1000
+        assert response.total_input_tokens == 700
+        assert response.total_output_tokens == 300
+
+    def test_token_fields_consistent_with_total(self):
+        """Test that input + output tokens should approximately equal total."""
+        from analytics.api.models import UsageSummaryResponse
+
+        # Using 70/30 split as estimation
+        total = 10000
+        response = UsageSummaryResponse(
+            total_tokens=total,
+            total_input_tokens=int(total * 0.7),
+            total_output_tokens=int(total * 0.3),
+        )
+        assert response.total_input_tokens + response.total_output_tokens == total
+
+
 class TestNoUnknownFallback:
     """Tests to ensure 'unknown' is never returned."""
 

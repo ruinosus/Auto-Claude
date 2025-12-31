@@ -235,6 +235,8 @@ class UsageSummaryResponse(BaseModel):
     # Overview metrics
     total_cost: float = 0.0
     total_tokens: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
     total_traces: int = 0
     active_specs: int = 0
 

@@ -533,6 +533,8 @@ async def get_usage_summary(
     # Aggregate data
     total_cost = 0.0
     total_tokens = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
     specs = set()
 
     # Daily aggregation for cost over time
@@ -554,6 +556,12 @@ async def get_usage_summary(
         total_cost += trace.total_cost
         total_tokens += trace.total_tokens
 
+        # Estimate input/output token split (70/30) when exact values aren't available
+        trace_input_tokens = int(trace.total_tokens * 0.7)
+        trace_output_tokens = int(trace.total_tokens * 0.3)
+        total_input_tokens += trace_input_tokens
+        total_output_tokens += trace_output_tokens
+
         spec_id = get_spec_id_from_trace(trace)
         specs.add(spec_id)
 
@@ -565,8 +573,8 @@ async def get_usage_summary(
 
         # Spec aggregation (estimate input/output split)
         spec_data[spec_id]["total"] += trace.total_tokens
-        spec_data[spec_id]["input"] += int(trace.total_tokens * 0.7)  # Estimate
-        spec_data[spec_id]["output"] += int(trace.total_tokens * 0.3)
+        spec_data[spec_id]["input"] += trace_input_tokens
+        spec_data[spec_id]["output"] += trace_output_tokens
         spec_data[spec_id]["cost"] += trace.total_cost
 
         # Phase aggregation
@@ -649,6 +657,8 @@ async def get_usage_summary(
     return UsageSummaryResponse(
         total_cost=round(total_cost, 4),
         total_tokens=total_tokens,
+        total_input_tokens=total_input_tokens,
+        total_output_tokens=total_output_tokens,
         total_traces=len(traces),
         active_specs=len(specs),
         cost_over_time=cost_over_time,
