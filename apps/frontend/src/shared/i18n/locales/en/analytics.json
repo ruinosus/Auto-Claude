@@ -225,7 +225,12 @@
     "timeSaved": "Time Saved",
     "successRate": "Success Rate",
     "costBySpec": "Cost by Spec",
-    "productivityMetrics": "Productivity Metrics"
+    "productivityMetrics": "Productivity Metrics",
+    "specName": "Spec Name",
+    "status": "Status",
+    "cost": "Cost",
+    "roi": "ROI",
+    "noSpecs": "No specs found"
   },
   "techLead": {
     "budgetTracker": "Budget Tracker",
