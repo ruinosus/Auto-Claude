@@ -6,7 +6,12 @@
   },
   "tabs": {
     "usage": "Usage",
-    "roi": "ROI"
+    "roi": "ROI",
+    "overview": "Overview",
+    "dev": "Dev",
+    "techLead": "Tech Lead",
+    "ops": "Ops",
+    "business": "Business"
   },
   "featureUsage": {
     "title": "Feature Usage",
@@ -202,5 +207,68 @@
       "refresh": "Refresh",
       "hourlyRate": "Rate: ${{rate}}/hr"
     }
+  },
+  "overview": {
+    "totalCost": "Total Cost",
+    "totalTokens": "Total Tokens",
+    "hoursSaved": "Hours Saved",
+    "avgROI": "Average ROI",
+    "costVsValue": "Cost vs Value",
+    "statusQuick": "Quick Status",
+    "recentActivity": "Recent Activity",
+    "specsCompleted": "Specs Completed",
+    "inProgress": "In Progress"
+  },
+  "dev": {
+    "mySpecs": "My Specs",
+    "myCost": "My Cost",
+    "timeSaved": "Time Saved",
+    "successRate": "Success Rate",
+    "costBySpec": "Cost by Spec",
+    "productivityMetrics": "Productivity Metrics"
+  },
+  "techLead": {
+    "budgetTracker": "Budget Tracker",
+    "projectOverview": "Project Overview",
+    "costOverTime": "Cost Over Time",
+    "agentDistribution": "Agent Distribution",
+    "performanceTable": "Performance",
+    "roiTrend": "ROI Trend",
+    "weeklyComparison": "Weekly Comparison"
+  },
+  "ops": {
+    "healthStatus": "System Health",
+    "activeAlerts": "Active Alerts",
+    "requestsPerHour": "Requests/Hour",
+    "errorRate": "Error Rate",
+    "modelUsage": "Model Usage",
+    "tokensPerHour": "Tokens/Hour",
+    "latencyByAgent": "Latency by Agent",
+    "rateLimits": "Rate Limits",
+    "recentLogs": "Recent Logs"
+  },
+  "business": {
+    "executiveSummary": "Executive Summary",
+    "investment": "Investment",
+    "valueGenerated": "Value Generated",
+    "netSavings": "Net Savings",
+    "hoursImpact": "Hours Impact",
+    "roiByMonth": "ROI by Month",
+    "valueByType": "Value by Task Type",
+    "aiVsManual": "AI vs Manual",
+    "topSpecs": "Top Specs",
+    "annualProjection": "Annual Projection",
+    "exportPdf": "Export PDF"
+  },
+  "common": {
+    "loading": "Loading...",
+    "noData": "No data available",
+    "error": "Error loading data",
+    "refresh": "Refresh",
+    "period": "Period",
+    "last7Days": "Last 7 Days",
+    "last30Days": "Last 30 Days",
+    "thisMonth": "This Month",
+    "lastMonth": "Last Month"
   }
 }

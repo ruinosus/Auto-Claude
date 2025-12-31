@@ -6,7 +6,12 @@
   },
   "tabs": {
     "usage": "Utilisation",
-    "roi": "ROI"
+    "roi": "ROI",
+    "overview": "Aperçu",
+    "dev": "Dev",
+    "techLead": "Tech Lead",
+    "ops": "Ops",
+    "business": "Business"
   },
   "featureUsage": {
     "title": "Utilisation des fonctionnalités",
@@ -202,5 +207,68 @@
       "dataSource": "Source de données",
       "refresh": "Actualiser"
     }
+  },
+  "overview": {
+    "totalCost": "Coût Total",
+    "totalTokens": "Tokens Totaux",
+    "hoursSaved": "Heures Économisées",
+    "avgROI": "ROI Moyen",
+    "costVsValue": "Coût vs Valeur",
+    "statusQuick": "Statut Rapide",
+    "recentActivity": "Activité Récente",
+    "specsCompleted": "Specs Terminées",
+    "inProgress": "En Cours"
+  },
+  "dev": {
+    "mySpecs": "Mes Specs",
+    "myCost": "Mon Coût",
+    "timeSaved": "Temps Économisé",
+    "successRate": "Taux de Réussite",
+    "costBySpec": "Coût par Spec",
+    "productivityMetrics": "Métriques de Productivité"
+  },
+  "techLead": {
+    "budgetTracker": "Suivi Budget",
+    "projectOverview": "Vue Projet",
+    "costOverTime": "Coût au Fil du Temps",
+    "agentDistribution": "Distribution des Agents",
+    "performanceTable": "Performance",
+    "roiTrend": "Tendance ROI",
+    "weeklyComparison": "Comparaison Hebdomadaire"
+  },
+  "ops": {
+    "healthStatus": "Santé Système",
+    "activeAlerts": "Alertes Actives",
+    "requestsPerHour": "Requêtes/Heure",
+    "errorRate": "Taux d'Erreur",
+    "modelUsage": "Utilisation Modèle",
+    "tokensPerHour": "Tokens/Heure",
+    "latencyByAgent": "Latence par Agent",
+    "rateLimits": "Limites de Taux",
+    "recentLogs": "Logs Récents"
+  },
+  "business": {
+    "executiveSummary": "Résumé Exécutif",
+    "investment": "Investissement",
+    "valueGenerated": "Valeur Générée",
+    "netSavings": "Économies Nettes",
+    "hoursImpact": "Impact Heures",
+    "roiByMonth": "ROI par Mois",
+    "valueByType": "Valeur par Type",
+    "aiVsManual": "IA vs Manuel",
+    "topSpecs": "Top Specs",
+    "annualProjection": "Projection Annuelle",
+    "exportPdf": "Exporter PDF"
+  },
+  "common": {
+    "loading": "Chargement...",
+    "noData": "Aucune donnée disponible",
+    "error": "Erreur de chargement",
+    "refresh": "Actualiser",
+    "period": "Période",
+    "last7Days": "7 Derniers Jours",
+    "last30Days": "30 Derniers Jours",
+    "thisMonth": "Ce Mois",
+    "lastMonth": "Mois Dernier"
   }
 }
