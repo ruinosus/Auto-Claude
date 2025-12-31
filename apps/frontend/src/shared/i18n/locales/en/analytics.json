@@ -213,11 +213,20 @@
     "totalTokens": "Total Tokens",
     "hoursSaved": "Hours Saved",
     "avgROI": "Average ROI",
+    "netValue": "Net Value",
     "costVsValue": "Cost vs Value",
+    "costByFeature": "Cost Breakdown by Feature",
     "statusQuick": "Quick Status",
     "recentActivity": "Recent Activity",
     "specsCompleted": "Specs Completed",
-    "inProgress": "In Progress"
+    "inProgress": "In Progress",
+    "totalTraces": "Total Traces",
+    "costTimeline": "Cost Timeline (Last 24h)",
+    "noHourlyData": "No hourly data available yet",
+    "noFeatureData": "No feature usage data yet",
+    "runFeatures": "Run some AI features to see cost breakdown",
+    "featuresTracked": "features tracked",
+    "calls": "calls"
   },
   "dev": {
     "mySpecs": "My Specs",
@@ -237,6 +246,10 @@
     "projectOverview": "Project Overview",
     "costOverTime": "Cost Over Time",
     "agentDistribution": "Agent Distribution",
+    "featureUsage": "Cost by Feature",
+    "noFeatureData": "No feature usage data yet. Run some AI features to see cost breakdown.",
+    "modelDistribution": "Cost by Model",
+    "noModelData": "No model usage data yet.",
     "performanceTable": "Performance",
     "roiTrend": "ROI Trend",
     "weeklyComparison": "Weekly Comparison",
@@ -279,7 +292,17 @@
     "specName": "Spec Name",
     "value": "Value",
     "roi": "ROI",
-    "noSpecs": "No specs available"
+    "noSpecs": "No specs available",
+    "valueBreakdown": "Value Breakdown by Type",
+    "executionValue": "Execution",
+    "executionDesc": "Direct code work",
+    "decisionValue": "Decision",
+    "decisionDesc": "Strategic choices",
+    "preventionValue": "Prevention",
+    "preventionDesc": "Issues avoided",
+    "knowledgeValue": "Knowledge",
+    "knowledgeDesc": "Insights gained",
+    "roiByFeature": "ROI by Feature Type"
   },
   "common": {
     "loading": "Loading...",
@@ -291,5 +314,38 @@
     "last30Days": "Last 30 Days",
     "thisMonth": "This Month",
     "lastMonth": "Last Month"
+  },
+  "roiExplanation": {
+    "title": "How ROI is Calculated",
+    "button": "How is ROI calculated?",
+    "intro": "Auto-Claude calculates ROI by measuring the value generated across 4 dimensions, compared to the AI cost. Value is estimated based on developer time saved, issues prevented, and strategic decisions made.",
+    "valueTypes": {
+      "title": "4 Types of Value",
+      "execution": {
+        "name": "Execution",
+        "desc": "Hours × $150/hr × Quality Multiplier"
+      },
+      "decision": {
+        "name": "Decision",
+        "desc": "$50-$250 per strategic decision"
+      },
+      "prevention": {
+        "name": "Prevention",
+        "desc": "$300-$10,000 per issue prevented"
+      },
+      "knowledge": {
+        "name": "Knowledge",
+        "desc": "Time saved × $150/hr × 0.4-0.5"
+      }
+    },
+    "features": {
+      "title": "ROI by Feature Type"
+    },
+    "constants": {
+      "title": "Calculation Constants"
+    },
+    "formula": {
+      "title": "ROI Formula"
+    }
   }
 }

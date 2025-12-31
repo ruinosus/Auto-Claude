@@ -36,6 +36,13 @@ except ImportError:
     )
     from services import MRReviewEngine
 
+# ROI Publishing
+try:
+    from analytics.roi_publisher import publish_github_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 
 @dataclass
 class ProgressCallback:
@@ -118,6 +125,30 @@ class GitLabOrchestrator:
         """Forward progress from engine to orchestrator callback."""
         if self.progress_callback:
             self.progress_callback(callback)
+
+    async def _publish_roi(self, mrs_reviewed: int = 0) -> None:
+        """Publish ROI metrics for GitLab MR review operations."""
+        if not ROI_PUBLISHER_AVAILABLE:
+            return
+
+        try:
+            project_id = self.project_dir.name
+
+            result = await publish_github_roi(
+                project_id=project_id,
+                prs_reviewed=mrs_reviewed,  # Reusing GitHub function, maps MRs to PRs
+                model=self.config.model,
+            )
+
+            if result.get("success"):
+                roi_pct = result.get("roi_percentage", 0)
+                value = result.get("total_value_usd", 0)
+                print(
+                    f"[ROI] GitLab MR review: {roi_pct:.0f}% ROI (${value:.2f} value)",
+                    flush=True,
+                )
+        except Exception as e:
+            print(f"[ROI] Failed to publish: {e}", flush=True)
 
     async def _gather_mr_context(self, mr_iid: int) -> MRContext:
         """Gather context for an MR."""
@@ -251,6 +282,9 @@ class GitLabOrchestrator:
             result.save(self.gitlab_dir)
 
             self._report_progress("complete", 100, "Review complete!", mr_iid=mr_iid)
+
+            # Publish ROI metrics
+            await self._publish_roi(mrs_reviewed=1)
 
             return result
 
@@ -446,6 +480,9 @@ class GitLabOrchestrator:
             self._report_progress(
                 "complete", 100, "Follow-up review complete!", mr_iid=mr_iid
             )
+
+            # Publish ROI metrics for follow-up review
+            await self._publish_roi(mrs_reviewed=1)
 
             return result
 

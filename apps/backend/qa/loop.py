@@ -142,7 +142,7 @@ async def _update_qa_roi(
             else:
                 # Create new record with just QA data
                 await storage.save_spec_roi(spec_id, {
-                    'project_id': project_dir.name,  # Use project directory name as project_id
+                    'project_id': effective_dir.name,  # Use original project directory name (not worktree)
                     'qa_attempts': qa_attempts,
                     'qa_passed': qa_passed,
                     'completed_at': datetime.utcnow().isoformat() if qa_passed else None
@@ -280,6 +280,7 @@ async def run_qa_validation_loop(
                 spec_dir,
                 0,
                 False,  # iteration 0 for human feedback
+                analytics_project_dir=analytics_project_dir,  # Original project for analytics
             )
 
         if fix_status == "error":
@@ -368,6 +369,7 @@ async def run_qa_validation_loop(
                 MAX_QA_ITERATIONS,
                 verbose,
                 previous_error=last_error_context,  # Pass error context for self-correction
+                analytics_project_dir=analytics_project_dir,  # Original project for analytics
             )
             if trace_id:
                 debug("qa_loop", f"QA reviewer trace: {trace_id}")
@@ -533,7 +535,8 @@ async def run_qa_validation_loop(
 
             async with fix_client:
                 fix_status, fix_response, fix_trace_id = await run_qa_fixer_session(
-                    fix_client, spec_dir, qa_iteration, verbose
+                    fix_client, spec_dir, qa_iteration, verbose,
+                    analytics_project_dir=analytics_project_dir,  # Original project for analytics
                 )
                 if fix_trace_id:
                     debug("qa_loop", f"QA fixer trace: {fix_trace_id}")

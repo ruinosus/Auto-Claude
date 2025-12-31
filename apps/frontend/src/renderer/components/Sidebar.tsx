@@ -21,7 +21,6 @@ import {
   GitBranch,
   HelpCircle,
   ChartBar,
-  TrendingUp,
   Wrench
 } from 'lucide-react';
 import { Logo } from './Logo';
@@ -54,7 +53,7 @@ import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
 import type { Project, AutoBuildVersionInfo, GitStatus } from '../../shared/types';
 
-export type SidebarView = 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools' | 'analytics' | 'roi';
+export type SidebarView = 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools' | 'analytics';
 
 interface SidebarProps {
   onSettingsClick: () => void;
@@ -75,7 +74,6 @@ const projectNavItems: NavItem[] = [
   { id: 'terminals', labelKey: 'navigation:items.terminals', icon: Terminal, shortcut: 'A' },
   { id: 'insights', labelKey: 'navigation:items.insights', icon: Sparkles, shortcut: 'N' },
   { id: 'analytics', labelKey: 'navigation:items.analytics', icon: ChartBar, shortcut: 'Y' },
-  { id: 'roi', labelKey: 'navigation:items.roi', icon: TrendingUp, shortcut: 'R' },
   { id: 'roadmap', labelKey: 'navigation:items.roadmap', icon: Map, shortcut: 'D' },
   { id: 'ideation', labelKey: 'navigation:items.ideation', icon: Lightbulb, shortcut: 'I' },
   { id: 'changelog', labelKey: 'navigation:items.changelog', icon: FileText, shortcut: 'L' },

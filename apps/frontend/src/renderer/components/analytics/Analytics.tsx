@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProjectStore } from '../../stores/project-store';
-import { useUsageSummary, useROISummary, useAnalyticsHealth, useHealthStatus, useErrorMetrics, useHourlyMetrics } from '../../hooks/useAnalyticsQuery';
+import { useUsageSummary, useROISummary, useUnifiedROI, useAnalyticsHealth, useHealthStatus, useErrorMetrics, useHourlyMetrics } from '../../hooks/useAnalyticsQuery';
 import { OverviewTab } from './tabs/OverviewTab';
 import { DevTab } from './tabs/DevTab';
 import { TechLeadTab } from './tabs/TechLeadTab';
 import { OpsTab } from './tabs/OpsTab';
 import { BusinessTab } from './tabs/BusinessTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { ROIExplanation, ROIExplanationButton } from './shared/ROIExplanation';
 
 type TabId = 'overview' | 'dev' | 'techlead' | 'ops' | 'business';
 
@@ -20,6 +21,7 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
   const { t } = useTranslation(['analytics']);
   const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
+  const [showROIExplanation, setShowROIExplanation] = useState(false);
 
   // Get project name from store - this is the directory name used by the backend
   // IMPORTANT: Backend uses directory name (project.name), not UUID (project.id)
@@ -39,10 +41,17 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
     { enabled: !!projectName && health.data?.langfuse_configured }
   );
 
+  // Fetch unified ROI data (new unified system with value breakdown)
+  const unifiedROI = useUnifiedROI(
+    { project_id: projectName },
+    { enabled: !!projectName && health.data?.langfuse_configured }
+  );
+
   // Fetch Ops tab data (health, errors, hourly metrics)
+  // IMPORTANT: Pass projectName for data isolation
   const healthStatus = useHealthStatus({ enabled: health.data?.langfuse_configured });
-  const errorMetrics = useErrorMetrics(24, { enabled: health.data?.langfuse_configured });
-  const hourlyMetrics = useHourlyMetrics(24, { enabled: health.data?.langfuse_configured });
+  const errorMetrics = useErrorMetrics(24, projectName, { enabled: !!projectName && health.data?.langfuse_configured });
+  const hourlyMetrics = useHourlyMetrics(24, projectName, { enabled: !!projectName && health.data?.langfuse_configured });
 
   // Sync activeTab with initialTab when navigation changes
   useEffect(() => {
@@ -126,7 +135,7 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
     );
   }
 
-  const isLoading = usageSummary.isLoading || roiSummary.isLoading;
+  const isLoading = usageSummary.isLoading || roiSummary.isLoading || unifiedROI.isLoading;
 
   if (isLoading) {
     return (
@@ -152,6 +161,25 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
   const specsInProgress = (usageData?.active_specs || 0) - specsCompleted;
 
   // Transform data for OverviewTab
+  // Get ALL features by cost for comprehensive overview
+  const allFeatures = (usageData?.feature_usage || [])
+    .sort((a, b) => b.cost - a.cost)
+    .map((f) => ({
+      feature: f.feature,
+      tokens: f.tokens,
+      cost: f.cost,
+      percentage: f.percentage,
+      trace_count: f.trace_count,
+    }));
+
+  // Get hourly metrics for timeline chart
+  const hourlyData = (hourlyMetrics.data?.metrics || []).map((m) => ({
+    hour: m.hour,
+    requests: m.requests,
+    cost: m.cost,
+    tokens: m.tokens,
+  }));
+
   const overviewData = {
     totalCost,
     totalTokens,
@@ -159,6 +187,9 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
     avgROI,
     specsCompleted,
     specsInProgress: Math.max(0, specsInProgress),
+    totalTraces: usageData?.total_traces || 0,
+    allFeatures,
+    hourlyData,
   };
 
   // Transform data for DevTab - extract individual specs from ROI data
@@ -179,10 +210,21 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
   };
 
   // Transform data for TechLeadTab
-  const costByAgent = (usageData?.model_distribution || []).map((model) => ({
-    agent: model.model,
-    cost: model.cost,
-    percentage: model.percentage,
+  // Feature usage - where is money being spent (ideation, insights, roadmap, build, etc.)
+  const featureUsage = (usageData?.feature_usage || []).map((f) => ({
+    feature: f.feature,
+    tokens: f.tokens,
+    cost: f.cost,
+    trace_count: f.trace_count,
+    percentage: f.percentage,
+  }));
+
+  // Model distribution - which Claude models are being used
+  const modelDistribution = (usageData?.model_distribution || []).map((m) => ({
+    model: m.model,
+    tokens: m.tokens,
+    cost: m.cost,
+    percentage: m.percentage,
   }));
 
   const techLeadData = {
@@ -196,18 +238,19 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
       avgROI,
       efficiency: avgROI > 100 ? 'High' : avgROI > 50 ? 'Medium' : 'Low',
     },
-    costByAgent,
+    featureUsage,
+    modelDistribution,
   };
 
   // Transform data for OpsTab using real API data
   const healthData = healthStatus.data;
   const errorData = errorMetrics.data;
-  const hourlyData = hourlyMetrics.data;
+  const opsHourlyData = hourlyMetrics.data;
 
   // Calculate requests per hour from hourly metrics
-  const totalHourlyRequests = (hourlyData?.metrics || []).reduce((sum, m) => sum + m.requests, 0);
-  const avgRequestsPerHour = hourlyData?.metrics?.length
-    ? Math.round(totalHourlyRequests / hourlyData.metrics.length)
+  const totalHourlyRequests = (opsHourlyData?.metrics || []).reduce((sum: number, m: { requests: number }) => sum + m.requests, 0);
+  const avgRequestsPerHour = opsHourlyData?.metrics?.length
+    ? Math.round(totalHourlyRequests / opsHourlyData.metrics.length)
     : 0;
 
   // Generate alerts based on error rate and health status
@@ -260,17 +303,34 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
       roi: spec.metrics.roi_percentage,
     }));
 
+  // Get unified ROI data for value breakdown
+  const unifiedData = unifiedROI.data?.summary;
+
   const businessData = {
     investment: totalCost,
-    valueGenerated: roiData?.total_business_value_usd || 0,
-    netSavings: (roiData?.total_business_value_usd || 0) - totalCost,
+    valueGenerated: unifiedData?.total_value_usd || roiData?.total_business_value_usd || 0,
+    netSavings: unifiedData?.net_value_usd || (roiData?.total_business_value_usd || 0) - totalCost,
     hoursImpact: hoursSaved,
     topSpecs,
     annualProjection: {
       investment: totalCost * 12,
-      value: (roiData?.total_business_value_usd || 0) * 12,
-      roi: avgROI,
+      value: (unifiedData?.total_value_usd || roiData?.total_business_value_usd || 0) * 12,
+      roi: unifiedData?.total_roi_percentage || avgROI,
     },
+    // New unified ROI value breakdown
+    valueBreakdown: unifiedData?.value_distribution ? {
+      execution: unifiedData.value_distribution.execution_value,
+      decision: unifiedData.value_distribution.decision_value,
+      prevention: unifiedData.value_distribution.prevention_value,
+      knowledge: unifiedData.value_distribution.knowledge_value,
+    } : undefined,
+    // ROI by feature type
+    roiByFeature: unifiedData?.by_feature_type ? Object.entries(unifiedData.by_feature_type).map(([type, metrics]) => ({
+      feature: type,
+      roi: metrics.roi_percentage,
+      value: metrics.total_value_usd,
+      cost: metrics.total_cost_usd,
+    })) : [],
   };
 
   // Handle PDF export for BusinessTab
@@ -283,10 +343,16 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold">{t('analytics:header.title')}</h1>
-          <p className="text-muted-foreground">{t('analytics:header.subtitle')}</p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{t('analytics:header.title')}</h1>
+            <p className="text-muted-foreground">{t('analytics:header.subtitle')}</p>
+          </div>
+          <ROIExplanationButton onClick={() => setShowROIExplanation(true)} />
         </div>
+
+        {/* ROI Explanation Modal */}
+        <ROIExplanation isOpen={showROIExplanation} onClose={() => setShowROIExplanation(false)} />
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>

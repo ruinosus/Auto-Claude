@@ -71,6 +71,13 @@ except (ImportError, ValueError, SystemError):
         TriageEngine,
     )
 
+# ROI Publishing
+try:
+    from analytics.roi_publisher import publish_github_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 
 @dataclass
 class ProgressCallback:
@@ -198,6 +205,39 @@ class GitHubOrchestrator:
                     pr_number=pr_number,
                 )
             )
+
+    async def _publish_roi(
+        self,
+        prs_reviewed: int = 0,
+        issues_triaged: int = 0,
+        issues_auto_fixed: int = 0,
+        duplicates_detected: int = 0,
+        spam_detected: int = 0,
+    ) -> None:
+        """Publish ROI metrics for GitHub automation operations."""
+        if not ROI_PUBLISHER_AVAILABLE:
+            return
+
+        try:
+            project_id = self.project_dir.name
+
+            result = await publish_github_roi(
+                project_id=project_id,
+                prs_reviewed=prs_reviewed,
+                issues_triaged=issues_triaged,
+                issues_auto_fixed=issues_auto_fixed,
+                model=self.config.model,
+            )
+
+            if result.get("success"):
+                roi_pct = result.get("roi_percentage", 0)
+                value = result.get("total_value_usd", 0)
+                print(
+                    f"[ROI] GitHub automation: {roi_pct:.0f}% ROI (${value:.2f} value)",
+                    flush=True,
+                )
+        except Exception as e:
+            print(f"[ROI] Failed to publish: {e}", flush=True)
 
     # =========================================================================
     # GitHub API Helpers
@@ -451,6 +491,10 @@ class GitHubOrchestrator:
             self._report_progress(
                 "complete", 100, "Review complete!", pr_number=pr_number
             )
+
+            # Publish ROI metrics
+            await self._publish_roi(prs_reviewed=1)
+
             return result
 
         except Exception as e:
@@ -922,6 +966,16 @@ class GitHubOrchestrator:
             await result.save(self.github_dir)
 
         self._report_progress("complete", 100, f"Triaged {len(results)} issues")
+
+        # Publish ROI metrics
+        duplicates = sum(1 for r in results if r.is_duplicate)
+        spam = sum(1 for r in results if r.is_spam)
+        await self._publish_roi(
+            issues_triaged=len(results),
+            duplicates_detected=duplicates,
+            spam_detected=spam,
+        )
+
         return results
 
     # =========================================================================

@@ -75,7 +75,7 @@ class CompetitorAnalyzer:
             )
 
             context = self._build_context()
-            success, output = await self.agent_executor.run_agent(
+            success, output, _ = await self.agent_executor.run_agent(
                 "competitor_analysis.md",
                 additional_context=context,
             )

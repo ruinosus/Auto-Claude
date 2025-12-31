@@ -74,6 +74,7 @@ async def run_qa_fixer_session(
     spec_dir: Path,
     fix_session: int,
     verbose: bool = False,
+    analytics_project_dir: Path | None = None,
 ) -> tuple[str, str, str | None]:
     """
     Run a QA fixer agent session.
@@ -83,6 +84,7 @@ async def run_qa_fixer_session(
         spec_dir: Spec directory
         fix_session: Fix iteration number
         verbose: Whether to show detailed output
+        analytics_project_dir: Original project directory for analytics (use when in worktree)
 
     Returns:
         (status, response_text, langfuse_trace_id) where status is:
@@ -129,13 +131,18 @@ async def run_qa_fixer_session(
     spec_id = spec_dir.name
     langfuse_trace_id = None
     langfuse_ctx = None
-    # Derive project_id from spec_dir path for data isolation
-    # spec_dir is typically: /path/to/project/.auto-claude/specs/XXX-name
-    # We go up 3 levels to get the project dir
-    try:
-        project_id = spec_dir.parent.parent.parent.name
-    except Exception:
-        project_id = None
+    # Derive project_id from analytics_project_dir (original project) for data isolation
+    # Use analytics_project_dir because spec_dir may be in a worktree with spec name
+    if analytics_project_dir:
+        project_id = analytics_project_dir.name
+    else:
+        # Fallback: try to derive from spec_dir path
+        # spec_dir is typically: /path/to/project/.auto-claude/specs/XXX-name
+        # We go up 3 levels to get the project dir
+        try:
+            project_id = spec_dir.parent.parent.parent.name
+        except Exception:
+            project_id = None
 
     # Create Langfuse trace if available
     if LANGFUSE_AVAILABLE and is_langfuse_ready():

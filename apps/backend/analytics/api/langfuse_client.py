@@ -165,13 +165,23 @@ class LangfuseAPIClient:
                 # Get metadata
                 metadata = getattr(trace, "metadata", {}) or {}
 
-                # Filter by project_id (CRITICAL for project isolation)
-                if filter.project_id and metadata.get("project_id") != filter.project_id:
-                    continue
+                # Get trace-level attributes (set by trace_context)
+                trace_user_id = getattr(trace, "user_id", None)
+                trace_session_id = getattr(trace, "session_id", None)
 
-                # Filter by spec_id
-                if filter.spec_id and metadata.get("spec_id") != filter.spec_id:
-                    continue
+                # Filter by project_id (check metadata OR user_id for compatibility)
+                # trace_context() sets user_id=project_id at trace level
+                if filter.project_id:
+                    metadata_project = metadata.get("project_id")
+                    if metadata_project != filter.project_id and trace_user_id != filter.project_id:
+                        continue
+
+                # Filter by spec_id (check metadata OR session_id for compatibility)
+                # trace_context() sets session_id=spec_id at trace level
+                if filter.spec_id:
+                    metadata_spec = metadata.get("spec_id")
+                    if metadata_spec != filter.spec_id and trace_session_id != filter.spec_id:
+                        continue
 
                 # Filter by agent_type
                 if filter.agent_type and metadata.get("agent_type") != filter.agent_type:
@@ -198,16 +208,51 @@ class LangfuseAPIClient:
                 total_cost = getattr(trace, "total_cost", 0) or 0
                 latency_ms = getattr(trace, "latency", 0) or 0
 
-                # Count generations from observations
-                generation_count = 0
+                # Try to get total_tokens directly from trace first (v3 SDK)
+                # The API may provide this at trace level for efficiency
                 total_tokens = 0
+                generation_count = 0
+
+                # Check for totalTokens or total_tokens on trace object
+                direct_tokens = (
+                    getattr(trace, "totalTokens", None) or
+                    getattr(trace, "total_tokens", None) or
+                    getattr(trace, "usage_total_tokens", None)
+                )
+                if direct_tokens:
+                    total_tokens = direct_tokens
+
+                # Check for usage object on trace
+                trace_usage = getattr(trace, "usage", None)
+                if trace_usage and not total_tokens:
+                    total_tokens = (
+                        getattr(trace_usage, "total", 0) or
+                        getattr(trace_usage, "totalTokens", 0) or
+                        (getattr(trace_usage, "input", 0) or 0) + (getattr(trace_usage, "output", 0) or 0)
+                    )
+
+                # Fallback: count generations from observations if available
                 observations = getattr(trace, "observations", []) or []
                 for obs in observations:
                     if getattr(obs, "type", "") == "GENERATION":
                         generation_count += 1
-                        usage = getattr(obs, "usage", None)
-                        if usage:
-                            total_tokens += getattr(usage, "total", 0) or 0
+                        if not total_tokens:  # Only sum if we don't have trace-level tokens
+                            usage = getattr(obs, "usage", None)
+                            if usage:
+                                obs_tokens = (
+                                    getattr(usage, "total", 0) or
+                                    getattr(usage, "totalTokens", 0) or
+                                    (getattr(usage, "input", 0) or 0) + (getattr(usage, "output", 0) or 0)
+                                )
+                                total_tokens += obs_tokens or 0
+
+                # If still no tokens but we have cost, estimate tokens from cost
+                # Claude pricing: ~$3/1M input, ~$15/1M output, average ~$6/1M
+                if not total_tokens and total_cost > 0:
+                    # Rough estimate: $6 per 1M tokens average
+                    estimated_tokens = int(total_cost / 0.000006)
+                    total_tokens = estimated_tokens
+                    logger.debug(f"Estimated {estimated_tokens} tokens from cost ${total_cost}")
 
                 traces.append(TraceData(
                     id=trace.id,
@@ -258,16 +303,47 @@ class LangfuseAPIClient:
             total_cost = getattr(trace, "total_cost", 0) or 0
             latency_ms = getattr(trace, "latency", 0) or 0
 
-            # Count generations from observations
-            generation_count = 0
+            # Try to get total_tokens directly from trace first
             total_tokens = 0
+            generation_count = 0
+
+            # Check for totalTokens or total_tokens on trace object
+            direct_tokens = (
+                getattr(trace, "totalTokens", None) or
+                getattr(trace, "total_tokens", None) or
+                getattr(trace, "usage_total_tokens", None)
+            )
+            if direct_tokens:
+                total_tokens = direct_tokens
+
+            # Check for usage object on trace
+            trace_usage = getattr(trace, "usage", None)
+            if trace_usage and not total_tokens:
+                total_tokens = (
+                    getattr(trace_usage, "total", 0) or
+                    getattr(trace_usage, "totalTokens", 0) or
+                    (getattr(trace_usage, "input", 0) or 0) + (getattr(trace_usage, "output", 0) or 0)
+                )
+
+            # Count generations from observations
             observations = getattr(trace, "observations", []) or []
             for obs in observations:
                 if getattr(obs, "type", "") == "GENERATION":
                     generation_count += 1
-                    usage = getattr(obs, "usage", None)
-                    if usage:
-                        total_tokens += getattr(usage, "total", 0) or 0
+                    if not total_tokens:  # Only sum if we don't have trace-level tokens
+                        usage = getattr(obs, "usage", None)
+                        if usage:
+                            obs_tokens = (
+                                getattr(usage, "total", 0) or
+                                getattr(usage, "totalTokens", 0) or
+                                (getattr(usage, "input", 0) or 0) + (getattr(usage, "output", 0) or 0)
+                            )
+                            total_tokens += obs_tokens or 0
+
+            # If still no tokens but we have cost, estimate tokens from cost
+            if not total_tokens and total_cost > 0:
+                estimated_tokens = int(total_cost / 0.000006)
+                total_tokens = estimated_tokens
 
             return TraceData(
                 id=trace.id,
@@ -367,7 +443,7 @@ class LangfuseAPIClient:
         """
         Fetch scores from Langfuse.
 
-        Uses Langfuse v3 API via trace.scores attribute.
+        Uses Langfuse v3 score_v_2 API for efficient querying.
 
         Args:
             trace_id: Optional trace ID to filter by
@@ -385,48 +461,39 @@ class LangfuseAPIClient:
             scores = []
 
             if trace_id:
-                # Get scores from specific trace
-                trace = self._client.api.trace.get(trace_id)
-                if trace and hasattr(trace, 'scores'):
-                    trace_scores = trace.scores or []
-                    for score in trace_scores:
-                        if name and score.name != name:
-                            continue
-                        scores.append(ScoreData(
-                            id=score.id,
-                            name=score.name,
-                            value=score.value,
-                            trace_id=score.trace_id,
-                            comment=getattr(score, "comment", None),
-                            timestamp=getattr(score, "timestamp", None),
-                        ))
-            else:
-                # Get all traces and collect scores
-                response = self._client.api.trace.list(limit=limit)
-                for trace in response.data:
-                    # Filter by project_id if specified (CRITICAL for project isolation)
-                    trace_metadata = getattr(trace, "metadata", {}) or {}
-                    if project_id and trace_metadata.get("project_id") != project_id:
+                # Get scores from specific trace using score_v_2 API
+                response = self._client.api.score_v_2.get(trace_id=trace_id, limit=limit)
+                for score in response.data:
+                    if name and score.name != name:
                         continue
+                    scores.append(ScoreData(
+                        id=score.id,
+                        name=score.name,
+                        value=score.value,
+                        trace_id=score.trace_id,
+                        comment=getattr(score, "comment", None),
+                        timestamp=getattr(score, "timestamp", None),
+                    ))
+            else:
+                # Use score_v_2.get API for efficient querying
+                # Note: user_id in score_v_2 maps to trace.user_id which we set to project_id
+                kwargs = {"limit": limit}
+                if name:
+                    kwargs["name"] = name
+                if project_id:
+                    # Filter by user_id which trace_context() sets to project_id
+                    kwargs["user_id"] = project_id
 
-                    full_trace = self._client.api.trace.get(trace.id)
-                    if full_trace and hasattr(full_trace, 'scores'):
-                        trace_scores = full_trace.scores or []
-                        for score in trace_scores:
-                            if name and score.name != name:
-                                continue
-                            scores.append(ScoreData(
-                                id=score.id,
-                                name=score.name,
-                                value=score.value,
-                                trace_id=score.trace_id,
-                                comment=getattr(score, "comment", None),
-                                timestamp=getattr(score, "timestamp", None),
-                            ))
-                            if len(scores) >= limit:
-                                break
-                    if len(scores) >= limit:
-                        break
+                response = self._client.api.score_v_2.get(**kwargs)
+                for score in response.data:
+                    scores.append(ScoreData(
+                        id=score.id,
+                        name=score.name,
+                        value=score.value,
+                        trace_id=score.trace_id,
+                        comment=getattr(score, "comment", None),
+                        timestamp=getattr(score, "timestamp", None),
+                    ))
 
             return scores[:limit]
 

@@ -46,6 +46,13 @@ from .models import (
     rename_spec_dir_from_requirements,
 )
 
+# ROI Publishing
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 
 class SpecOrchestrator:
     """Orchestrates the spec creation process with dynamic complexity adaptation."""
@@ -113,6 +120,9 @@ class SpecOrchestrator:
         # Stores summaries from completed phases to provide context to subsequent phases
         self._phase_summaries: dict[str, str] = {}
 
+        # Collect trace IDs from agent sessions for ROI publishing
+        self._trace_ids: list[str] = []
+
     def _get_agent_runner(self) -> AgentRunner:
         """Get or create the agent runner.
 
@@ -132,7 +142,7 @@ class SpecOrchestrator:
         additional_context: str = "",
         interactive: bool = False,
         phase_name: str | None = None,
-    ) -> tuple[bool, str]:
+    ) -> tuple[bool, str, str | None]:
         """Run an agent with the given prompt.
 
         Args:
@@ -142,7 +152,7 @@ class SpecOrchestrator:
             phase_name: Name of the phase (for thinking budget lookup)
 
         Returns:
-            Tuple of (success, response_text)
+            Tuple of (success, response_text, langfuse_trace_id)
         """
         runner = self._get_agent_runner()
 
@@ -152,13 +162,19 @@ class SpecOrchestrator:
         # Format prior phase summaries for context
         prior_summaries = format_phase_summaries(self._phase_summaries)
 
-        return await runner.run_agent(
+        success, response, trace_id = await runner.run_agent(
             prompt_file,
             additional_context,
             interactive,
             thinking_budget=thinking_budget,
             prior_phase_summaries=prior_summaries if prior_summaries else None,
         )
+
+        # Collect trace_id for ROI publishing
+        if trace_id:
+            self._trace_ids.append(trace_id)
+
+        return success, response, trace_id
 
     async def _store_phase_summary(self, phase_name: str) -> None:
         """Summarize and store phase output for subsequent phases.
@@ -408,6 +424,9 @@ class SpecOrchestrator:
             LogPhase.PLANNING, success=True, message="Spec creation complete"
         )
 
+        # Publish ROI metrics
+        await self._publish_roi(phases_executed)
+
         # === HUMAN REVIEW CHECKPOINT ===
         return self._run_review_checkpoint(auto_approve)
 
@@ -612,6 +631,46 @@ class SpecOrchestrator:
                 style="heavy",
             )
         )
+
+    async def _publish_roi(self, phases_executed: list[str]) -> None:
+        """Publish ROI metrics for spec creation.
+
+        Args:
+            phases_executed: List of phases that were executed
+        """
+        if not ROI_PUBLISHER_AVAILABLE:
+            return
+
+        try:
+            project_id = self.project_dir.name
+            complexity_level = self.assessment.complexity.value if self.assessment else "standard"
+
+            # Use the last collected trace_id for ROI attachment
+            trace_id = self._trace_ids[-1] if self._trace_ids else None
+
+            result = await publish_feature_roi(
+                feature_type="spec_writer",
+                project_id=project_id,
+                cost_usd=0.0,  # Will be calculated from traces
+                tokens=0,
+                metrics={
+                    "phases_completed": len(phases_executed),
+                    "complexity_level": complexity_level,
+                    "requirements_gathered": 1,
+                },
+                spec_id=self.spec_dir.name,
+                trace_id=trace_id,  # Pass trace_id for Langfuse score attachment
+            )
+
+            if result.get("success"):
+                roi_pct = result.get("roi_percentage", 0)
+                value = result.get("total_value_usd", 0)
+                print_status(
+                    f"Spec ROI: {roi_pct:.0f}% (${value:.2f} value from {len(phases_executed)} phases)",
+                    "success",
+                )
+        except Exception as e:
+            print_status(f"ROI publish failed: {e}", "warning")
 
     def _run_review_checkpoint(self, auto_approve: bool) -> bool:
         """Run the human review checkpoint.

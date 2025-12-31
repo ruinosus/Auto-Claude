@@ -9,6 +9,20 @@ interface TopSpec {
   roi: number;
 }
 
+interface ValueBreakdown {
+  execution: number;
+  decision: number;
+  prevention: number;
+  knowledge: number;
+}
+
+interface FeatureROI {
+  feature: string;
+  roi: number;
+  value: number;
+  cost: number;
+}
+
 interface BusinessTabProps {
   data: {
     investment: number;
@@ -17,6 +31,8 @@ interface BusinessTabProps {
     hoursImpact: number;
     topSpecs: TopSpec[];
     annualProjection: { investment: number; value: number; roi: number };
+    valueBreakdown?: ValueBreakdown;
+    roiByFeature?: FeatureROI[];
   };
   loading?: boolean;
   onExportPDF?: () => void;
@@ -106,6 +122,81 @@ export function BusinessTab({ data, loading, onExportPDF }: BusinessTabProps) {
           </div>
         </div>
       </div>
+
+      {/* Value Breakdown by Type */}
+      {data.valueBreakdown && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+            {t('business.valueBreakdown', 'Value Breakdown by Type')}
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-blue-600">⚡</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('business.executionValue', 'Execution')}
+                </span>
+              </div>
+              <p className="text-xl font-bold text-blue-600">{formatCurrency(data.valueBreakdown.execution)}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('business.executionDesc', 'Direct code work')}</p>
+            </div>
+            <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-purple-600">🎯</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('business.decisionValue', 'Decision')}
+                </span>
+              </div>
+              <p className="text-xl font-bold text-purple-600">{formatCurrency(data.valueBreakdown.decision)}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('business.decisionDesc', 'Strategic choices')}</p>
+            </div>
+            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-green-600">🛡️</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('business.preventionValue', 'Prevention')}
+                </span>
+              </div>
+              <p className="text-xl font-bold text-green-600">{formatCurrency(data.valueBreakdown.prevention)}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('business.preventionDesc', 'Issues avoided')}</p>
+            </div>
+            <div className="p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-orange-600">📚</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {t('business.knowledgeValue', 'Knowledge')}
+                </span>
+              </div>
+              <p className="text-xl font-bold text-orange-600">{formatCurrency(data.valueBreakdown.knowledge)}</p>
+              <p className="text-xs text-gray-500 mt-1">{t('business.knowledgeDesc', 'Insights gained')}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ROI by Feature Type */}
+      {data.roiByFeature && data.roiByFeature.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+            {t('business.roiByFeature', 'ROI by Feature Type')}
+          </h3>
+          <div className="space-y-3">
+            {data.roiByFeature.map((feature) => (
+              <div key={feature.feature} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700/50 rounded">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium capitalize">{feature.feature.replace('_', ' ')}</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-gray-500">{formatCurrency(feature.value)}</span>
+                  <span className={`text-sm font-bold ${feature.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatPercent(feature.roi)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Top performing specs */}
       <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">

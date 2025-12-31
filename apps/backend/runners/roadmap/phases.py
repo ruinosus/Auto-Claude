@@ -125,7 +125,7 @@ class DiscoveryPhase:
             )
 
             context = self._build_context()
-            success, output = await self.agent_executor.run_agent(
+            success, output, _ = await self.agent_executor.run_agent(
                 "roadmap_discovery.md",
                 additional_context=context,
             )
@@ -241,7 +241,7 @@ class FeaturesPhase:
             )
 
             context = self._build_context()
-            success, output = await self.agent_executor.run_agent(
+            success, output, _ = await self.agent_executor.run_agent(
                 "roadmap_features.md",
                 additional_context=context,
             )

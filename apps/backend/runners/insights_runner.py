@@ -73,6 +73,13 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
+# Import ROI publisher
+try:
+    from analytics.roi_publisher import publish_insights_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 
 def load_project_context(project_dir: str) -> str:
     """Load project context for the AI."""
@@ -250,10 +257,9 @@ Current question: {message}"""
                     "Read",
                     "Glob",
                     "Grep",
-                    "Skill",  # Enable Skills for insights generation
                 ],
-                # Load Skills from user and project directories
-                setting_sources=["user", "project"],
+                # Removed setting_sources to avoid loading skills/MCP servers
+                # that can cause initialization timeouts
                 max_turns=30,  # Allow sufficient turns for codebase exploration
                 cwd=str(project_path),
                 env=sdk_env,  # Pass ANTHROPIC_BASE_URL, Azure Foundry vars, etc.
@@ -422,6 +428,41 @@ Current question: {message}"""
                     debug("insights_runner", "Langfuse trace finalized")
                 except Exception as e:
                     debug_error("insights_runner", f"Failed to finalize Langfuse trace: {e}")
+
+            # Publish ROI metrics
+            if ROI_PUBLISHER_AVAILABLE:
+                try:
+                    # Count task suggestions in response
+                    tasks_suggested = response_text.count("__TASK_SUGGESTION__")
+
+                    # Get token usage from tracker or estimate
+                    total_tokens = 0
+                    total_cost = 0.0
+                    if tracker:
+                        totals = tracker.get_totals()
+                        total_tokens = totals.get("total_input_tokens", 0) + totals.get("total_output_tokens", 0)
+                        total_cost = totals.get("total_cost_usd", 0)
+                    else:
+                        # Estimate if no tracker
+                        total_tokens = len(response_text) // 4  # ~4 chars per token
+                        total_cost = (total_tokens / 1000) * 0.003
+
+                    # Count tool uses (files explored)
+                    files_explored = response_text.count("__TOOL_START__")
+
+                    await publish_insights_roi(
+                        project_id=project_id,
+                        messages_exchanged=1,  # This is one message exchange
+                        tasks_suggested=tasks_suggested,
+                        tasks_accepted=0,  # We don't know this until user acts
+                        files_explored=files_explored,
+                        cost_usd=total_cost,
+                        tokens=total_tokens,
+                        model=model,
+                    )
+                    debug("insights_runner", "ROI published", tasks=tasks_suggested, files=files_explored)
+                except Exception as e:
+                    debug_error("insights_runner", f"Failed to publish ROI: {e}")
 
     except Exception as e:
         print(f"Error using Claude SDK: {e}", file=sys.stderr)

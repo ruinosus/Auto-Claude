@@ -25,6 +25,8 @@ import type {
   HourlyMetricsResponse,
   ErrorMetricsResponse,
   RecentActivityResponse,
+  UnifiedROIResponse,
+  UnifiedROIParams,
 } from '../services/analytics-api';
 
 // =============================================================================
@@ -42,6 +44,7 @@ export const analyticsKeys = {
   roi: () => [...analyticsKeys.all, 'roi'] as const,
   roiSummary: (params?: ROISummaryParams) => [...analyticsKeys.roi(), 'summary', params] as const,
   roiSpec: (specId: string) => [...analyticsKeys.roi(), 'spec', specId] as const,
+  roiUnified: (params?: UnifiedROIParams) => [...analyticsKeys.roi(), 'unified', params] as const,
   costs: () => [...analyticsKeys.all, 'costs'] as const,
   costSummary: (params?: DateRangeParams) => [...analyticsKeys.costs(), 'summary', params] as const,
   scores: () => [...analyticsKeys.all, 'scores'] as const,
@@ -50,8 +53,8 @@ export const analyticsKeys = {
   usage: () => [...analyticsKeys.all, 'usage'] as const,
   usageSummary: (params?: UsageSummaryParams) => [...analyticsKeys.usage(), 'summary', params] as const,
   healthStatus: () => [...analyticsKeys.all, 'healthStatus'] as const,
-  hourlyMetrics: (hours?: number) => [...analyticsKeys.all, 'hourlyMetrics', hours] as const,
-  errorMetrics: (hours?: number) => [...analyticsKeys.all, 'errorMetrics', hours] as const,
+  hourlyMetrics: (hours?: number, project_id?: string) => [...analyticsKeys.all, 'hourlyMetrics', hours, project_id] as const,
+  errorMetrics: (hours?: number, project_id?: string) => [...analyticsKeys.all, 'errorMetrics', hours, project_id] as const,
   recentActivity: (limit?: number) => [...analyticsKeys.all, 'recentActivity', limit] as const,
 };
 
@@ -142,6 +145,24 @@ export function useROIForSpec(specId: string | null, options?: { enabled?: boole
     queryKey: analyticsKeys.roiSpec(specId || ''),
     queryFn: () => analyticsApi.getROIForSpec(specId!),
     enabled: !!specId && options?.enabled !== false,
+  });
+}
+
+/**
+ * Hook to get unified ROI summary across all feature types
+ *
+ * Returns comprehensive ROI data including:
+ * - Total ROI across all Auto-Claude features
+ * - Value breakdown by type (execution, decision, prevention, knowledge)
+ * - Breakdown by feature type (ideation, roadmap, spec, build, github, insights)
+ */
+export function useUnifiedROI(params?: UnifiedROIParams, options?: { enabled?: boolean }) {
+  return useQuery<UnifiedROIResponse>({
+    queryKey: analyticsKeys.roiUnified(params),
+    queryFn: () => analyticsApi.getUnifiedROI(params),
+    enabled: options?.enabled !== false,
+    // Unified ROI data changes less frequently
+    staleTime: 60 * 1000,
   });
 }
 
@@ -332,11 +353,14 @@ export function useHealthStatus(options?: { enabled?: boolean }) {
 
 /**
  * Hook to get metrics aggregated by hour
+ * @param hours - Number of hours to fetch
+ * @param project_id - Filter by project ID for data isolation
+ * @param options - Query options
  */
-export function useHourlyMetrics(hours: number = 24, options?: { enabled?: boolean }) {
+export function useHourlyMetrics(hours: number = 24, project_id?: string, options?: { enabled?: boolean }) {
   return useQuery<HourlyMetricsResponse, Error>({
-    queryKey: analyticsKeys.hourlyMetrics(hours),
-    queryFn: () => analyticsApi.getHourlyMetrics(hours),
+    queryKey: analyticsKeys.hourlyMetrics(hours, project_id),
+    queryFn: () => analyticsApi.getHourlyMetrics(hours, project_id),
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
   });
@@ -348,11 +372,14 @@ export function useHourlyMetrics(hours: number = 24, options?: { enabled?: boole
 
 /**
  * Hook to get error metrics and breakdown
+ * @param hours - Number of hours to fetch
+ * @param project_id - Filter by project ID for data isolation
+ * @param options - Query options
  */
-export function useErrorMetrics(hours: number = 24, options?: { enabled?: boolean }) {
+export function useErrorMetrics(hours: number = 24, project_id?: string, options?: { enabled?: boolean }) {
   return useQuery<ErrorMetricsResponse, Error>({
-    queryKey: analyticsKeys.errorMetrics(hours),
-    queryFn: () => analyticsApi.getErrorMetrics(hours),
+    queryKey: analyticsKeys.errorMetrics(hours, project_id),
+    queryFn: () => analyticsApi.getErrorMetrics(hours, project_id),
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
   });

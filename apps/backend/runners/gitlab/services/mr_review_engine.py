@@ -8,11 +8,29 @@ Core logic for AI-powered MR code review.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        trace_context,
+        log_generation_in_current_trace,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
+logger = logging.getLogger(__name__)
 
 try:
     from ..models import (
@@ -158,6 +176,11 @@ Provide your review in the following JSON format:
         """
         from core.client import create_client
 
+        # Initialize Langfuse trace context
+        langfuse_ctx = None
+        langfuse_trace_id = None
+        project_id = self.project_dir.name if self.project_dir else None
+
         self._report_progress(
             "analyzing", 30, "Running AI analysis...", mr_iid=context.mr_iid
         )
@@ -227,6 +250,28 @@ Provide your review in the following JSON format:
 
         result_text = ""
         try:
+            # Create Langfuse trace if available
+            if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                langfuse_ctx = trace_context(
+                    name=f"gitlab-mr-review-{context.mr_iid}",
+                    spec_id=f"mr-{context.mr_iid}",
+                    project_id=project_id,
+                    agent_type="gitlab_mr_reviewer",
+                    metadata={
+                        "mr_iid": context.mr_iid,
+                        "model": self.config.model,
+                        "files_count": len(context.changed_files),
+                        "source_branch": context.source_branch,
+                        "target_branch": context.target_branch,
+                    },
+                    tags=["gitlab", "mr_review"],
+                    input_data={"prompt": prompt[:2000] if len(prompt) > 2000 else prompt},
+                )
+                ctx = langfuse_ctx.__enter__()
+                if ctx:
+                    langfuse_trace_id = ctx.trace_id
+                    logger.info(f"[GitLab MR] Langfuse trace created: {langfuse_trace_id}")
+
             async with client:
                 await client.query(prompt)
 
@@ -236,6 +281,23 @@ Provide your review in the following JSON format:
                         for block in msg.content:
                             if hasattr(block, "text"):
                                 result_text += block.text
+                                # Log generation to Langfuse
+                                if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
+                                    usage = None
+                                    if hasattr(msg, "usage"):
+                                        usage = {
+                                            "input": getattr(msg.usage, "input_tokens", 0),
+                                            "output": getattr(msg.usage, "output_tokens", 0),
+                                            "total": getattr(msg.usage, "input_tokens", 0) + getattr(msg.usage, "output_tokens", 0),
+                                        }
+                                    log_generation_in_current_trace(
+                                        name="mr-review-generation",
+                                        model=self.config.model,
+                                        input_data=prompt[:500],
+                                        output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
+                                        usage=usage,
+                                        metadata={"mr_iid": context.mr_iid}
+                                    )
 
             self._report_progress(
                 "analyzing", 70, "Parsing review results...", mr_iid=context.mr_iid
@@ -246,6 +308,13 @@ Provide your review in the following JSON format:
         except Exception as e:
             print(f"[AI] Review error: {e}", flush=True)
             raise RuntimeError(f"Review failed: {e}") from e
+        finally:
+            # Close Langfuse trace context
+            if langfuse_ctx:
+                try:
+                    langfuse_ctx.__exit__(None, None, None)
+                except Exception as e:
+                    logger.debug(f"[GitLab MR] Failed to close Langfuse trace: {e}")
 
     def _parse_review_result(
         self, result_text: str

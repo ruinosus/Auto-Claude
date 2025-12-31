@@ -21,6 +21,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from debug import debug, debug_section, debug_success, debug_warning
 from ui import Icons, box, icon, muted, print_section, print_status
 
+# ROI Publishing
+try:
+    from analytics.roi_publisher import publish_ideation_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 from .config import IdeationConfigManager
 from .generator import IDEATION_TYPE_LABELS
 from .output_streamer import OutputStreamer
@@ -232,6 +239,9 @@ class IdeationOrchestrator:
         memory_result = await self._save_to_memory()
         print(f"[MEMORY DEBUG] _save_to_memory returned: {memory_result}", file=sys.stderr, flush=True)
 
+        # Phase 6: Publish ROI
+        await self._publish_roi(results)
+
         # Summary
         self._print_summary()
 
@@ -261,6 +271,116 @@ class IdeationOrchestrator:
                     style="heavy",
                 )
             )
+
+    async def _publish_roi(self, results: list) -> None:
+        """Publish ROI metrics for ideation session.
+
+        Calculates and publishes ROI to Langfuse for each ideation type.
+
+        Args:
+            results: List of IdeationPhaseResult objects
+        """
+        if not ROI_PUBLISHER_AVAILABLE:
+            debug_warning("ideation_runner", "ROI publisher not available, skipping ROI publish")
+            return
+
+        print_section("PHASE 6: PUBLISH ROI", Icons.CHART)
+
+        # Load ideation.json to get idea counts and priority breakdown
+        ideation_file = self.output_dir / "ideation.json"
+        if not ideation_file.exists():
+            debug_warning("ideation_runner", "No ideation.json found, skipping ROI publish")
+            return
+
+        try:
+            with open(ideation_file) as f:
+                ideation_data = json.load(f)
+
+            ideas = ideation_data.get("ideas", [])
+            summary = ideation_data.get("summary", {})
+            by_type = summary.get("by_type", {})
+
+            # Calculate high impact ideas (priority = high)
+            high_impact = sum(1 for idea in ideas if idea.get("priority", "").lower() == "high")
+
+            # Estimate cost from results (sum up all successful phases)
+            total_tokens = 0
+            total_cost = 0.0
+
+            for result in results:
+                if hasattr(result, "tokens") and result.tokens:
+                    total_tokens += result.tokens
+                if hasattr(result, "cost") and result.cost:
+                    total_cost += result.cost
+
+            # If we don't have cost data from results, estimate from token count
+            # Typical pricing: ~$0.003 per 1K tokens for Claude Sonnet
+            if total_cost == 0 and total_tokens > 0:
+                total_cost = (total_tokens / 1000) * 0.003
+
+            # Estimate based on average tokens per ideation type if we have no data
+            if total_tokens == 0:
+                total_tokens = len(self.enabled_types) * 2000  # ~2K tokens per type
+                total_cost = (total_tokens / 1000) * 0.003
+
+            # Publish ROI for the session
+            project_id = self.project_dir.name
+
+            for ideation_type, count in by_type.items():
+                # Count high impact ideas for this type
+                type_high_impact = sum(
+                    1 for idea in ideas
+                    if idea.get("type") == ideation_type and idea.get("priority", "").lower() == "high"
+                )
+
+                # Estimate cost per type (distribute evenly)
+                type_cost = total_cost / len(by_type) if by_type else total_cost
+                type_tokens = total_tokens // len(by_type) if by_type else total_tokens
+
+                try:
+                    result = await publish_ideation_roi(
+                        project_id=project_id,
+                        ideation_type=ideation_type,
+                        ideas_generated=count,
+                        high_impact_ideas=type_high_impact,
+                        cost_usd=type_cost,
+                        tokens=type_tokens,
+                        model=self.model,
+                    )
+
+                    if result.get("success"):
+                        roi_pct = result.get("roi_percentage", 0)
+                        value = result.get("total_value_usd", 0)
+                        print_status(
+                            f"{IDEATION_TYPE_LABELS.get(ideation_type, ideation_type)}: "
+                            f"ROI {roi_pct:.0f}% (${value:.2f} value)",
+                            "success",
+                        )
+                        debug(
+                            "ideation_roi",
+                            f"Published ROI for {ideation_type}",
+                            roi=roi_pct,
+                            value=value,
+                            cost=type_cost,
+                        )
+                    else:
+                        debug_warning(
+                            "ideation_roi",
+                            f"Failed to publish ROI for {ideation_type}: {result.get('error')}",
+                        )
+                except Exception as e:
+                    debug_warning("ideation_roi", f"Error publishing ROI for {ideation_type}: {e}")
+
+            # Summary
+            total_ideas = len(ideas)
+            print_status(
+                f"ROI published for {len(by_type)} ideation types ({total_ideas} total ideas)",
+                "success",
+            )
+
+        except Exception as e:
+            debug_warning("ideation_runner", f"Failed to publish ROI: {e}")
+            print_status(f"ROI publish failed: {e}", "warning")
 
     async def _save_to_memory(self) -> bool:
         """Save ideation results to Graphiti memory for future context.

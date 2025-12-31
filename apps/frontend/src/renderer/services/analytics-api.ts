@@ -416,9 +416,13 @@ export interface HourlyMetricsResponse {
 
 /**
  * Get metrics aggregated by hour
+ * @param hours - Number of hours to fetch (default 24)
+ * @param project_id - Filter by project ID for data isolation
  */
-export async function getHourlyMetrics(hours: number = 24): Promise<HourlyMetricsResponse> {
-  return fetchApi(`/api/analytics/metrics/hourly?hours=${hours}`);
+export async function getHourlyMetrics(hours: number = 24, project_id?: string): Promise<HourlyMetricsResponse> {
+  const params = new URLSearchParams({ hours: hours.toString() });
+  if (project_id) params.append('project_id', project_id);
+  return fetchApi(`/api/analytics/metrics/hourly?${params}`);
 }
 
 // =============================================================================
@@ -448,9 +452,13 @@ export interface ErrorMetricsResponse {
 
 /**
  * Get error metrics and breakdown
+ * @param hours - Number of hours to fetch (default 24)
+ * @param project_id - Filter by project ID for data isolation
  */
-export async function getErrorMetrics(hours: number = 24): Promise<ErrorMetricsResponse> {
-  return fetchApi(`/api/analytics/metrics/errors?hours=${hours}`);
+export async function getErrorMetrics(hours: number = 24, project_id?: string): Promise<ErrorMetricsResponse> {
+  const params = new URLSearchParams({ hours: hours.toString() });
+  if (project_id) params.append('project_id', project_id);
+  return fetchApi(`/api/analytics/metrics/errors?${params}`);
 }
 
 // =============================================================================
@@ -475,4 +483,90 @@ export interface RecentActivityResponse {
  */
 export async function getRecentActivity(limit: number = 10): Promise<RecentActivityResponse> {
   return fetchApi(`/api/analytics/specs/recent-activity?limit=${limit}`);
+}
+
+// =============================================================================
+// Unified ROI Types and Functions
+// =============================================================================
+
+export interface ValueBreakdown {
+  execution_value: number;  // Direct code work value
+  decision_value: number;   // Strategic decisions, prioritization
+  prevention_value: number; // Bugs prevented, issues avoided
+  knowledge_value: number;  // Documentation, insights gained
+}
+
+export interface FeatureROIMetrics {
+  feature_type: string;
+  roi_percentage: number;
+  total_value_usd: number;
+  total_cost_usd: number;
+  net_value_usd: number;
+  confidence_score: number;
+  value_breakdown: ValueBreakdown;
+  feature_metrics: Record<string, unknown>;
+}
+
+export interface FeatureROIResponse {
+  feature_type: string;
+  project_id: string;
+  metrics: FeatureROIMetrics;
+  trace_id: string | null;
+  timestamp: string;
+}
+
+export interface UnifiedROISummary {
+  // Overall metrics
+  total_roi_percentage: number;
+  total_value_usd: number;
+  total_cost_usd: number;
+  net_value_usd: number;
+
+  // Value breakdown totals
+  total_execution_value: number;
+  total_decision_value: number;
+  total_prevention_value: number;
+  total_knowledge_value: number;
+
+  // Counts
+  total_traces: number;
+  positive_roi_count: number;
+  average_confidence: number;
+
+  // Breakdown by feature type
+  by_feature_type: Record<string, FeatureROIMetrics>;
+
+  // Breakdown by value type (for pie chart)
+  value_distribution: ValueBreakdown;
+
+  // Period info
+  period: { from: string | null; to: string | null } | null;
+}
+
+export interface UnifiedROIResponse {
+  summary: UnifiedROISummary;
+  features: FeatureROIResponse[];
+  calculated_at: string;
+}
+
+export interface UnifiedROIParams extends DateRangeParams {
+  project_id?: string;
+}
+
+/**
+ * Get unified ROI summary across all feature types
+ *
+ * Returns comprehensive ROI data including:
+ * - Total ROI across all Auto-Claude features
+ * - Value breakdown by type (execution, decision, prevention, knowledge)
+ * - Breakdown by feature type (ideation, roadmap, spec, build, github, insights)
+ */
+export async function getUnifiedROI(params?: UnifiedROIParams): Promise<UnifiedROIResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.project_id) searchParams.set('project_id', params.project_id);
+  if (params?.from_date) searchParams.set('from_date', params.from_date);
+  if (params?.to_date) searchParams.set('to_date', params.to_date);
+
+  const query = searchParams.toString();
+  return fetchApi(`/api/analytics/roi/unified${query ? `?${query}` : ''}`);
 }

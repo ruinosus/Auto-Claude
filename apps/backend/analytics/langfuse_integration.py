@@ -468,13 +468,17 @@ def trace_context(
             # Get trace ID
             try:
                 trace_id = _langfuse_client.get_current_trace_id()
-            except Exception:
+                logger.debug(f"trace_context: Got trace_id={trace_id} for '{name}'")
+            except Exception as e:
                 trace_id = None
+                logger.warning(f"trace_context: Failed to get trace_id for '{name}': {e}")
 
             if trace_id:
                 _current_trace_id = trace_id
                 _trace_context_stack.append(span)
-                logger.debug(f"Created Langfuse trace: {trace_id} ({name})")
+                logger.info(f"trace_context: Created Langfuse trace: {trace_id} ({name})")
+            else:
+                logger.warning(f"trace_context: No trace_id obtained for '{name}', observations may not be tracked")
 
             # Set trace-level attributes using update_current_trace
             try:
@@ -571,9 +575,13 @@ def log_generation_in_current_trace(
         Generation span object, or None if failed
     """
     if not _langfuse_client:
+        logger.warning(f"log_generation_in_current_trace: No Langfuse client available for '{name}'")
         return None
 
     try:
+        # Log for debugging
+        logger.debug(f"log_generation_in_current_trace: Creating generation '{name}' with model={model}")
+
         # Use start_as_current_generation for LLM calls
         gen_cm = _langfuse_client.start_as_current_generation(
             name=name,
@@ -582,6 +590,7 @@ def log_generation_in_current_trace(
             metadata=metadata or {},
         )
         gen = gen_cm.__enter__()
+        logger.debug(f"log_generation_in_current_trace: Generation context entered, gen={gen}")
 
         # Update with output and usage
         if gen:
@@ -620,9 +629,15 @@ def log_generation_in_current_trace(
             except Exception as e:
                 logger.debug(f"Failed to update trace with generation IO: {e}")
 
+        # Flush to ensure the generation is sent
+        try:
+            _langfuse_client.flush()
+        except Exception as flush_err:
+            logger.debug(f"Failed to flush after generation: {flush_err}")
+
         return gen
     except Exception as e:
-        logger.warning(f"Failed to log generation {name}: {e}")
+        logger.warning(f"Failed to log generation {name}: {e}", exc_info=True)
         return None
 
 

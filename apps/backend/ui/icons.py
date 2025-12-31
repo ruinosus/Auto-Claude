@@ -49,6 +49,10 @@ class Icons:
     WORKER = ("⚡", "W")
     SESSION = ("▸", ">")
 
+    # Analytics
+    CHART = ("📊", "[%]")
+    METRICS = ("📈", "[+]")
+
     # Menu
     EDIT = ("✏️", "[E]")
     CLIPBOARD = ("📋", "[C]")

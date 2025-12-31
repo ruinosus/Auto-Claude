@@ -9,10 +9,17 @@ import json
 from pathlib import Path
 
 from client import create_client
-from debug import debug, debug_error, debug_section, debug_success
+from debug import debug, debug_error, debug_section, debug_success, debug_warning
 from init import init_auto_claude_dir
 from phase_config import get_thinking_budget, resolve_model_id
 from ui import Icons, box, icon, muted, print_section, print_status
+
+# ROI Publishing
+try:
+    from analytics.roi_publisher import publish_roadmap_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
 
 from .competitor_analyzer import CompetitorAnalyzer
 from .executor import AgentExecutor, ScriptExecutor
@@ -191,9 +198,81 @@ class RoadmapOrchestrator:
             return False
         debug_success("roadmap_orchestrator", "Phase 3 complete")
 
+        # Phase 4: Publish ROI
+        await self._publish_roi()
+
         # Summary
         self._print_summary()
         return True
+
+    async def _publish_roi(self) -> None:
+        """Publish ROI metrics for roadmap generation.
+
+        Calculates the value of strategic planning and prioritization.
+        """
+        if not ROI_PUBLISHER_AVAILABLE:
+            debug_warning("roadmap_orchestrator", "ROI publisher not available")
+            return
+
+        print_section("PHASE 4: PUBLISH ROI", Icons.CHART)
+
+        roadmap_file = self.output_dir / "roadmap.json"
+        if not roadmap_file.exists():
+            debug_warning("roadmap_orchestrator", "No roadmap.json found")
+            return
+
+        try:
+            with open(roadmap_file) as f:
+                roadmap = json.load(f)
+
+            features = roadmap.get("features", [])
+
+            # Count features by status
+            features_identified = len(features)
+            features_rejected = sum(
+                1 for f in features
+                if f.get("status", "").lower() in ["rejected", "deferred", "wont_do"]
+            )
+
+            # Estimate cost (typical roadmap generation uses ~10K tokens)
+            estimated_tokens = 10000
+            estimated_cost = (estimated_tokens / 1000) * 0.003  # $0.003 per 1K tokens
+
+            project_id = self.project_dir.name
+
+            result = await publish_roadmap_roi(
+                project_id=project_id,
+                features_identified=features_identified,
+                features_rejected=features_rejected,
+                cost_usd=estimated_cost,
+                tokens=estimated_tokens,
+                model=self.model,
+            )
+
+            if result.get("success"):
+                roi_pct = result.get("roi_percentage", 0)
+                value = result.get("total_value_usd", 0)
+                print_status(
+                    f"Roadmap ROI: {roi_pct:.0f}% (${value:.2f} value from {features_identified} features)",
+                    "success",
+                )
+                debug(
+                    "roadmap_roi",
+                    "Published roadmap ROI",
+                    roi=roi_pct,
+                    value=value,
+                    features=features_identified,
+                    rejected=features_rejected,
+                )
+            else:
+                debug_warning(
+                    "roadmap_roi",
+                    f"Failed to publish ROI: {result.get('error')}",
+                )
+
+        except Exception as e:
+            debug_warning("roadmap_orchestrator", f"Failed to publish ROI: {e}")
+            print_status(f"ROI publish failed: {e}", "warning")
 
     def _print_summary(self):
         """Print the final roadmap generation summary."""

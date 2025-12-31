@@ -48,6 +48,7 @@ async def run_qa_agent_session(
     max_iterations: int,
     verbose: bool = False,
     previous_error: dict | None = None,
+    analytics_project_dir: Path | None = None,
 ) -> tuple[str, str, str | None]:
     """
     Run a QA reviewer agent session.
@@ -60,6 +61,7 @@ async def run_qa_agent_session(
         max_iterations: Maximum number of QA iterations
         verbose: Whether to show detailed output
         previous_error: Error context from previous iteration for self-correction
+        analytics_project_dir: Original project directory for analytics (use when in worktree)
 
     Returns:
         (status, response_text, langfuse_trace_id) where status is:
@@ -182,8 +184,10 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
     spec_id = spec_dir.name
     langfuse_trace_id = None
     langfuse_ctx = None
-    # Derive project_id from project_dir for data isolation
-    project_id = project_dir.name if project_dir else None
+    # Derive project_id from analytics_project_dir (original project) for data isolation
+    # Use analytics_project_dir because project_dir may be a worktree with spec name
+    effective_project_dir = analytics_project_dir or project_dir
+    project_id = effective_project_dir.name if effective_project_dir else None
 
     # Create Langfuse trace if available
     if LANGFUSE_AVAILABLE and is_langfuse_ready():

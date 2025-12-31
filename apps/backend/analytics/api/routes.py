@@ -41,6 +41,12 @@ from .models import (
     RecentActivityResponse,
     ErrorBreakdown,
     ErrorMetricsResponse,
+    # Unified ROI models
+    ValueBreakdown,
+    FeatureROIMetrics,
+    FeatureROIResponse,
+    UnifiedROISummary,
+    UnifiedROIResponse,
 )
 from .langfuse_client import TraceFilter
 
@@ -410,6 +416,183 @@ async def get_roi_summary(
     )
 
 
+@router.get("/roi/unified", response_model=UnifiedROIResponse)
+async def get_unified_roi(
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+    from_date: Optional[datetime] = Query(None, description="From timestamp"),
+    to_date: Optional[datetime] = Query(None, description="To timestamp"),
+):
+    """
+    Get unified ROI summary across all feature types.
+
+    Returns comprehensive ROI data including:
+    - Total ROI across all Auto-Claude features
+    - Value breakdown by type (execution, decision, prevention, knowledge)
+    - Breakdown by feature type (ideation, roadmap, spec, build, github, insights)
+
+    This endpoint aggregates data from the new unified ROI system which captures
+    value from all phases of development, not just code execution.
+    """
+    client = get_client()
+
+    # Aggregate data by feature type
+    feature_data: Dict[str, Dict] = {}
+    total_value = 0.0
+    total_cost = 0.0
+    total_execution = 0.0
+    total_decision = 0.0
+    total_prevention = 0.0
+    total_knowledge = 0.0
+    positive_roi_count = 0
+    confidence_sum = 0.0
+    trace_count = 0
+
+    # Get all traces with ROI scores
+    roi_scores = await client.get_scores(name="roi_percentage", project_id=project_id)
+
+    for score in roi_scores:
+        trace_id = score.trace_id
+        trace = await client.get_trace(trace_id)
+        if not trace:
+            continue
+
+        # Get all scores for this trace
+        trace_scores = await client.get_scores(trace_id=trace_id)
+        score_dict = {s.name: s.value for s in trace_scores}
+
+        # Determine feature type from metadata or trace name
+        feature_type = "other"
+        if trace.metadata:
+            feature_type = trace.metadata.get("feature_type", "other")
+        if feature_type == "other":
+            # Infer from trace name
+            name_lower = (trace.name or "").lower()
+            if "ideation" in name_lower:
+                feature_type = "ideation"
+            elif "roadmap" in name_lower:
+                feature_type = "roadmap"
+            elif "spec" in name_lower:
+                feature_type = "spec"
+            elif "github" in name_lower or "pr" in name_lower:
+                feature_type = "github"
+            elif "insight" in name_lower:
+                feature_type = "insights"
+            elif any(x in name_lower for x in ["planner", "coder", "qa"]):
+                feature_type = "build"
+
+        # Initialize feature data if needed
+        if feature_type not in feature_data:
+            feature_data[feature_type] = {
+                "roi_sum": 0.0,
+                "value_sum": 0.0,
+                "cost_sum": 0.0,
+                "execution_sum": 0.0,
+                "decision_sum": 0.0,
+                "prevention_sum": 0.0,
+                "knowledge_sum": 0.0,
+                "confidence_sum": 0.0,
+                "count": 0,
+            }
+
+        # Accumulate values
+        roi = score_dict.get("roi_percentage", 0)
+        value = score_dict.get("total_value_usd", score_dict.get("business_value_usd", 0))
+        cost = score_dict.get("total_cost_usd", score_dict.get("actual_cost_usd", 0))
+        execution = score_dict.get("value_execution_usd", 0)
+        decision = score_dict.get("value_decision_usd", 0)
+        prevention = score_dict.get("value_prevention_usd", 0)
+        knowledge = score_dict.get("value_knowledge_usd", 0)
+        confidence = score_dict.get("confidence_score", 0)
+
+        feature_data[feature_type]["roi_sum"] += roi
+        feature_data[feature_type]["value_sum"] += value
+        feature_data[feature_type]["cost_sum"] += cost
+        feature_data[feature_type]["execution_sum"] += execution
+        feature_data[feature_type]["decision_sum"] += decision
+        feature_data[feature_type]["prevention_sum"] += prevention
+        feature_data[feature_type]["knowledge_sum"] += knowledge
+        feature_data[feature_type]["confidence_sum"] += confidence
+        feature_data[feature_type]["count"] += 1
+
+        total_value += value
+        total_cost += cost
+        total_execution += execution
+        total_decision += decision
+        total_prevention += prevention
+        total_knowledge += knowledge
+        confidence_sum += confidence
+        trace_count += 1
+
+        if roi > 0:
+            positive_roi_count += 1
+
+    # Build response
+    by_feature_type = {}
+    features_list = []
+
+    for ft, data in feature_data.items():
+        count = data["count"]
+        avg_roi = data["roi_sum"] / count if count > 0 else 0
+        avg_confidence = data["confidence_sum"] / count if count > 0 else 0
+
+        metrics = FeatureROIMetrics(
+            feature_type=ft,
+            roi_percentage=avg_roi,
+            total_value_usd=data["value_sum"],
+            total_cost_usd=data["cost_sum"],
+            net_value_usd=data["value_sum"] - data["cost_sum"],
+            confidence_score=avg_confidence,
+            value_breakdown=ValueBreakdown(
+                execution_value=data["execution_sum"],
+                decision_value=data["decision_sum"],
+                prevention_value=data["prevention_sum"],
+                knowledge_value=data["knowledge_sum"],
+            ),
+            feature_metrics={"trace_count": count},
+        )
+
+        by_feature_type[ft] = metrics
+        features_list.append(FeatureROIResponse(
+            feature_type=ft,
+            project_id=project_id or "all",
+            metrics=metrics,
+        ))
+
+    # Calculate totals
+    total_roi = ((total_value - total_cost) / total_cost * 100) if total_cost > 0 else 0
+    avg_confidence = confidence_sum / trace_count if trace_count > 0 else 0
+
+    summary = UnifiedROISummary(
+        total_roi_percentage=total_roi,
+        total_value_usd=total_value,
+        total_cost_usd=total_cost,
+        net_value_usd=total_value - total_cost,
+        total_execution_value=total_execution,
+        total_decision_value=total_decision,
+        total_prevention_value=total_prevention,
+        total_knowledge_value=total_knowledge,
+        total_traces=trace_count,
+        positive_roi_count=positive_roi_count,
+        average_confidence=avg_confidence,
+        by_feature_type=by_feature_type,
+        value_distribution=ValueBreakdown(
+            execution_value=total_execution,
+            decision_value=total_decision,
+            prevention_value=total_prevention,
+            knowledge_value=total_knowledge,
+        ),
+        period={
+            "from": from_date.isoformat() if from_date else None,
+            "to": to_date.isoformat() if to_date else None,
+        },
+    )
+
+    return UnifiedROIResponse(
+        summary=summary,
+        features=features_list,
+    )
+
+
 @router.get("/roi/{spec_id}", response_model=ROIResponse)
 async def get_roi_for_spec(spec_id: str):
     """
@@ -603,8 +786,8 @@ async def get_usage_summary(
         feature_data[agent_type]["cost"] += trace.total_cost
         feature_data[agent_type]["count"] += 1
 
-    # Get model distribution from generations (sample first 10 traces)
-    for trace in traces[:10]:
+    # Get model distribution from generations (sample up to 100 traces for better accuracy)
+    for trace in traces[:100]:
         generations = await client.get_generations(trace_id=trace.id)
         for gen in generations:
             model_data[gen.model]["tokens"] += gen.total_tokens
@@ -656,18 +839,18 @@ async def get_usage_summary(
         for phase, data in phase_data.items()
     ]
 
-    # Calculate percentages for feature usage
-    total_feature_tokens = sum(d["tokens"] for d in feature_data.values())
-    feature_usage = [
+    # Calculate percentages for feature usage (use cost instead of tokens since tokens may be 0)
+    total_feature_cost = sum(d["cost"] for d in feature_data.values())
+    feature_usage = sorted([
         FeatureUsage(
             feature=feature,
             tokens=data["tokens"],
             cost=round(data["cost"], 4),
             trace_count=data["count"],
-            percentage=round((data["tokens"] / total_feature_tokens * 100) if total_feature_tokens > 0 else 0, 1)
+            percentage=round((data["cost"] / total_feature_cost * 100) if total_feature_cost > 0 else 0, 1)
         )
         for feature, data in feature_data.items()
-    ]
+    ], key=lambda x: x.cost, reverse=True)  # Sort by cost descending
 
     return UsageSummaryResponse(
         total_cost=round(total_cost, 4),
@@ -849,8 +1032,14 @@ async def get_project_cost(
 
 
 @router.get("/metrics/hourly", response_model=HourlyMetricsResponse)
-async def get_hourly_metrics(hours: int = Query(default=24, le=168)) -> HourlyMetricsResponse:
-    """Get metrics aggregated by hour for the last N hours."""
+async def get_hourly_metrics(
+    hours: int = Query(default=24, le=168),
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+) -> HourlyMetricsResponse:
+    """Get metrics aggregated by hour for the last N hours.
+
+    Pass project_id to filter data for a specific project.
+    """
     from .app import get_langfuse_client
 
     client = get_langfuse_client()
@@ -859,7 +1048,7 @@ async def get_hourly_metrics(hours: int = Query(default=24, le=168)) -> HourlyMe
 
     try:
         from_date = datetime.utcnow() - timedelta(hours=hours)
-        filter = TraceFilter(from_timestamp=from_date)
+        filter = TraceFilter(from_timestamp=from_date, project_id=project_id)
         traces = await client.get_traces(filter)
 
         # Aggregate by hour
@@ -887,8 +1076,14 @@ async def get_hourly_metrics(hours: int = Query(default=24, le=168)) -> HourlyMe
 
 
 @router.get("/metrics/errors", response_model=ErrorMetricsResponse)
-async def get_error_metrics(hours: int = Query(default=24, le=168)) -> ErrorMetricsResponse:
-    """Get error metrics and breakdown for the last N hours."""
+async def get_error_metrics(
+    hours: int = Query(default=24, le=168),
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+) -> ErrorMetricsResponse:
+    """Get error metrics and breakdown for the last N hours.
+
+    Pass project_id to filter data for a specific project.
+    """
     from .app import get_langfuse_client
 
     client = get_langfuse_client()
@@ -897,7 +1092,7 @@ async def get_error_metrics(hours: int = Query(default=24, le=168)) -> ErrorMetr
 
     try:
         from_date = datetime.utcnow() - timedelta(hours=hours)
-        filter = TraceFilter(from_timestamp=from_date)
+        filter = TraceFilter(from_timestamp=from_date, project_id=project_id)
         traces = await client.get_traces(filter)
 
         total_traces = len(traces)

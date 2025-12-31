@@ -213,11 +213,20 @@
     "totalTokens": "Tokens Totaux",
     "hoursSaved": "Heures Économisées",
     "avgROI": "ROI Moyen",
+    "netValue": "Valeur Nette",
     "costVsValue": "Coût vs Valeur",
+    "costByFeature": "Répartition des coûts par fonctionnalité",
     "statusQuick": "Statut Rapide",
     "recentActivity": "Activité Récente",
     "specsCompleted": "Specs Terminées",
-    "inProgress": "En Cours"
+    "inProgress": "En Cours",
+    "totalTraces": "Total Traces",
+    "costTimeline": "Timeline des coûts (24h)",
+    "noHourlyData": "Aucune donnée horaire disponible",
+    "noFeatureData": "Aucune donnée d'utilisation disponible",
+    "runFeatures": "Exécutez des fonctionnalités IA pour voir la répartition",
+    "featuresTracked": "fonctionnalités suivies",
+    "calls": "appels"
   },
   "dev": {
     "mySpecs": "Mes Specs",
@@ -237,6 +246,10 @@
     "projectOverview": "Vue Projet",
     "costOverTime": "Coût au Fil du Temps",
     "agentDistribution": "Distribution des Agents",
+    "featureUsage": "Coût par Fonctionnalité",
+    "noFeatureData": "Aucune donnée d'utilisation. Exécutez des fonctionnalités IA pour voir la répartition des coûts.",
+    "modelDistribution": "Coût par Modèle",
+    "noModelData": "Aucune donnée de modèle pour le moment.",
     "performanceTable": "Performance",
     "roiTrend": "Tendance ROI",
     "weeklyComparison": "Comparaison Hebdomadaire",
@@ -279,7 +292,17 @@
     "specName": "Nom du Spec",
     "value": "Valeur",
     "roi": "ROI",
-    "noSpecs": "Aucun spec disponible"
+    "noSpecs": "Aucun spec disponible",
+    "valueBreakdown": "Répartition de la Valeur par Type",
+    "executionValue": "Exécution",
+    "executionDesc": "Travail de code direct",
+    "decisionValue": "Décision",
+    "decisionDesc": "Choix stratégiques",
+    "preventionValue": "Prévention",
+    "preventionDesc": "Problèmes évités",
+    "knowledgeValue": "Connaissance",
+    "knowledgeDesc": "Insights acquis",
+    "roiByFeature": "ROI par Type de Fonctionnalité"
   },
   "common": {
     "loading": "Chargement...",
@@ -291,5 +314,38 @@
     "last30Days": "30 Derniers Jours",
     "thisMonth": "Ce Mois",
     "lastMonth": "Mois Dernier"
+  },
+  "roiExplanation": {
+    "title": "Comment le ROI est Calculé",
+    "button": "Comment le ROI est-il calculé?",
+    "intro": "Auto-Claude calcule le ROI en mesurant la valeur générée selon 4 dimensions, comparée au coût de l'IA. La valeur est estimée en fonction du temps développeur économisé, des problèmes évités et des décisions stratégiques prises.",
+    "valueTypes": {
+      "title": "4 Types de Valeur",
+      "execution": {
+        "name": "Exécution",
+        "desc": "Heures × 150$/h × Multiplicateur de Qualité"
+      },
+      "decision": {
+        "name": "Décision",
+        "desc": "50$-250$ par décision stratégique"
+      },
+      "prevention": {
+        "name": "Prévention",
+        "desc": "300$-10 000$ par problème évité"
+      },
+      "knowledge": {
+        "name": "Connaissance",
+        "desc": "Temps économisé × 150$/h × 0.4-0.5"
+      }
+    },
+    "features": {
+      "title": "ROI par Type de Fonctionnalité"
+    },
+    "constants": {
+      "title": "Constantes de Calcul"
+    },
+    "formula": {
+      "title": "Formule du ROI"
+    }
   }
 }

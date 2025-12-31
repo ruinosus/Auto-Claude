@@ -131,7 +131,7 @@ class SessionListResponse(BaseModel):
 
 
 # =============================================================================
-# ROI Models
+# ROI Models (Legacy - for backward compatibility)
 # =============================================================================
 
 class ROIMetrics(BaseModel):
@@ -169,6 +169,76 @@ class ROISummaryResponse(BaseModel):
     average_confidence: float = 0.0
     by_spec: List[ROIResponse] = Field(default_factory=list)
     period: Optional[Dict[str, Optional[str]]] = None
+
+
+# =============================================================================
+# Unified ROI Models (New - supports all feature types)
+# =============================================================================
+
+class ValueBreakdown(BaseModel):
+    """Breakdown of ROI value by type."""
+    execution_value: float = 0.0  # Direct code work value
+    decision_value: float = 0.0   # Strategic decisions, prioritization
+    prevention_value: float = 0.0  # Bugs prevented, issues avoided
+    knowledge_value: float = 0.0   # Documentation, insights gained
+
+
+class FeatureROIMetrics(BaseModel):
+    """ROI metrics for a specific feature type."""
+    feature_type: str  # ideation_security, roadmap_features, etc.
+    roi_percentage: float = 0.0
+    total_value_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    net_value_usd: float = 0.0
+    confidence_score: float = 0.0
+    value_breakdown: ValueBreakdown = Field(default_factory=ValueBreakdown)
+    # Feature-specific metrics (varies by type)
+    feature_metrics: Dict[str, Any] = Field(default_factory=dict)
+
+
+class FeatureROIResponse(BaseModel):
+    """Response model for a single feature ROI."""
+    feature_type: str
+    project_id: str
+    metrics: FeatureROIMetrics
+    trace_id: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class UnifiedROISummary(BaseModel):
+    """Aggregated unified ROI across all feature types."""
+    # Overall metrics
+    total_roi_percentage: float = 0.0
+    total_value_usd: float = 0.0
+    total_cost_usd: float = 0.0
+    net_value_usd: float = 0.0
+
+    # Value breakdown totals
+    total_execution_value: float = 0.0
+    total_decision_value: float = 0.0
+    total_prevention_value: float = 0.0
+    total_knowledge_value: float = 0.0
+
+    # Counts
+    total_traces: int = 0
+    positive_roi_count: int = 0
+    average_confidence: float = 0.0
+
+    # Breakdown by feature type
+    by_feature_type: Dict[str, FeatureROIMetrics] = Field(default_factory=dict)
+
+    # Breakdown by value type (for pie chart)
+    value_distribution: ValueBreakdown = Field(default_factory=ValueBreakdown)
+
+    # Period info
+    period: Optional[Dict[str, Optional[str]]] = None
+
+
+class UnifiedROIResponse(BaseModel):
+    """Complete unified ROI response."""
+    summary: UnifiedROISummary
+    features: List[FeatureROIResponse] = Field(default_factory=list)
+    calculated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 # =============================================================================

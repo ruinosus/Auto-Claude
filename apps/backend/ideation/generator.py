@@ -186,7 +186,10 @@ class IdeationGenerator:
                 input_data={"prompt": trace_input, "ideation_type": ideation_type},
             )
             langfuse_ctx_obj = trace_ctx.__enter__()
-            debug("ideation_generator", f"Langfuse trace created: {trace_name}")
+            if langfuse_ctx_obj:
+                debug("ideation_generator", f"Langfuse trace created: {trace_name}, ctx={langfuse_ctx_obj}")
+            else:
+                debug_error("ideation_generator", f"Langfuse trace context is None for: {trace_name}")
 
         try:
             async with client:
@@ -237,8 +240,15 @@ class IdeationGenerator:
 
                 # Log to Langfuse if enabled
                 if self.langfuse_enabled and LANGFUSE_AVAILABLE:
+                    debug(
+                        "ideation_generator",
+                        "Attempting to log generation to Langfuse",
+                        input_tokens=total_input_tokens,
+                        output_tokens=total_output_tokens,
+                        langfuse_ctx=langfuse_ctx_obj,
+                    )
                     try:
-                        log_generation_in_current_trace(
+                        result = log_generation_in_current_trace(
                             name=f"ideation-{ideation_type}",
                             model=self.model,
                             input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
@@ -250,7 +260,10 @@ class IdeationGenerator:
                             },
                             metadata={"prompt_file": prompt_file},
                         )
-                        debug("ideation_generator", "Logged generation to Langfuse")
+                        if result:
+                            debug("ideation_generator", "Logged generation to Langfuse successfully", gen=str(result))
+                        else:
+                            debug_error("ideation_generator", "log_generation_in_current_trace returned None")
                     except Exception as e:
                         debug_error("ideation_generator", f"Failed to log to Langfuse: {e}")
 

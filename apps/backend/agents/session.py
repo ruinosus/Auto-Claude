@@ -449,8 +449,10 @@ async def run_agent_session(
         # Create Langfuse trace context if available
         trace_ctx = None
         langfuse_ctx_obj = None
-        # Derive project_id from project_dir for data isolation
-        project_id = project_dir.name if project_dir else None
+        # Derive project_id from analytics_project_dir (original project) for data isolation
+        # Use analytics_project_dir because project_dir may be a worktree with spec name
+        effective_project_dir = analytics_project_dir or project_dir
+        project_id = effective_project_dir.name if effective_project_dir else None
         if use_langfuse:
             # Truncate message for trace input (keep it readable but not too long)
             trace_input = message[:2000] + "..." if len(message) > 2000 else message
