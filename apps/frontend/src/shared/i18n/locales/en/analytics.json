@@ -241,11 +241,18 @@
     "activeAlerts": "Active Alerts",
     "requestsPerHour": "Requests/Hour",
     "errorRate": "Error Rate",
+    "avgLatency": "Avg Latency",
     "modelUsage": "Model Usage",
     "tokensPerHour": "Tokens/Hour",
     "latencyByAgent": "Latency by Agent",
     "rateLimits": "Rate Limits",
-    "recentLogs": "Recent Logs"
+    "recentLogs": "Recent Logs",
+    "recentErrors": "Recent Errors",
+    "noErrors": "No recent errors",
+    "specId": "Spec ID",
+    "agent": "Agent",
+    "error": "Error",
+    "when": "When"
   },
   "business": {
     "executiveSummary": "Executive Summary",
@@ -256,9 +263,13 @@
     "roiByMonth": "ROI by Month",
     "valueByType": "Value by Task Type",
     "aiVsManual": "AI vs Manual",
-    "topSpecs": "Top Specs",
+    "topSpecs": "Top Performing Specs",
     "annualProjection": "Annual Projection",
-    "exportPdf": "Export PDF"
+    "exportPdf": "Export PDF",
+    "specName": "Spec Name",
+    "value": "Value",
+    "roi": "ROI",
+    "noSpecs": "No specs available"
   },
   "common": {
     "loading": "Loading...",
