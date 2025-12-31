@@ -35,6 +35,8 @@ from .models import (
     BillingExportResponse,
     ServiceHealth,
     HealthStatusResponse,
+    ActivityEvent,
+    RecentActivityResponse,
 )
 from .langfuse_client import TraceFilter
 
@@ -921,3 +923,47 @@ async def get_health_status() -> HealthStatusResponse:
         overall_status=overall_status,
         services=services
     )
+
+
+# =============================================================================
+# Recent Activity Endpoints
+# =============================================================================
+
+@router.get("/specs/recent-activity", response_model=RecentActivityResponse)
+async def get_recent_activity(limit: int = Query(default=10, le=50)) -> RecentActivityResponse:
+    """Get recent spec activity events."""
+    from .app import get_langfuse_client
+
+    client = get_langfuse_client()
+    if not client or not client.is_configured():
+        return RecentActivityResponse()
+
+    try:
+        filter = TraceFilter(limit=limit)
+        traces = await client.get_traces(filter)
+        events = []
+        for trace in traces:
+            agent_type = get_agent_type_from_trace(trace)
+            spec_id = get_spec_id_from_trace(trace)
+
+            # Determine event type from agent
+            event_type = "started"
+            if "qa" in agent_type:
+                event_type = "qa_review"
+            elif agent_type == "coder":
+                event_type = "coding"
+            elif agent_type == "planner":
+                event_type = "planning"
+
+            events.append(ActivityEvent(
+                spec_id=spec_id,
+                event_type=event_type,
+                timestamp=trace.timestamp,
+                agent_type=agent_type,
+                details=trace.name
+            ))
+
+        return RecentActivityResponse(events=events, total=len(events))
+    except Exception as e:
+        logger.error(f"Failed to get recent activity: {e}")
+        return RecentActivityResponse()

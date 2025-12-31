@@ -302,6 +302,44 @@ class BillingExportResponse(BaseModel):
 
 
 # =============================================================================
+# Hourly Metrics Models
+# =============================================================================
+
+class HourlyMetric(BaseModel):
+    """Metrics for a single hour."""
+    hour: str  # ISO format "2024-01-15T14:00:00"
+    requests: int = 0
+    tokens: int = 0
+    cost: float = 0.0
+    errors: int = 0
+
+
+class HourlyMetricsResponse(BaseModel):
+    """Response for hourly metrics."""
+    metrics: List[HourlyMetric] = Field(default_factory=list)
+    period_hours: int = 24
+
+
+# =============================================================================
+# Activity Models
+# =============================================================================
+
+class ActivityEvent(BaseModel):
+    """Single activity event."""
+    spec_id: str
+    event_type: str  # "completed", "started", "qa_passed", "qa_failed"
+    timestamp: datetime
+    agent_type: Optional[str] = None
+    details: Optional[str] = None
+
+
+class RecentActivityResponse(BaseModel):
+    """Response for recent activity."""
+    events: List[ActivityEvent] = Field(default_factory=list)
+    total: int = 0
+
+
+# =============================================================================
 # Query Parameters
 # =============================================================================
 
