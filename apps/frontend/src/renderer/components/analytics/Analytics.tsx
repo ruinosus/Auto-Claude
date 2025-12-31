@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useProjectStore } from '../../stores/project-store';
-import { useUsageSummary, useROISummary, useAnalyticsHealth } from '../../hooks/useAnalyticsQuery';
+import { useUsageSummary, useROISummary, useAnalyticsHealth, useHealthStatus, useErrorMetrics, useHourlyMetrics } from '../../hooks/useAnalyticsQuery';
 import { OverviewTab } from './tabs/OverviewTab';
 import { DevTab } from './tabs/DevTab';
 import { TechLeadTab } from './tabs/TechLeadTab';
@@ -38,6 +38,11 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
     { project_id: projectName },
     { enabled: !!projectName && health.data?.langfuse_configured }
   );
+
+  // Fetch Ops tab data (health, errors, hourly metrics)
+  const healthStatus = useHealthStatus({ enabled: health.data?.langfuse_configured });
+  const errorMetrics = useErrorMetrics(24, { enabled: health.data?.langfuse_configured });
+  const hourlyMetrics = useHourlyMetrics(24, { enabled: health.data?.langfuse_configured });
 
   // Sync activeTab with initialTab when navigation changes
   useEffect(() => {
@@ -194,21 +199,55 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
     costByAgent,
   };
 
-  // Transform data for OpsTab
+  // Transform data for OpsTab using real API data
+  const healthData = healthStatus.data;
+  const errorData = errorMetrics.data;
+  const hourlyData = hourlyMetrics.data;
+
+  // Calculate requests per hour from hourly metrics
+  const totalHourlyRequests = (hourlyData?.metrics || []).reduce((sum, m) => sum + m.requests, 0);
+  const avgRequestsPerHour = hourlyData?.metrics?.length
+    ? Math.round(totalHourlyRequests / hourlyData.metrics.length)
+    : 0;
+
+  // Generate alerts based on error rate and health status
+  const alerts: { id: string; severity: 'info' | 'warning' | 'error'; message: string; timestamp: string }[] = [];
+  if (errorData && errorData.error_rate > 5) {
+    alerts.push({
+      id: 'high-error-rate',
+      severity: 'error',
+      message: `High error rate: ${errorData.error_rate.toFixed(1)}%`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  if (healthData?.overall_status === 'degraded') {
+    alerts.push({
+      id: 'degraded-health',
+      severity: 'warning',
+      message: 'System health is degraded',
+      timestamp: healthData.checked_at,
+    });
+  }
+
   const opsData = {
     health: {
-      status: 'healthy' as const,
-      services: [
-        { name: 'Langfuse', status: 'healthy' },
-        { name: 'API', status: 'healthy' },
-      ],
+      status: (healthData?.overall_status || 'healthy') as 'healthy' | 'degraded' | 'unhealthy',
+      services: (healthData?.services || []).map((s) => ({
+        name: s.name,
+        status: s.status,
+      })),
     },
-    alerts: [] as { id: string; severity: 'info' | 'warning' | 'error'; message: string; timestamp: string }[],
-    errorRate: 0,
+    alerts,
+    errorRate: errorData?.error_rate || 0,
     avgLatency: (usageData?.duration_by_phase || []).reduce((sum, p) => sum + p.avg_duration_ms, 0) /
       Math.max(1, usageData?.duration_by_phase?.length || 1),
-    requestsPerHour: usageData?.total_traces || 0,
-    recentErrors: [] as { specId: string; error: string; timestamp: string; agentType: string }[],
+    requestsPerHour: avgRequestsPerHour || usageData?.total_traces || 0,
+    recentErrors: (errorData?.recent_errors || []).map((e) => ({
+      specId: e.spec_id,
+      error: e.error,
+      timestamp: e.timestamp,
+      agentType: e.agent_type,
+    })),
   };
 
   // Transform data for BusinessTab

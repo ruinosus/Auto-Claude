@@ -372,3 +372,107 @@ export async function listScores(params?: {
   const query = searchParams.toString();
   return fetchApi(`/api/analytics/scores${query ? `?${query}` : ''}`);
 }
+
+// =============================================================================
+// Health Status Types and Functions
+// =============================================================================
+
+export interface ServiceHealth {
+  name: string;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latency_ms?: number;
+  message?: string;
+}
+
+export interface HealthStatusResponse {
+  overall_status: 'healthy' | 'degraded' | 'unhealthy';
+  services: ServiceHealth[];
+  checked_at: string;
+}
+
+/**
+ * Get detailed health status of all services
+ */
+export async function getHealthStatus(): Promise<HealthStatusResponse> {
+  return fetchApi('/api/analytics/health/status');
+}
+
+// =============================================================================
+// Hourly Metrics Types and Functions
+// =============================================================================
+
+export interface HourlyMetric {
+  hour: string;
+  requests: number;
+  tokens: number;
+  cost: number;
+  errors: number;
+}
+
+export interface HourlyMetricsResponse {
+  metrics: HourlyMetric[];
+  period_hours: number;
+}
+
+/**
+ * Get metrics aggregated by hour
+ */
+export async function getHourlyMetrics(hours: number = 24): Promise<HourlyMetricsResponse> {
+  return fetchApi(`/api/analytics/metrics/hourly?hours=${hours}`);
+}
+
+// =============================================================================
+// Error Metrics Types and Functions
+// =============================================================================
+
+export interface ErrorBreakdown {
+  error_type: string;
+  count: number;
+  percentage: number;
+  last_occurrence?: string;
+}
+
+export interface RecentError {
+  spec_id: string;
+  error: string;
+  timestamp: string;
+  agent_type: string;
+}
+
+export interface ErrorMetricsResponse {
+  total_errors: number;
+  error_rate: number;
+  breakdown: ErrorBreakdown[];
+  recent_errors: RecentError[];
+}
+
+/**
+ * Get error metrics and breakdown
+ */
+export async function getErrorMetrics(hours: number = 24): Promise<ErrorMetricsResponse> {
+  return fetchApi(`/api/analytics/metrics/errors?hours=${hours}`);
+}
+
+// =============================================================================
+// Recent Activity Types and Functions
+// =============================================================================
+
+export interface ActivityEvent {
+  spec_id: string;
+  event_type: string;
+  timestamp: string;
+  agent_type?: string;
+  details?: string;
+}
+
+export interface RecentActivityResponse {
+  events: ActivityEvent[];
+  total: number;
+}
+
+/**
+ * Get recent spec activity events
+ */
+export async function getRecentActivity(limit: number = 10): Promise<RecentActivityResponse> {
+  return fetchApi(`/api/analytics/specs/recent-activity?limit=${limit}`);
+}

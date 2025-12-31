@@ -21,6 +21,10 @@ import type {
   CostSummaryResponse,
   ScoreResponse,
   UsageSummaryResponse,
+  HealthStatusResponse,
+  HourlyMetricsResponse,
+  ErrorMetricsResponse,
+  RecentActivityResponse,
 } from '../services/analytics-api';
 
 // =============================================================================
@@ -45,6 +49,10 @@ export const analyticsKeys = {
     [...analyticsKeys.scores(), 'list', params] as const,
   usage: () => [...analyticsKeys.all, 'usage'] as const,
   usageSummary: (params?: UsageSummaryParams) => [...analyticsKeys.usage(), 'summary', params] as const,
+  healthStatus: () => [...analyticsKeys.all, 'healthStatus'] as const,
+  hourlyMetrics: (hours?: number) => [...analyticsKeys.all, 'hourlyMetrics', hours] as const,
+  errorMetrics: (hours?: number) => [...analyticsKeys.all, 'errorMetrics', hours] as const,
+  recentActivity: (limit?: number) => [...analyticsKeys.all, 'recentActivity', limit] as const,
 };
 
 // =============================================================================
@@ -299,4 +307,69 @@ export function useDashboardData(projectId?: string, dateRange?: DateRangeParams
       recentTraces.refetch();
     },
   };
+}
+
+// =============================================================================
+// Health Status Hook (detailed)
+// =============================================================================
+
+/**
+ * Hook to get detailed health status of all services
+ */
+export function useHealthStatus(options?: { enabled?: boolean }) {
+  return useQuery<HealthStatusResponse, Error>({
+    queryKey: analyticsKeys.healthStatus(),
+    queryFn: analyticsApi.getHealthStatus,
+    staleTime: 30 * 1000, // 30 seconds
+    refetchInterval: 60 * 1000, // 1 minute
+    ...options,
+  });
+}
+
+// =============================================================================
+// Hourly Metrics Hook
+// =============================================================================
+
+/**
+ * Hook to get metrics aggregated by hour
+ */
+export function useHourlyMetrics(hours: number = 24, options?: { enabled?: boolean }) {
+  return useQuery<HourlyMetricsResponse, Error>({
+    queryKey: analyticsKeys.hourlyMetrics(hours),
+    queryFn: () => analyticsApi.getHourlyMetrics(hours),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    ...options,
+  });
+}
+
+// =============================================================================
+// Error Metrics Hook
+// =============================================================================
+
+/**
+ * Hook to get error metrics and breakdown
+ */
+export function useErrorMetrics(hours: number = 24, options?: { enabled?: boolean }) {
+  return useQuery<ErrorMetricsResponse, Error>({
+    queryKey: analyticsKeys.errorMetrics(hours),
+    queryFn: () => analyticsApi.getErrorMetrics(hours),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    ...options,
+  });
+}
+
+// =============================================================================
+// Recent Activity Hook
+// =============================================================================
+
+/**
+ * Hook to get recent spec activity events
+ */
+export function useRecentActivity(limit: number = 10, options?: { enabled?: boolean }) {
+  return useQuery<RecentActivityResponse, Error>({
+    queryKey: analyticsKeys.recentActivity(limit),
+    queryFn: () => analyticsApi.getRecentActivity(limit),
+    staleTime: 30 * 1000, // 30 seconds
+    ...options,
+  });
 }
