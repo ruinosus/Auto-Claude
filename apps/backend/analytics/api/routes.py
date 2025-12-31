@@ -345,7 +345,7 @@ async def get_roi_summary(
 
         # Get trace to find spec_id
         trace = await client.get_trace(trace_id)
-        spec_id = trace.metadata.get("spec_id", trace_id[:8]) if trace else trace_id[:8]
+        spec_id = get_spec_id_from_trace(trace) if trace else f"trace-{trace_id[:8]}"
 
         metrics = ROIMetrics(
             roi_percentage=score_dict.get("roi_percentage", 0),
