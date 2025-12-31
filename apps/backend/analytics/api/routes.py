@@ -886,6 +886,66 @@ async def get_hourly_metrics(hours: int = Query(default=24, le=168)) -> HourlyMe
         return HourlyMetricsResponse(period_hours=hours)
 
 
+@router.get("/metrics/errors", response_model=ErrorMetricsResponse)
+async def get_error_metrics(hours: int = Query(default=24, le=168)) -> ErrorMetricsResponse:
+    """Get error metrics and breakdown for the last N hours."""
+    from .app import get_langfuse_client
+
+    client = get_langfuse_client()
+    if not client or not client.is_configured():
+        return ErrorMetricsResponse()
+
+    try:
+        from_date = datetime.utcnow() - timedelta(hours=hours)
+        filter = TraceFilter(from_timestamp=from_date)
+        traces = await client.get_traces(filter)
+
+        total_traces = len(traces)
+        error_counts: Dict[str, int] = {}
+        recent_errors = []
+        last_occurrences: Dict[str, datetime] = {}
+
+        for trace in traces:
+            error = trace.metadata.get("error") if trace.metadata else None
+            if error:
+                error_type = str(type(error).__name__) if not isinstance(error, str) else error[:50]
+                error_counts[error_type] = error_counts.get(error_type, 0) + 1
+
+                if error_type not in last_occurrences or trace.timestamp > last_occurrences[error_type]:
+                    last_occurrences[error_type] = trace.timestamp
+
+                if len(recent_errors) < 5:
+                    recent_errors.append({
+                        "spec_id": get_spec_id_from_trace(trace),
+                        "error": error[:100] if isinstance(error, str) else str(error)[:100],
+                        "timestamp": trace.timestamp.isoformat(),
+                        "agent_type": get_agent_type_from_trace(trace)
+                    })
+
+        total_errors = sum(error_counts.values())
+        error_rate = (total_errors / total_traces * 100) if total_traces > 0 else 0.0
+
+        breakdown = [
+            ErrorBreakdown(
+                error_type=error_type,
+                count=count,
+                percentage=(count / total_errors * 100) if total_errors > 0 else 0.0,
+                last_occurrence=last_occurrences.get(error_type)
+            )
+            for error_type, count in sorted(error_counts.items(), key=lambda x: -x[1])
+        ]
+
+        return ErrorMetricsResponse(
+            total_errors=total_errors,
+            error_rate=round(error_rate, 2),
+            breakdown=breakdown,
+            recent_errors=recent_errors
+        )
+    except Exception as e:
+        logger.error(f"Failed to get error metrics: {e}")
+        return ErrorMetricsResponse()
+
+
 # =============================================================================
 # Score Endpoints
 # =============================================================================
