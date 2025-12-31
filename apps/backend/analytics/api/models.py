@@ -11,6 +11,25 @@ from pydantic import BaseModel, Field
 
 
 # =============================================================================
+# Health Status Models
+# =============================================================================
+
+class ServiceHealth(BaseModel):
+    """Health status for a single service."""
+    name: str
+    status: str  # "healthy", "degraded", "unhealthy"
+    latency_ms: Optional[float] = None
+    message: Optional[str] = None
+
+
+class HealthStatusResponse(BaseModel):
+    """Response model for health status."""
+    overall_status: str  # "healthy", "degraded", "unhealthy"
+    services: List[ServiceHealth] = Field(default_factory=list)
+    checked_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# =============================================================================
 # Trace Models
 # =============================================================================
 

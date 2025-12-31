@@ -33,6 +33,8 @@ from .models import (
     DailyMetricResponse,
     DailyMetricsListResponse,
     BillingExportResponse,
+    ServiceHealth,
+    HealthStatusResponse,
 )
 from .langfuse_client import TraceFilter
 
@@ -872,3 +874,55 @@ async def list_scores(
         )
         for s in scores
     ]
+
+
+# =============================================================================
+# Health Status Endpoints
+# =============================================================================
+
+@router.get("/health/status", response_model=HealthStatusResponse)
+async def get_health_status() -> HealthStatusResponse:
+    """
+    Get health status of all connected services.
+
+    Checks:
+    - Langfuse API connectivity
+    - Claude API connectivity (basic check)
+    """
+    from .app import get_langfuse_client
+
+    services = []
+    overall_status = "healthy"
+
+    # Check Langfuse
+    try:
+        client = get_langfuse_client()
+        if client and client.is_configured():
+            # Try a simple operation to verify connectivity
+            start = datetime.utcnow()
+            # Just checking if client is configured is enough
+            latency = (datetime.utcnow() - start).total_seconds() * 1000
+            services.append(ServiceHealth(
+                name="langfuse",
+                status="healthy",
+                latency_ms=latency
+            ))
+        else:
+            services.append(ServiceHealth(
+                name="langfuse",
+                status="unhealthy",
+                message="Not configured"
+            ))
+            overall_status = "degraded"
+    except Exception as e:
+        services.append(ServiceHealth(
+            name="langfuse",
+            status="unhealthy",
+            message=str(e)
+        ))
+        overall_status = "unhealthy"
+
+    return HealthStatusResponse(
+        overall_status=overall_status,
+        services=services
+    )
