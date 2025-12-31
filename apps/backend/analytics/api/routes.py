@@ -39,6 +39,13 @@ from .langfuse_client import TraceFilter
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Token estimation constants
+# Based on typical Claude conversation patterns where prompts tend to be
+# longer than responses due to system prompts, context, and instructions.
+# These ratios are estimates used when exact input/output counts aren't available.
+DEFAULT_INPUT_TOKEN_RATIO = 0.7
+DEFAULT_OUTPUT_TOKEN_RATIO = 0.3
+
 
 def get_spec_id_from_trace(trace) -> str:
     """
@@ -556,9 +563,9 @@ async def get_usage_summary(
         total_cost += trace.total_cost
         total_tokens += trace.total_tokens
 
-        # Estimate input/output token split (70/30) when exact values aren't available
-        trace_input_tokens = int(trace.total_tokens * 0.7)
-        trace_output_tokens = int(trace.total_tokens * 0.3)
+        # Estimate input/output token split when exact values aren't available
+        trace_input_tokens = int(trace.total_tokens * DEFAULT_INPUT_TOKEN_RATIO)
+        trace_output_tokens = trace.total_tokens - trace_input_tokens  # Ensures sum matches total
         total_input_tokens += trace_input_tokens
         total_output_tokens += trace_output_tokens
 
