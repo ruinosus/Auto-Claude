@@ -40,6 +40,56 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def get_spec_id_from_trace(trace) -> str:
+    """
+    Extract spec_id from trace with intelligent fallback chain.
+
+    Priority:
+    1. metadata.spec_id (if present)
+    2. session_id (if present)
+    3. First part of trace name (before first '-')
+    4. 'trace-' + first 8 chars of trace.id
+    """
+    # Try metadata first
+    spec_id = trace.metadata.get("spec_id") if trace.metadata else None
+    if spec_id:
+        return spec_id
+
+    # Fallback to session_id
+    if trace.session_id:
+        return trace.session_id
+
+    # Fallback to name prefix
+    if trace.name and "-" in trace.name:
+        return trace.name.split("-")[0]
+
+    # Last resort: trace ID prefix
+    return f"trace-{trace.id[:8]}"
+
+
+def get_agent_type_from_trace(trace) -> str:
+    """
+    Extract agent_type from trace with intelligent fallback.
+
+    Priority:
+    1. metadata.agent_type (if present)
+    2. Infer from trace name (planner, coder, qa_reviewer, qa_fixer)
+    3. 'other'
+    """
+    # Try metadata first
+    agent_type = trace.metadata.get("agent_type") if trace.metadata else None
+    if agent_type:
+        return agent_type
+
+    # Infer from name
+    name_lower = (trace.name or "").lower()
+    for known_type in ["planner", "coder", "qa_reviewer", "qa_fixer", "gatherer", "researcher", "writer"]:
+        if known_type in name_lower:
+            return known_type
+
+    return "other"
+
+
 def get_client():
     """Get the Langfuse client from the app context."""
     from .app import get_langfuse_client
@@ -105,8 +155,8 @@ async def list_traces(
             total_cost=t.total_cost,
             latency_ms=t.latency_ms,
             generation_count=t.generation_count,
-            spec_id=t.metadata.get("spec_id"),
-            agent_type=t.metadata.get("agent_type"),
+            spec_id=get_spec_id_from_trace(t),
+            agent_type=get_agent_type_from_trace(t),
         ))
 
     return TraceListResponse(
@@ -172,8 +222,8 @@ async def get_trace(trace_id: str):
         total_cost=trace.total_cost,
         latency_ms=trace.latency_ms,
         generation_count=trace.generation_count,
-        spec_id=trace.metadata.get("spec_id"),
-        agent_type=trace.metadata.get("agent_type"),
+        spec_id=get_spec_id_from_trace(trace),
+        agent_type=get_agent_type_from_trace(trace),
         input=trace.input,
         output=trace.output,
         generations=gen_responses,
@@ -210,8 +260,8 @@ async def get_sessions_for_spec(spec_id: str):
             total_cost=t.total_cost,
             latency_ms=t.latency_ms,
             generation_count=t.generation_count,
-            spec_id=t.metadata.get("spec_id"),
-            agent_type=t.metadata.get("agent_type"),
+            spec_id=get_spec_id_from_trace(t),
+            agent_type=get_agent_type_from_trace(t),
         )
         for t in traces
     ]
@@ -223,14 +273,14 @@ async def get_sessions_for_spec(spec_id: str):
     # Agent breakdown
     agent_breakdown = {}
     for t in traces:
-        agent_type = t.metadata.get("agent_type", "unknown")
+        agent_type = get_agent_type_from_trace(t)
         agent_breakdown[agent_type] = agent_breakdown.get(agent_type, 0) + 1
 
     # Determine status based on latest agent type
     status = "unknown"
     if traces:
         latest_trace = max(traces, key=lambda t: t.timestamp)
-        latest_agent = latest_trace.metadata.get("agent_type", "")
+        latest_agent = get_agent_type_from_trace(latest_trace)
         if "qa" in latest_agent.lower():
             status = "qa_review"
         elif latest_agent == "planner":
@@ -504,7 +554,7 @@ async def get_usage_summary(
         total_cost += trace.total_cost
         total_tokens += trace.total_tokens
 
-        spec_id = trace.metadata.get("spec_id", "unknown")
+        spec_id = get_spec_id_from_trace(trace)
         specs.add(spec_id)
 
         # Daily aggregation
@@ -525,7 +575,7 @@ async def get_usage_summary(
         phase_data[phase]["count"] += 1
 
         # Feature/agent aggregation
-        agent_type = trace.metadata.get("agent_type", "unknown")
+        agent_type = get_agent_type_from_trace(trace)
         feature_data[agent_type]["tokens"] += trace.total_tokens
         feature_data[agent_type]["cost"] += trace.total_cost
         feature_data[agent_type]["count"] += 1
