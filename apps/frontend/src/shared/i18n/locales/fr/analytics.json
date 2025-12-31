@@ -239,7 +239,12 @@
     "agentDistribution": "Distribution des Agents",
     "performanceTable": "Performance",
     "roiTrend": "Tendance ROI",
-    "weeklyComparison": "Comparaison Hebdomadaire"
+    "weeklyComparison": "Comparaison Hebdomadaire",
+    "specsCompleted": "Specs Terminées",
+    "avgROI": "ROI Moyen",
+    "efficiency": "Efficacité",
+    "projected": "Projeté",
+    "overBudget": "Dépassement budget"
   },
   "ops": {
     "healthStatus": "Santé Système",

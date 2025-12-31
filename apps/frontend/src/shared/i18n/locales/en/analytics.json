@@ -239,7 +239,12 @@
     "agentDistribution": "Agent Distribution",
     "performanceTable": "Performance",
     "roiTrend": "ROI Trend",
-    "weeklyComparison": "Weekly Comparison"
+    "weeklyComparison": "Weekly Comparison",
+    "specsCompleted": "Specs Completed",
+    "avgROI": "Average ROI",
+    "efficiency": "Efficiency",
+    "projected": "Projected",
+    "overBudget": "Over budget"
   },
   "ops": {
     "healthStatus": "System Health",
