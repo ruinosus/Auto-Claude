@@ -1,4 +1,21 @@
-import type { FastMCPServerConfig, FastMCPTool } from '../shared/types/mcp';
+import type { FastMCPServerConfig, FastMCPTool, FastMCPToolParameter, FastMCPResource, FastMCPPrompt } from '../shared/types/mcp';
+
+/**
+ * FastMCP Code Generator - Production Ready
+ * Following MCP Specification 2025-06-18 and FastMCP best practices
+ *
+ * Features:
+ * - ToolError for error handling
+ * - Tool annotations (readOnlyHint, destructiveHint, etc.)
+ * - Async/await support
+ * - Pydantic validation
+ * - Resources and Prompts generation
+ *
+ * Sources:
+ * - https://gofastmcp.com/servers/tools
+ * - https://modelcontextprotocol.io/specification/2025-06-18/server/tools
+ * - https://thinhdanggroup.github.io/mcp-production-ready/
+ */
 
 /**
  * Converts JavaScript values to Python syntax
@@ -64,53 +81,351 @@ function sanitizePythonString(str: string): string {
   return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+/**
+ * Generate imports based on what the template needs
+ */
+function generateImports(config: FastMCPServerConfig): string {
+  const imports = new Set<string>();
+
+  // Core imports always needed
+  imports.add('from typing import Any');
+  imports.add('from fastmcp import FastMCP');
+  imports.add('from fastmcp.exceptions import ToolError');
+
+  // Check if we need async (httpx, aiofiles, etc.)
+  const hasAsync = config.tools.some(t => t.isAsync);
+  if (hasAsync) {
+    // Imports handled by specific template
+  }
+
+  // Check dependencies for specific imports
+  const deps = config.dependencies.join(' ');
+  if (deps.includes('httpx')) {
+    imports.add('import httpx');
+  }
+  if (deps.includes('aiofiles')) {
+    imports.add('import aiofiles');
+    imports.add('from pathlib import Path');
+  }
+  if (deps.includes('sqlalchemy')) {
+    imports.add('from sqlalchemy import text');
+    imports.add('from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession');
+  }
+  if (deps.includes('pathspec')) {
+    imports.add('from pathlib import Path');
+    imports.add('import os');
+  }
+
+  // Check if any tool has enum parameters (need Literal)
+  const hasEnum = config.tools.some(t =>
+    t.parameters.some(p => p.enum && p.enum.length > 0)
+  );
+  if (hasEnum) {
+    imports.add('from typing import Literal');
+  }
+
+  return Array.from(imports).sort().join('\n');
+}
+
+/**
+ * Generate tool annotations string
+ */
+function generateAnnotations(tool: FastMCPTool): string {
+  if (!tool.annotations) {
+    return '';
+  }
+
+  const parts: string[] = [];
+  if (tool.annotations.readOnlyHint !== undefined) {
+    parts.push(`"readOnlyHint": ${tool.annotations.readOnlyHint ? 'True' : 'False'}`);
+  }
+  if (tool.annotations.destructiveHint !== undefined) {
+    parts.push(`"destructiveHint": ${tool.annotations.destructiveHint ? 'True' : 'False'}`);
+  }
+  if (tool.annotations.idempotentHint !== undefined) {
+    parts.push(`"idempotentHint": ${tool.annotations.idempotentHint ? 'True' : 'False'}`);
+  }
+  if (tool.annotations.openWorldHint !== undefined) {
+    parts.push(`"openWorldHint": ${tool.annotations.openWorldHint ? 'True' : 'False'}`);
+  }
+
+  if (parts.length === 0) {
+    return '';
+  }
+
+  return `annotations={${parts.join(', ')}}`;
+}
+
+/**
+ * Generate parameter type with Literal for enums
+ */
+function generateParamType(param: FastMCPToolParameter): string {
+  const typeMap: Record<string, string> = {
+    'string': 'str',
+    'number': 'int',
+    'boolean': 'bool',
+    'object': 'dict[str, Any]',
+    'array': 'list[Any]'
+  };
+
+  // If enum is defined, use Literal type
+  if (param.enum && param.enum.length > 0) {
+    const enumValues = param.enum.map(v => `"${v}"`).join(', ');
+    return `Literal[${enumValues}]`;
+  }
+
+  return typeMap[param.type] || 'str';
+}
+
+/**
+ * Generate production-ready server.py
+ */
 export function generateServerPy(config: FastMCPServerConfig): string {
-  // Sanitize server name to prevent code injection
   const sanitizedServerName = sanitizePythonString(config.serverName);
-  const tools = config.tools.map(tool => generateToolFunction(tool)).join('\n\n');
+  const imports = generateImports(config);
+  const tools = config.tools.map(tool => generateToolFunction(tool)).join('\n\n\n');
+  const resources = generateResourceFunctions(config.resources || []);
+  const prompts = generatePromptFunctions(config.prompts || []);
 
-  return `from fastmcp import FastMCP
+  return `"""
+${config.serverName} - MCP Server
 
-mcp = FastMCP("${sanitizedServerName}")
+${config.description}
+
+Generated with Auto-Claude MCP Manager
+Following MCP Specification 2025-06-18 and FastMCP best practices.
+"""
+${imports}
+
+# Create MCP server with error masking for production
+mcp = FastMCP("${sanitizedServerName}", mask_error_details=True)
+
+
+# ============================================================
+# TOOLS
+# ============================================================
 
 ${tools}
+
+${resources ? `
+# ============================================================
+# RESOURCES
+# ============================================================
+
+${resources}
+` : ''}
+${prompts ? `
+# ============================================================
+# PROMPTS
+# ============================================================
+
+${prompts}
+` : ''}
 
 if __name__ == "__main__":
     mcp.run()
 `;
 }
 
+/**
+ * Generate production-ready tool function
+ */
 function generateToolFunction(tool: FastMCPTool): string {
-  // Validate tool name as a valid Python identifier
   const sanitizedToolName = sanitizePythonIdentifier(tool.name, 'tool name');
-
-  // Escape description to prevent docstring injection
   const sanitizedDescription = sanitizePythonString(tool.description);
 
+  // Generate parameters
   const params = tool.parameters.map(p => {
-    // Validate parameter name as a valid Python identifier
     const sanitizedParamName = sanitizePythonIdentifier(p.name, 'parameter name');
+    const pythonType = generateParamType(p);
 
-    const typeMap = {
-      'string': 'str',
-      'number': 'int',
-      'boolean': 'bool',
-      'object': 'dict',
-      'array': 'list'
-    };
-    const pythonType = typeMap[p.type] || 'str';
+    // Handle optional parameters with None default
+    if (!p.required && p.default === undefined) {
+      return `${sanitizedParamName}: ${pythonType} | None = None`;
+    }
 
-    // Convert default value to Python syntax (true → True, false → False, null → None)
     const defaultValue = p.default !== undefined ? ` = ${toPythonValue(p.default)}` : '';
-
     return `${sanitizedParamName}: ${pythonType}${defaultValue}`;
-  }).join(', ');
+  }).join(',\n    ');
 
-  return `@mcp.tool()
-def ${sanitizedToolName}(${params}):
-    """${sanitizedDescription}"""
-    # TODO: Implement ${sanitizedToolName}
-    pass`;
+  // Generate annotations decorator
+  const annotationsStr = generateAnnotations(tool);
+  const decorator = annotationsStr
+    ? `@mcp.tool(${annotationsStr})`
+    : '@mcp.tool()';
+
+  // Generate async or sync function
+  const asyncPrefix = tool.isAsync ? 'async ' : '';
+  const defKeyword = `${asyncPrefix}def`;
+
+  // Generate return type
+  const returnType = tool.returnType || 'dict[str, Any]';
+
+  // Generate docstring with parameters
+  const paramDocs = tool.parameters.map(p => {
+    const desc = p.description || `${p.name} parameter`;
+    const reqStr = p.required ? '' : ' (optional)';
+    return `        ${p.name}: ${desc}${reqStr}`;
+  }).join('\n');
+
+  // Generate validation code
+  const validations = generateValidations(tool.parameters);
+
+  return `${decorator}
+${defKeyword} ${sanitizedToolName}(
+    ${params}
+) -> ${returnType}:
+    """
+    ${sanitizedDescription}
+
+    Args:
+${paramDocs}
+
+    Returns:
+        Result dictionary with success indicator and data
+
+    Raises:
+        ToolError: If validation fails or operation encounters an error
+    """
+${validations}
+    try:
+        # TODO: Implement ${sanitizedToolName}
+        return {
+            "success": True,
+            "message": "Not implemented yet",
+            "tool": "${sanitizedToolName}"
+        }
+    except Exception as e:
+        raise ToolError(f"${sanitizedToolName} failed: {str(e)}", code=-32603)`;
+}
+
+/**
+ * Generate validation code for parameters
+ */
+function generateValidations(params: FastMCPToolParameter[]): string {
+  const validations: string[] = [];
+
+  for (const param of params) {
+    const name = param.name;
+
+    // Required string validation
+    if (param.required && param.type === 'string') {
+      validations.push(`    if not ${name} or not ${name}.strip():
+        raise ToolError("${name} cannot be empty", code=-32602)`);
+    }
+
+    // Min/max length for strings
+    if (param.minLength !== undefined) {
+      validations.push(`    if ${name} and len(${name}) < ${param.minLength}:
+        raise ToolError("${name} must be at least ${param.minLength} characters", code=-32602)`);
+    }
+    if (param.maxLength !== undefined) {
+      validations.push(`    if ${name} and len(${name}) > ${param.maxLength}:
+        raise ToolError("${name} cannot exceed ${param.maxLength} characters", code=-32602)`);
+    }
+
+    // Min/max value for numbers
+    if (param.minValue !== undefined) {
+      validations.push(`    if ${name} is not None and ${name} < ${param.minValue}:
+        raise ToolError("${name} must be at least ${param.minValue}", code=-32602)`);
+    }
+    if (param.maxValue !== undefined) {
+      validations.push(`    if ${name} is not None and ${name} > ${param.maxValue}:
+        raise ToolError("${name} cannot exceed ${param.maxValue}", code=-32602)`);
+    }
+
+    // Pattern validation (URL pattern)
+    if (param.pattern === '^https?://.+') {
+      validations.push(`    if ${name} and not ${name}.startswith(('http://', 'https://')):
+        raise ToolError("${name} must start with http:// or https://", code=-32602)`);
+    }
+  }
+
+  if (validations.length === 0) {
+    return '';
+  }
+
+  return '\n    # Input validation\n' + validations.join('\n\n') + '\n';
+}
+
+/**
+ * Generate resource functions
+ */
+function generateResourceFunctions(resources: FastMCPResource[]): string {
+  if (!resources || resources.length === 0) {
+    return '';
+  }
+
+  return resources.map(resource => {
+    const params = resource.parameters || [];
+    const paramStr = params.length > 0
+      ? params.map(p => `${p.name}: str`).join(', ')
+      : '';
+
+    const hasParams = params.length > 0;
+    const isAsync = resource.uri.includes('stats') || resource.uri.includes('session');
+
+    const funcName = resource.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const asyncPrefix = isAsync ? 'async ' : '';
+
+    return `@mcp.resource("${resource.uri}")
+${asyncPrefix}def get_${funcName}(${paramStr}) -> str:
+    """
+    ${resource.description}
+
+    Returns:
+        ${resource.mimeType || 'text/plain'} content
+    """
+    # TODO: Implement resource
+    import json
+    return json.dumps({
+        "resource": "${resource.name}",
+        "uri": "${resource.uri}",
+        "status": "not_implemented"
+    }, indent=2)`;
+  }).join('\n\n\n');
+}
+
+/**
+ * Generate prompt functions
+ */
+function generatePromptFunctions(prompts: FastMCPPrompt[]): string {
+  if (!prompts || prompts.length === 0) {
+    return '';
+  }
+
+  return prompts.map(prompt => {
+    const args = prompt.arguments || [];
+    const paramStr = args.map(a => {
+      const defaultVal = a.required ? '' : ' = None';
+      return `${a.name}: str${defaultVal}`;
+    }).join(', ');
+
+    const funcName = prompt.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    const argDocs = args.map(a => {
+      const req = a.required ? '' : ' (optional)';
+      return `        ${a.name}: ${a.description}${req}`;
+    }).join('\n');
+
+    return `@mcp.prompt()
+def ${funcName}(${paramStr}) -> str:
+    """
+    ${prompt.description}
+
+    Args:
+${argDocs}
+
+    Returns:
+        Prompt message for the AI assistant
+    """
+    # TODO: Implement prompt
+    parts = []
+    parts.append(f"Prompt: ${prompt.name}")
+${args.map(a => `    if ${a.name}:
+        parts.append(f"${a.name}: {${a.name}}")`).join('\n')}
+    return "\\n".join(parts)`;
+  }).join('\n\n\n');
 }
 
 export function generatePyprojectToml(config: FastMCPServerConfig): string {

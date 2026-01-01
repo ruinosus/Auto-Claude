@@ -57,6 +57,13 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
+# Import ROI publisher
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 from phase_config import resolve_model_id
 
@@ -603,6 +610,155 @@ def parse_insights(response_text: str) -> dict | None:
 
 
 # =============================================================================
+# Artifact Extraction for ROI
+# =============================================================================
+
+
+def extract_insight_artifacts(insights: dict) -> list[dict]:
+    """
+    Extract artifacts from insight extraction results for ROI tracking.
+
+    Artifacts represent valuable outputs that justify the cost of AI analysis.
+    Each artifact type has a specific value in USD based on its impact.
+
+    Args:
+        insights: The parsed insights dictionary from LLM extraction
+
+    Returns:
+        List of artifact dictionaries with type, content, value, etc.
+    """
+    artifacts = []
+
+    # Pattern discovered ($100 each) - architectural patterns, coding patterns
+    patterns = insights.get("patterns_discovered", [])
+    for i, pattern in enumerate(patterns):
+        # Handle both string and dict patterns
+        if isinstance(pattern, str):
+            content = pattern
+            description = f"Pattern #{i+1}: {pattern[:100]}"
+        elif isinstance(pattern, dict):
+            content = pattern.get("description", pattern.get("pattern", str(pattern)))
+            description = f"Pattern #{i+1}: {content[:100]}"
+        else:
+            content = str(pattern)
+            description = f"Pattern #{i+1}"
+
+        artifacts.append({
+            "type": "pattern_discovered",
+            "format": "text",
+            "content": content[:500] if isinstance(content, str) else str(content)[:500],
+            "value_usd": 100,
+            "description": description,
+            "tab": "techlead",
+        })
+
+    # Gotcha identified ($150 each) - traps, pitfalls, edge cases
+    gotchas = insights.get("gotchas_discovered", [])
+    for i, gotcha in enumerate(gotchas):
+        # Handle both string and dict gotchas
+        if isinstance(gotcha, str):
+            content = gotcha
+            description = f"Gotcha #{i+1}: {gotcha[:100]}"
+        elif isinstance(gotcha, dict):
+            content = gotcha.get("description", gotcha.get("gotcha", str(gotcha)))
+            description = f"Gotcha #{i+1}: {content[:100]}"
+        else:
+            content = str(gotcha)
+            description = f"Gotcha #{i+1}"
+
+        artifacts.append({
+            "type": "gotcha_identified",
+            "format": "text",
+            "content": content[:500] if isinstance(content, str) else str(content)[:500],
+            "value_usd": 150,
+            "description": description,
+            "tab": "dev",
+        })
+
+    # Best practice ($75 each) - extracted from recommendations
+    recommendations = insights.get("recommendations", [])
+    for i, rec in enumerate(recommendations):
+        if isinstance(rec, str):
+            content = rec
+        elif isinstance(rec, dict):
+            content = rec.get("recommendation", rec.get("description", str(rec)))
+        else:
+            content = str(rec)
+
+        artifacts.append({
+            "type": "best_practice",
+            "format": "text",
+            "content": content[:500] if isinstance(content, str) else str(content)[:500],
+            "value_usd": 75,
+            "description": f"Best practice #{i+1}",
+            "tab": "techlead",
+        })
+
+    # Lesson learned ($50 each) - from approach outcome
+    approach = insights.get("approach_outcome", {})
+    if isinstance(approach, dict):
+        # Extract why it worked/failed as lessons
+        why_worked = approach.get("why_it_worked")
+        if why_worked:
+            artifacts.append({
+                "type": "lesson_learned",
+                "format": "text",
+                "content": str(why_worked)[:500],
+                "value_usd": 50,
+                "description": "Lesson: What worked",
+                "tab": "dev",
+            })
+
+        why_failed = approach.get("why_it_failed")
+        if why_failed:
+            artifacts.append({
+                "type": "lesson_learned",
+                "format": "text",
+                "content": str(why_failed)[:500],
+                "value_usd": 50,
+                "description": "Lesson: What to avoid",
+                "tab": "dev",
+            })
+
+        # Alternatives tried as lessons
+        alternatives = approach.get("alternatives_tried", [])
+        for i, alt in enumerate(alternatives):
+            if isinstance(alt, str):
+                content = alt
+            elif isinstance(alt, dict):
+                content = alt.get("approach", alt.get("description", str(alt)))
+            else:
+                content = str(alt)
+
+            artifacts.append({
+                "type": "lesson_learned",
+                "format": "text",
+                "content": content[:500] if isinstance(content, str) else str(content)[:500],
+                "value_usd": 50,
+                "description": f"Lesson: Alternative #{i+1}",
+                "tab": "dev",
+            })
+
+    # File insights (bonus artifacts from file-level analysis)
+    file_insights = insights.get("file_insights", [])
+    for i, fi in enumerate(file_insights):
+        if isinstance(fi, dict):
+            file_path = fi.get("file", fi.get("path", "unknown"))
+            insight = fi.get("insight", fi.get("description", ""))
+            if insight:
+                artifacts.append({
+                    "type": "file_insight",
+                    "format": "text",
+                    "content": f"{file_path}: {insight}"[:500],
+                    "value_usd": 25,
+                    "description": f"File insight: {file_path}",
+                    "tab": "dev",
+                })
+
+    return artifacts
+
+
+# =============================================================================
 # Main Entry Point
 # =============================================================================
 
@@ -674,6 +830,49 @@ async def extract_session_insights(
                 f"{len(extracted.get('patterns_discovered', []))} patterns, "
                 f"{len(extracted.get('gotchas_discovered', []))} gotchas"
             )
+
+            # Publish ROI with extracted artifacts
+            if ROI_PUBLISHER_AVAILABLE:
+                try:
+                    # Extract artifacts for ROI calculation
+                    artifacts = extract_insight_artifacts(extracted)
+
+                    # Calculate metrics from extracted insights
+                    metrics = {
+                        "patterns_discovered": len(extracted.get("patterns_discovered", [])),
+                        "gotchas_identified": len(extracted.get("gotchas_discovered", [])),
+                        "best_practices": len(extracted.get("recommendations", [])),
+                        "file_insights": len(extracted.get("file_insights", [])),
+                        "files_changed": len(inputs.get("changed_files", [])),
+                        "session_success": 1 if success else 0,
+                        "artifacts_extracted": len(artifacts),
+                    }
+
+                    # Get project_id from project_dir
+                    project_id = project_dir.name if project_dir else "unknown"
+
+                    # Calculate total artifact value
+                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+                    await publish_feature_roi(
+                        feature_type="insight_extractor",
+                        project_id=project_id,
+                        cost_usd=0.0,  # Cost tracked in run_insight_extraction via tracker
+                        tokens=0,  # Tokens tracked separately
+                        metrics=metrics,
+                        model=get_extraction_model(),
+                        trace_id=_trace_id,
+                        spec_id=spec_dir.name if spec_dir else None,
+                    )
+
+                    logger.info(
+                        f"Published ROI for insight_extractor: "
+                        f"{len(artifacts)} artifacts, ${total_artifact_value:.2f} total value"
+                    )
+                except Exception as e:
+                    # Don't fail extraction if ROI publishing fails
+                    logger.warning(f"Failed to publish ROI for insight_extractor: {e}")
+
             return extracted
         else:
             logger.warning("Extraction returned no results, using generic insights")

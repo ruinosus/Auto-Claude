@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell, nativeImage } from 'electron';
 import { join } from 'path';
-import { accessSync, readFileSync, writeFileSync } from 'fs';
+import { accessSync, readFileSync, writeFileSync, existsSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { AgentManager } from './agent';

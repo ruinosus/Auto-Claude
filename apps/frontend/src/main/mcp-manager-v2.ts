@@ -14,6 +14,7 @@ import { app } from 'electron';
 import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import path from 'path';
+import { getTransportConfigs, type MCPTransportConfig } from './mcp-servers-config';
 
 /**
  * Complete server configuration with all transport types
@@ -97,15 +98,17 @@ export class MCPManager {
       const content = await readFile(registryFile, 'utf-8');
       const registry: MCPRegistry = JSON.parse(content);
 
-      console.log(`[MCPManager] Loaded ${registry.servers.length} servers from ${scope} registry`, new Error().stack);
+      console.log(`[MCPManager] Loaded ${registry.servers.length} servers from ${scope} registry`);
 
       // Merge with built-in servers
       const builtIn = this.getBuiltInServers();
-      const custom = registry.servers;
+
+      // Normalize custom servers: extract customConfig fields to root level
+      const normalizedCustom = registry.servers.map(server => this.normalizeServerConfig(server));
 
       // Built-in servers take precedence (can be overridden by custom config)
       const merged = [...builtIn];
-      for (const customServer of custom) {
+      for (const customServer of normalizedCustom) {
         const existingIndex = merged.findIndex(s => s.id === customServer.id);
         if (existingIndex >= 0) {
           // Override built-in with custom config
@@ -124,58 +127,61 @@ export class MCPManager {
   }
 
   /**
-   * Get built-in server configurations
+   * Normalize server config: handle both nested (customConfig) and root-level formats
+   * Ensures servers from registry-integration.ts (MCPServer format) work with MCPManager (MCPServerConfig)
+   */
+  private normalizeServerConfig(server: any): MCPServerConfig {
+    const customConfig = server.customConfig || {};
+
+    // Extract values from customConfig if not at root level
+    const transport = server.transport || customConfig.connectionType ||
+      (server.connectionType === 'http' ? 'http' : 'stdio');
+    const command = server.command || customConfig.command;
+    const args = server.args || customConfig.args;
+    const cwd = server.cwd || customConfig.workingDir;
+    const env = server.env || customConfig.env;
+    const url = server.url || customConfig.baseUrl || server.endpoint;
+    const headers = server.headers || customConfig.headers;
+
+    return {
+      id: server.id,
+      name: server.name,
+      description: server.description,
+      transport: transport as 'stdio' | 'http' | 'sse',
+      command,
+      args,
+      cwd,
+      env,
+      url,
+      headers,
+      enabled: server.enabled !== false,
+      requiredEnvVars: server.requiredEnvVars,
+      category: server.category,
+      icon: server.icon
+    };
+  }
+
+  /**
+   * Get built-in server configurations from centralized config
    */
   private getBuiltInServers(): MCPServerConfig[] {
-    return [
-      {
-        id: 'context7',
-        name: 'Context7',
-        description: 'Real-time documentation lookup for any library',
-        transport: 'stdio',
-        command: 'npx',
-        args: ['-y', '@upstash/context7-mcp'],
-        enabled: true,
-        category: 'Documentation',
-        icon: 'Book'
-      },
-      {
-        id: 'puppeteer',
-        name: 'Puppeteer Browser',
-        description: 'Web browser automation and testing',
-        transport: 'stdio',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-puppeteer'],
-        enabled: true,
-        category: 'Browser Automation',
-        icon: 'Globe'
-      },
-      {
-        id: 'linear',
-        name: 'Linear',
-        description: 'Project management and issue tracking',
-        transport: 'http',
-        url: 'https://mcp.linear.app/mcp',
-        headers: {
-          'Authorization': 'Bearer ${LINEAR_API_KEY}'
-        },
-        enabled: true,
-        requiredEnvVars: ['LINEAR_API_KEY'],
-        category: 'Project Management',
-        icon: 'Zap'
-      },
-      {
-        id: 'graphiti',
-        name: 'Graphiti Memory',
-        description: 'Knowledge graph memory with semantic search',
-        transport: 'http',
-        url: '${GRAPHITI_MCP_URL}',
-        enabled: false,
-        requiredEnvVars: ['GRAPHITI_MCP_URL'],
-        category: 'Memory',
-        icon: 'Brain'
-      }
-    ];
+    // Convert from MCPTransportConfig to MCPServerConfig
+    return getTransportConfigs().map(config => ({
+      id: config.id,
+      name: config.name,
+      description: config.description,
+      transport: config.transport,
+      command: config.command,
+      args: config.args,
+      cwd: config.cwd,
+      env: config.env,
+      url: config.url,
+      headers: config.headers,
+      enabled: config.enabled,
+      requiredEnvVars: config.requiredEnvVars,
+      category: config.category,
+      icon: config.icon
+    }));
   }
 
   /**

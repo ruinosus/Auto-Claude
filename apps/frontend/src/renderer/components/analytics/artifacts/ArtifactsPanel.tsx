@@ -1,0 +1,441 @@
+import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { getArtifacts, ArtifactTrace, Artifact } from '../../../services/analytics-api';
+import { formatCurrency } from '../utils/formatters';
+import { MermaidPreview } from './MermaidPreview';
+import {
+  GitBranch,
+  Code,
+  Shield,
+  Lightbulb,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Copy,
+  Check,
+  Bug,
+  TestTube,
+  FileText,
+  Server,
+  Gauge,
+  DollarSign,
+  MessageSquare,
+  Wrench,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  ListChecks,
+  Target,
+  GitCommit,
+  Layers,
+  Search,
+  Brain,
+  BookOpen,
+  GitMerge,
+  Tag,
+  Users,
+  Zap,
+  Eye,
+  ClipboardList
+} from 'lucide-react';
+import { ArtifactTab, ArtifactType } from '../../../services/analytics-api';
+
+// Artifact type icons and colors
+const ARTIFACT_CONFIG: Record<string, { icon: React.ReactNode; color: string; bg: string; label: string }> = {
+  // Insights & General
+  diagram: { icon: <GitBranch className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Diagram' },
+  code_example: { icon: <Code className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Code' },
+  security_finding: { icon: <Shield className="h-4 w-4" />, color: 'text-red-400', bg: 'bg-red-500/10', label: 'Security' },
+  recommendation: { icon: <Lightbulb className="h-4 w-4" />, color: 'text-yellow-400', bg: 'bg-yellow-500/10', label: 'Recommendation' },
+  bug_fix: { icon: <Bug className="h-4 w-4" />, color: 'text-orange-400', bg: 'bg-orange-500/10', label: 'Bug Fix' },
+  test_case: { icon: <TestTube className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Test' },
+  documentation: { icon: <FileText className="h-4 w-4" />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', label: 'Docs' },
+  api_design: { icon: <Server className="h-4 w-4" />, color: 'text-indigo-400', bg: 'bg-indigo-500/10', label: 'API' },
+  performance_insight: { icon: <Gauge className="h-4 w-4" />, color: 'text-pink-400', bg: 'bg-pink-500/10', label: 'Performance' },
+  cost_analysis: { icon: <DollarSign className="h-4 w-4" />, color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: 'Cost' },
+
+  // PR/MR Review
+  review_comment: { icon: <MessageSquare className="h-4 w-4" />, color: 'text-blue-300', bg: 'bg-blue-500/10', label: 'Comment' },
+  code_suggestion: { icon: <Code className="h-4 w-4" />, color: 'text-teal-400', bg: 'bg-teal-500/10', label: 'Suggestion' },
+  security_issue: { icon: <Shield className="h-4 w-4" />, color: 'text-red-500', bg: 'bg-red-500/10', label: 'Security Issue' },
+  bug_detected: { icon: <Bug className="h-4 w-4" />, color: 'text-red-400', bg: 'bg-red-500/10', label: 'Bug Detected' },
+  approval_decision: { icon: <CheckCircle className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Approval' },
+  style_issue: { icon: <Eye className="h-4 w-4" />, color: 'text-gray-400', bg: 'bg-gray-500/10', label: 'Style' },
+
+  // QA
+  qa_finding: { icon: <Search className="h-4 w-4" />, color: 'text-orange-400', bg: 'bg-orange-500/10', label: 'QA Finding' },
+  qa_verdict: { icon: <CheckCircle className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Verdict' },
+  test_suggestion: { icon: <TestTube className="h-4 w-4" />, color: 'text-lime-400', bg: 'bg-lime-500/10', label: 'Test Suggestion' },
+  acceptance_check: { icon: <ListChecks className="h-4 w-4" />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', label: 'Acceptance' },
+  fix_applied: { icon: <Wrench className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Fix Applied' },
+  issue_resolution: { icon: <CheckCircle className="h-4 w-4" />, color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: 'Resolved' },
+  test_fix: { icon: <TestTube className="h-4 w-4" />, color: 'text-green-300', bg: 'bg-green-500/10', label: 'Test Fix' },
+
+  // Planning & Build
+  implementation_plan: { icon: <ClipboardList className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Plan' },
+  subtask_definition: { icon: <ListChecks className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Subtask' },
+  architecture_decision: { icon: <Layers className="h-4 w-4" />, color: 'text-indigo-400', bg: 'bg-indigo-500/10', label: 'Architecture' },
+  risk_assessment: { icon: <AlertTriangle className="h-4 w-4" />, color: 'text-amber-400', bg: 'bg-amber-500/10', label: 'Risk' },
+  dependency_identified: { icon: <GitBranch className="h-4 w-4" />, color: 'text-gray-400', bg: 'bg-gray-500/10', label: 'Dependency' },
+  code_implementation: { icon: <Code className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Implementation' },
+  commit_summary: { icon: <GitCommit className="h-4 w-4" />, color: 'text-gray-400', bg: 'bg-gray-500/10', label: 'Commit' },
+  refactoring: { icon: <Wrench className="h-4 w-4" />, color: 'text-violet-400', bg: 'bg-violet-500/10', label: 'Refactor' },
+  test_written: { icon: <TestTube className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Test Written' },
+
+  // Spec Creation
+  spec_document: { icon: <FileText className="h-4 w-4" />, color: 'text-purple-500', bg: 'bg-purple-500/10', label: 'Spec' },
+  requirement_captured: { icon: <Target className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Requirement' },
+  context_discovered: { icon: <Search className="h-4 w-4" />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', label: 'Context' },
+  complexity_assessment: { icon: <Gauge className="h-4 w-4" />, color: 'text-amber-400', bg: 'bg-amber-500/10', label: 'Complexity' },
+
+  // Analysis
+  architecture_insight: { icon: <Layers className="h-4 w-4" />, color: 'text-indigo-400', bg: 'bg-indigo-500/10', label: 'Architecture' },
+  tech_debt_item: { icon: <AlertTriangle className="h-4 w-4" />, color: 'text-orange-400', bg: 'bg-orange-500/10', label: 'Tech Debt' },
+  security_audit: { icon: <Shield className="h-4 w-4" />, color: 'text-red-400', bg: 'bg-red-500/10', label: 'Audit' },
+  performance_bottleneck: { icon: <Zap className="h-4 w-4" />, color: 'text-yellow-400', bg: 'bg-yellow-500/10', label: 'Bottleneck' },
+  code_quality_score: { icon: <Target className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Quality' },
+  pattern_discovered: { icon: <Brain className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Pattern' },
+  gotcha_identified: { icon: <AlertTriangle className="h-4 w-4" />, color: 'text-red-400', bg: 'bg-red-500/10', label: 'Gotcha' },
+  best_practice: { icon: <CheckCircle className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Best Practice' },
+  lesson_learned: { icon: <BookOpen className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Lesson' },
+
+  // Merge & Collaboration
+  conflict_resolution: { icon: <GitMerge className="h-4 w-4" />, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Resolution' },
+  merge_decision: { icon: <GitMerge className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Merge' },
+  code_choice: { icon: <Code className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Choice' },
+
+  // Issue Triage
+  triage_classification: { icon: <Tag className="h-4 w-4" />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', label: 'Classification' },
+  priority_assignment: { icon: <Target className="h-4 w-4" />, color: 'text-orange-400', bg: 'bg-orange-500/10', label: 'Priority' },
+  label_suggestion: { icon: <Tag className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Label' },
+  duplicate_detected: { icon: <XCircle className="h-4 w-4" />, color: 'text-gray-400', bg: 'bg-gray-500/10', label: 'Duplicate' },
+  assignee_suggestion: { icon: <Users className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Assignee' },
+};
+
+// Map tabs to their relevant artifact types
+const TAB_ARTIFACT_TYPES: Record<ArtifactTab, ArtifactType[]> = {
+  overview: [], // Empty means show all
+  dev: [
+    'code_example', 'bug_fix', 'test_case', 'code_suggestion', 'bug_detected',
+    'style_issue', 'test_suggestion', 'acceptance_check', 'fix_applied',
+    'issue_resolution', 'test_fix', 'subtask_definition', 'dependency_identified',
+    'code_implementation', 'commit_summary', 'refactoring', 'test_written',
+    'tech_debt_item', 'code_quality_score', 'label_suggestion', 'code_choice'
+  ],
+  techlead: [
+    'diagram', 'documentation', 'api_design', 'implementation_plan',
+    'architecture_decision', 'spec_document', 'requirement_captured',
+    'context_discovered', 'complexity_assessment', 'architecture_insight',
+    'pattern_discovered', 'best_practice', 'merge_decision'
+  ],
+  ops: [
+    'security_finding', 'performance_insight', 'security_issue', 'qa_finding',
+    'qa_verdict', 'risk_assessment', 'security_audit', 'performance_bottleneck',
+    'gotcha_identified', 'conflict_resolution', 'triage_classification',
+    'duplicate_detected', 'assignee_suggestion'
+  ],
+  business: [
+    'recommendation', 'cost_analysis', 'review_comment', 'approval_decision',
+    'lesson_learned', 'priority_assignment'
+  ],
+};
+
+interface ArtifactsPanelProps {
+  projectId?: string;
+  className?: string;
+  filterByTab?: ArtifactTab;
+  title?: string;
+}
+
+export function ArtifactsPanel({ projectId, className = '', filterByTab, title }: ArtifactsPanelProps) {
+  const { t } = useTranslation(['analytics']);
+  const [traces, setTraces] = useState<ArtifactTrace[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchArtifacts() {
+      try {
+        setLoading(true);
+        const response = await getArtifacts({ project_id: projectId, limit: 20 });
+        setTraces(response.artifacts);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load artifacts');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchArtifacts();
+  }, [projectId]);
+
+  // Filter artifacts by tab if specified
+  const allowedTypes = filterByTab ? TAB_ARTIFACT_TYPES[filterByTab] : [];
+  const filteredTraces = traces.map(trace => {
+    if (allowedTypes.length === 0) return trace; // No filter, show all
+
+    const filteredArtifacts = trace.artifacts.filter(a =>
+      allowedTypes.includes(a.type as ArtifactType) ||
+      (a.tab && a.tab === filterByTab)
+    );
+
+    if (filteredArtifacts.length === 0) return null;
+
+    // Recalculate value for filtered artifacts
+    const filteredValue = filteredArtifacts.reduce((sum, a) => sum + a.value_usd, 0);
+
+    return {
+      ...trace,
+      artifacts: filteredArtifacts,
+      artifact_count: filteredArtifacts.length,
+      total_value_usd: filteredValue,
+    };
+  }).filter((trace): trace is ArtifactTrace => trace !== null);
+
+  const displayTitle = title || (filterByTab
+    ? `${filterByTab.charAt(0).toUpperCase() + filterByTab.slice(1)} Artifacts`
+    : 'Generated Artifacts');
+
+  const toggleTrace = (traceId: string) => {
+    setExpandedTraces(prev => {
+      const next = new Set(prev);
+      if (next.has(traceId)) {
+        next.delete(traceId);
+      } else {
+        next.add(traceId);
+      }
+      return next;
+    });
+  };
+
+  const copyToClipboard = async (content: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const formatTimestamp = (ts: string) => {
+    const date = new Date(ts);
+    return date.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className={`bg-[#1e1e2e] rounded-lg p-6 ${className}`}>
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 bg-gray-700 rounded w-1/3"></div>
+          <div className="h-20 bg-gray-700 rounded"></div>
+          <div className="h-20 bg-gray-700 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={`bg-[#1e1e2e] rounded-lg p-6 ${className}`}>
+        <p className="text-red-400">Error: {error}</p>
+      </div>
+    );
+  }
+
+  if (filteredTraces.length === 0) {
+    return (
+      <div className={`bg-[#1e1e2e] rounded-lg p-6 ${className}`}>
+        <h3 className="text-lg font-semibold text-white mb-2">{displayTitle}</h3>
+        <p className="text-gray-400 text-sm">
+          {filterByTab
+            ? `No ${filterByTab} artifacts found yet.`
+            : 'No artifacts found. Run an Insights chat to generate diagrams, recommendations, and more.'}
+        </p>
+      </div>
+    );
+  }
+
+  // Calculate totals
+  const totalValue = filteredTraces.reduce((sum, t) => sum + t.total_value_usd, 0);
+  const totalArtifacts = filteredTraces.reduce((sum, t) => sum + t.artifact_count, 0);
+
+  return (
+    <div className={`bg-[#1e1e2e] rounded-lg p-6 ${className}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-white">{displayTitle}</h3>
+        <div className="flex items-center gap-4 text-sm">
+          <span className="text-gray-400">
+            {totalArtifacts} artifacts
+          </span>
+          <span className="text-emerald-400 font-medium">
+            {formatCurrency(totalValue)} value
+          </span>
+        </div>
+      </div>
+
+      {/* Traces list */}
+      <div className="space-y-3">
+        {filteredTraces.map((trace) => {
+          const isExpanded = expandedTraces.has(trace.trace_id);
+
+          return (
+            <div
+              key={trace.trace_id}
+              className="border border-gray-700 rounded-lg overflow-hidden"
+            >
+              {/* Trace header */}
+              <button
+                onClick={() => toggleTrace(trace.trace_id)}
+                className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  {isExpanded ? (
+                    <ChevronDown className="h-4 w-4 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                  )}
+                  <div className="text-left">
+                    <p className="text-white font-medium truncate max-w-md">
+                      {trace.query}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1">
+                      {formatTimestamp(trace.timestamp)} • {trace.artifact_count} artifacts
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  {/* Value breakdown pills */}
+                  <div className="flex gap-2">
+                    {trace.value_breakdown.diagrams > 0 && (
+                      <span className="px-2 py-1 text-xs rounded-full bg-purple-500/10 text-purple-400">
+                        Diagrams: {formatCurrency(trace.value_breakdown.diagrams)}
+                      </span>
+                    )}
+                    {trace.value_breakdown.security > 0 && (
+                      <span className="px-2 py-1 text-xs rounded-full bg-red-500/10 text-red-400">
+                        Security: {formatCurrency(trace.value_breakdown.security)}
+                      </span>
+                    )}
+                    {trace.value_breakdown.recommendations > 0 && (
+                      <span className="px-2 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">
+                        Recs: {formatCurrency(trace.value_breakdown.recommendations)}
+                      </span>
+                    )}
+                    {trace.value_breakdown.code_explanations > 0 && (
+                      <span className="px-2 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">
+                        Code: {formatCurrency(trace.value_breakdown.code_explanations)}
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="text-emerald-400 font-semibold">
+                    {formatCurrency(trace.total_value_usd)}
+                  </span>
+                </div>
+              </button>
+
+              {/* Expanded content */}
+              {isExpanded && trace.artifacts.length > 0 && (
+                <div className="border-t border-gray-700 p-4 bg-gray-900/30">
+                  <div className="space-y-3">
+                    {trace.artifacts.map((artifact, idx) => {
+                      const config = ARTIFACT_CONFIG[artifact.type] || ARTIFACT_CONFIG.code_example;
+                      const artifactId = `${trace.trace_id}-${idx}`;
+
+                      return (
+                        <div
+                          key={artifactId}
+                          className={`rounded-lg p-4 ${config.bg}`}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className={config.color}>{config.icon}</span>
+                              <span className="text-white font-medium">{artifact.description}</span>
+                              <span className="text-xs text-gray-500">({artifact.format})</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-sm font-medium ${config.color}`}>
+                                {formatCurrency(artifact.value_usd)}
+                              </span>
+                              <button
+                                onClick={() => copyToClipboard(artifact.content, artifactId)}
+                                className="p-1 hover:bg-gray-700 rounded transition-colors"
+                                title="Copy content"
+                              >
+                                {copiedId === artifactId ? (
+                                  <Check className="h-4 w-4 text-green-400" />
+                                ) : (
+                                  <Copy className="h-4 w-4 text-gray-400" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Content preview - render based on type */}
+                          {artifact.type === 'diagram' && artifact.format === 'mermaid' ? (
+                            <MermaidPreview content={artifact.content} />
+                          ) : artifact.type === 'recommendation' ? (
+                            <div className="bg-black/30 rounded p-4 text-sm text-gray-200 leading-relaxed">
+                              <Lightbulb className="h-4 w-4 text-yellow-400 inline mr-2" />
+                              {artifact.content}
+                            </div>
+                          ) : artifact.type === 'security_finding' ? (
+                            <div className="bg-black/30 rounded p-4 text-sm text-gray-200 leading-relaxed">
+                              <div className="flex items-start gap-2">
+                                <Shield className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                                <div>
+                                  {artifact.keyword && (
+                                    <span className="inline-block px-2 py-0.5 mb-2 text-xs bg-red-500/20 text-red-300 rounded">
+                                      {artifact.keyword}
+                                    </span>
+                                  )}
+                                  <p>{artifact.content}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <pre className="text-xs text-gray-300 bg-black/30 rounded p-3 overflow-x-auto max-h-48">
+                              {artifact.content.length > 500
+                                ? artifact.content.slice(0, 500) + '...'
+                                : artifact.content}
+                            </pre>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Trace ID link */}
+                  <div className="mt-4 pt-3 border-t border-gray-700 flex items-center justify-between">
+                    <span className="text-xs text-gray-500">
+                      Trace ID: <code className="text-gray-400">{trace.trace_id}</code>
+                    </span>
+                    <a
+                      href={`http://localhost:3001/traces/${trace.trace_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      View in Langfuse <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

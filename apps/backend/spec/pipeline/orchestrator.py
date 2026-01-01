@@ -6,8 +6,11 @@ Main orchestration logic for spec creation with dynamic complexity adaptation.
 """
 
 import json
+import re
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from analysis.analyzers import analyze_project
 from core.workspace.models import SpecNumberLock
@@ -52,6 +55,190 @@ try:
     ROI_PUBLISHER_AVAILABLE = True
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
+
+# Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+
+def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
+    """
+    Extract artifacts from spec directory with value attribution.
+
+    Artifacts are concrete outputs that have measurable value:
+    - spec_document ($500) - Complete spec.md document
+    - requirement_captured ($50 each) - Each requirement from requirements.json
+    - context_discovered ($75) - Context from context.json
+    - complexity_assessment ($100) - Complexity evaluation
+
+    Args:
+        spec_dir: Path to the spec directory
+
+    Returns:
+        List of artifact dictionaries with type, content, value, and metadata
+    """
+    artifacts = []
+
+    # Extract spec.md as artifact ($500 value)
+    spec_file = spec_dir / "spec.md"
+    if spec_file.exists():
+        try:
+            spec_content = spec_file.read_text()
+
+            # Extract summary from spec (first 500 chars)
+            artifacts.append({
+                "type": "spec_document",
+                "format": "markdown",
+                "content": spec_content[:1000] + "..." if len(spec_content) > 1000 else spec_content,
+                "value_usd": 500,
+                "description": "Complete specification document",
+                "tab": "techlead",
+                "file": str(spec_file),
+            })
+
+            # Extract mermaid diagrams from spec
+            mermaid_pattern = r'```mermaid\n(.*?)```'
+            mermaid_matches = re.findall(mermaid_pattern, spec_content, re.DOTALL)
+            for i, diagram in enumerate(mermaid_matches):
+                artifacts.append({
+                    "type": "diagram",
+                    "format": "mermaid",
+                    "content": diagram.strip(),
+                    "value_usd": 150,
+                    "description": f"Architecture diagram #{i+1} from spec",
+                    "tab": "techlead",
+                })
+
+        except Exception:
+            pass
+
+    # Extract requirements as artifacts ($50 each)
+    requirements_file = spec_dir / "requirements.json"
+    if requirements_file.exists():
+        try:
+            with open(requirements_file) as f:
+                req_data = json.load(f)
+
+            # Each user requirement is an artifact
+            user_requirements = req_data.get("user_requirements", [])
+            for i, req in enumerate(user_requirements):
+                artifacts.append({
+                    "type": "requirement_captured",
+                    "format": "text",
+                    "content": req[:250] if len(req) > 250 else req,
+                    "value_usd": 50,
+                    "description": f"User requirement #{i+1}",
+                    "tab": "business",
+                })
+
+            # Each acceptance criterion is an artifact
+            acceptance_criteria = req_data.get("acceptance_criteria", [])
+            for i, criterion in enumerate(acceptance_criteria):
+                artifacts.append({
+                    "type": "acceptance_criterion",
+                    "format": "text",
+                    "content": criterion[:250] if len(criterion) > 250 else criterion,
+                    "value_usd": 25,
+                    "description": f"Acceptance criterion #{i+1}",
+                    "tab": "dev",
+                })
+
+        except Exception:
+            pass
+
+    # Extract context as artifact ($75 value)
+    context_file = spec_dir / "context.json"
+    if context_file.exists():
+        try:
+            with open(context_file) as f:
+                context_data = json.load(f)
+
+            # Context discovery is valuable
+            files_discovered = context_data.get("relevant_files", [])
+            patterns_found = context_data.get("patterns", [])
+
+            artifacts.append({
+                "type": "context_discovered",
+                "format": "json",
+                "content": json.dumps({
+                    "files_count": len(files_discovered),
+                    "patterns_count": len(patterns_found),
+                    "sample_files": files_discovered[:5] if files_discovered else [],
+                }, indent=2),
+                "value_usd": 75,
+                "description": f"Discovered {len(files_discovered)} relevant files and {len(patterns_found)} patterns",
+                "tab": "techlead",
+                "files_count": len(files_discovered),
+            })
+
+        except Exception:
+            pass
+
+    # Extract complexity assessment as artifact ($100 value)
+    complexity_file = spec_dir / "complexity_assessment.json"
+    if complexity_file.exists():
+        try:
+            with open(complexity_file) as f:
+                complexity_data = json.load(f)
+
+            complexity_level = complexity_data.get("complexity", "standard")
+            confidence = complexity_data.get("confidence", 0)
+            reasoning = complexity_data.get("reasoning", "")
+
+            artifacts.append({
+                "type": "complexity_assessment",
+                "format": "json",
+                "content": json.dumps({
+                    "complexity": complexity_level,
+                    "confidence": confidence,
+                    "reasoning": reasoning[:300] if len(reasoning) > 300 else reasoning,
+                }, indent=2),
+                "value_usd": 100,
+                "description": f"Complexity: {complexity_level.upper()} (confidence: {confidence:.0%})",
+                "tab": "techlead",
+                "complexity_level": complexity_level,
+            })
+
+        except Exception:
+            pass
+
+    # Extract implementation plan summary as artifact (if exists)
+    plan_file = spec_dir / "implementation_plan.json"
+    if plan_file.exists():
+        try:
+            with open(plan_file) as f:
+                plan_data = json.load(f)
+
+            subtasks = plan_data.get("subtasks", [])
+            if subtasks:
+                artifacts.append({
+                    "type": "implementation_plan",
+                    "format": "json",
+                    "content": json.dumps({
+                        "subtasks_count": len(subtasks),
+                        "subtask_titles": [s.get("title", "Untitled")[:50] for s in subtasks[:5]],
+                    }, indent=2),
+                    "value_usd": 200,
+                    "description": f"Implementation plan with {len(subtasks)} subtasks",
+                    "tab": "dev",
+                    "subtasks_count": len(subtasks),
+                })
+
+        except Exception:
+            pass
+
+    return artifacts
 
 
 class SpecOrchestrator:
@@ -633,7 +820,14 @@ class SpecOrchestrator:
         )
 
     async def _publish_roi(self, phases_executed: list[str]) -> None:
-        """Publish ROI metrics for spec creation.
+        """Publish ROI metrics for spec creation with artifact extraction.
+
+        Extracts artifacts from the spec directory and publishes comprehensive
+        ROI metrics including:
+        - phases_completed: Number of phases executed
+        - requirements_count: Number of requirements captured
+        - complexity_level: Assessed complexity (simple/standard/complex)
+        - context_files_found: Number of relevant files discovered
 
         Args:
             phases_executed: List of phases that were executed
@@ -648,15 +842,35 @@ class SpecOrchestrator:
             # Use the last collected trace_id for ROI attachment
             trace_id = self._trace_ids[-1] if self._trace_ids else None
 
+            # Extract artifacts from spec directory
+            artifacts = extract_spec_artifacts(self.spec_dir)
+
+            # Count metrics from artifacts
+            requirements_count = sum(
+                1 for a in artifacts if a.get("type") in ("requirement_captured", "acceptance_criterion")
+            )
+            context_files_found = 0
+            for a in artifacts:
+                if a.get("type") == "context_discovered":
+                    context_files_found = a.get("files_count", 0)
+                    break
+
+            # Calculate total artifact value
+            total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
             result = await publish_feature_roi(
-                feature_type="spec_writer",
+                feature_type="spec_creation",  # Use specific feature type for spec creation pipeline
                 project_id=project_id,
                 cost_usd=0.0,  # Will be calculated from traces
                 tokens=0,
                 metrics={
                     "phases_completed": len(phases_executed),
                     "complexity_level": complexity_level,
-                    "requirements_gathered": 1,
+                    "requirements_count": requirements_count,
+                    "context_files_found": context_files_found,
+                    "requirements_gathered": requirements_count,  # For ROI calculator compatibility
+                    "artifacts_count": len(artifacts),
+                    "artifacts_value_usd": total_artifact_value,
                 },
                 spec_id=self.spec_dir.name,
                 trace_id=trace_id,  # Pass trace_id for Langfuse score attachment
@@ -669,8 +883,63 @@ class SpecOrchestrator:
                     f"Spec ROI: {roi_pct:.0f}% (${value:.2f} value from {len(phases_executed)} phases)",
                     "success",
                 )
+                if artifacts:
+                    print_status(
+                        f"Artifacts: {len(artifacts)} extracted (${total_artifact_value:.0f} value)",
+                        "info",
+                    )
+
+            # Save artifacts to file for traceability
+            await self._save_artifacts_report(artifacts, phases_executed, trace_id)
+
         except Exception as e:
             print_status(f"ROI publish failed: {e}", "warning")
+
+    async def _save_artifacts_report(
+        self,
+        artifacts: list[dict[str, Any]],
+        phases_executed: list[str],
+        trace_id: str | None,
+    ) -> None:
+        """Save artifacts report to spec directory for traceability.
+
+        Args:
+            artifacts: List of extracted artifacts
+            phases_executed: List of phases that were executed
+            trace_id: Langfuse trace ID if available
+        """
+        try:
+            report = {
+                "timestamp": datetime.now().isoformat(),
+                "trace_id": trace_id,
+                "spec_id": self.spec_dir.name,
+                "project_id": self.project_dir.name,
+                "complexity_level": self.assessment.complexity.value if self.assessment else "standard",
+                "phases_executed": phases_executed,
+                "phases_count": len(phases_executed),
+                "artifacts": artifacts,
+                "artifacts_count": len(artifacts),
+                "total_value_usd": sum(a.get("value_usd", 0) for a in artifacts),
+                "value_breakdown": {},
+            }
+
+            # Calculate value breakdown by artifact type
+            for artifact in artifacts:
+                artifact_type = artifact.get("type", "unknown")
+                value = artifact.get("value_usd", 0)
+                if artifact_type not in report["value_breakdown"]:
+                    report["value_breakdown"][artifact_type] = {"count": 0, "total_value": 0}
+                report["value_breakdown"][artifact_type]["count"] += 1
+                report["value_breakdown"][artifact_type]["total_value"] += value
+
+            # Save to spec directory
+            report_file = self.spec_dir / "roi_artifacts.json"
+            with open(report_file, "w") as f:
+                json.dump(report, f, indent=2, default=str)
+
+        except Exception:
+            # Don't fail if saving report fails
+            pass
 
     def _run_review_checkpoint(self, auto_approve: bool) -> bool:
         """Run the human review checkpoint.

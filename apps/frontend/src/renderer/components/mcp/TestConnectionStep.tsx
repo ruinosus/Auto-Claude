@@ -34,23 +34,31 @@ export function TestConnectionStep({
     setResult(null);
 
     try {
-      // Call the IPC handler via window.electron
-      const response = await (window as any).electron.testMCPConnection(serverConfig);
+      // Call the correct IPC handler via window.electronAPI.mcp
+      const response = await window.electronAPI.mcp.testConnectionCustom(serverConfig);
 
       if (response.success) {
         setState('success');
-        setResult(response);
 
-        // Call onSuccess with capabilities (if available)
-        if (response.capabilities) {
-          onSuccess(response.capabilities);
-        } else {
-          // If no capabilities returned, default to zeros
-          onSuccess({ tools: 0, prompts: 0, resources: 0 });
-        }
+        // Convert capabilities from arrays to counts
+        const capabilities = {
+          tools: response.capabilities?.tools?.length || 0,
+          prompts: response.capabilities?.prompts?.length || 0,
+          resources: response.capabilities?.resources?.length || 0,
+        };
+
+        setResult({
+          success: true,
+          capabilities,
+        });
+
+        onSuccess(capabilities);
       } else {
         setState('error');
-        setResult(response);
+        setResult({
+          success: false,
+          error: response.message || 'Connection failed',
+        });
       }
     } catch (error) {
       setState('error');

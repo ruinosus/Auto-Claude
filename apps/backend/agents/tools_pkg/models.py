@@ -39,6 +39,18 @@ TOOL_RECORD_GOTCHA = "mcp__auto-claude__record_gotcha"
 TOOL_GET_SESSION_CONTEXT = "mcp__auto-claude__get_session_context"
 TOOL_UPDATE_QA_STATUS = "mcp__auto-claude__update_qa_status"
 
+# ROI Activity Tracking tools (available to ALL agents)
+TOOL_REPORT_ACTIVITY = "mcp__auto-claude__report_activity"
+TOOL_GET_ACTIVITY_SUMMARY = "mcp__auto-claude__get_activity_summary"
+TOOL_LIST_ACTIVITY_TYPES = "mcp__auto-claude__list_activity_types"
+
+# Base ROI tools that all agents should have
+ROI_TOOLS = [
+    TOOL_REPORT_ACTIVITY,
+    TOOL_GET_ACTIVITY_SUMMARY,
+    TOOL_LIST_ACTIVITY_TYPES,
+]
+
 # =============================================================================
 # External MCP Tools
 # =============================================================================
@@ -134,58 +146,58 @@ def is_electron_mcp_enabled() -> bool:
 
 AGENT_CONFIGS = {
     # ═══════════════════════════════════════════════════════════════════════
-    # SPEC CREATION PHASES (Minimal tools, fast startup)
+    # SPEC CREATION PHASES (Minimal tools, fast startup + ROI tracking)
     # ═══════════════════════════════════════════════════════════════════════
     "spec_gatherer": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": [],  # No MCP needed - just reads project
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,  # All agents get ROI tools
         "thinking_default": "medium",
     },
     "spec_researcher": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["context7"],  # Needs docs lookup
-        "auto_claude_tools": [],
+        "mcp_servers": ["context7", "auto-claude"],  # Needs docs lookup + ROI
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "medium",
     },
     "spec_writer": {
         "tools": BASE_READ_TOOLS + BASE_WRITE_TOOLS,
-        "mcp_servers": [],  # Just writes spec.md
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "high",
     },
     "spec_critic": {
         "tools": BASE_READ_TOOLS,
-        "mcp_servers": [],  # Self-critique, no external tools
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "ultrathink",
     },
     "spec_discovery": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "medium",
     },
     "spec_context": {
         "tools": BASE_READ_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "medium",
     },
     "spec_validation": {
         "tools": BASE_READ_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "high",
     },
     "spec_compaction": {
         "tools": BASE_READ_TOOLS + BASE_WRITE_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "medium",
     },
     # ═══════════════════════════════════════════════════════════════════════
-    # BUILD PHASES (Full tools + Graphiti memory)
+    # BUILD PHASES (Full tools + Graphiti memory + ROI tracking)
     # Note: "linear" is conditional on project setting "update_linear_with_tasks"
     # ═══════════════════════════════════════════════════════════════════════
     "planner": {
@@ -196,7 +208,7 @@ AGENT_CONFIGS = {
             TOOL_GET_BUILD_PROGRESS,
             TOOL_GET_SESSION_CONTEXT,
             TOOL_RECORD_DISCOVERY,
-        ],
+        ] + ROI_TOOLS,
         "thinking_default": "high",
     },
     "coder": {
@@ -209,11 +221,11 @@ AGENT_CONFIGS = {
             TOOL_RECORD_DISCOVERY,
             TOOL_RECORD_GOTCHA,
             TOOL_GET_SESSION_CONTEXT,
-        ],
+        ] + ROI_TOOLS,
         "thinking_default": "none",  # Coding doesn't use extended thinking
     },
     # ═══════════════════════════════════════════════════════════════════════
-    # QA PHASES (Read + test + browser + Graphiti memory)
+    # QA PHASES (Read + test + browser + Graphiti memory + ROI tracking)
     # ═══════════════════════════════════════════════════════════════════════
     "qa_reviewer": {
         # Read-only + Bash (for running tests) - reviewer should NOT edit code
@@ -224,7 +236,7 @@ AGENT_CONFIGS = {
             TOOL_GET_BUILD_PROGRESS,
             TOOL_UPDATE_QA_STATUS,
             TOOL_GET_SESSION_CONTEXT,
-        ],
+        ] + ROI_TOOLS,
         "thinking_default": "high",
     },
     "qa_fixer": {
@@ -236,76 +248,76 @@ AGENT_CONFIGS = {
             TOOL_GET_BUILD_PROGRESS,
             TOOL_UPDATE_QA_STATUS,
             TOOL_RECORD_GOTCHA,
-        ],
+        ] + ROI_TOOLS,
         "thinking_default": "medium",
     },
     # ═══════════════════════════════════════════════════════════════════════
-    # UTILITY PHASES (Minimal, no MCP)
+    # UTILITY PHASES (Minimal tools + ROI tracking)
     # ═══════════════════════════════════════════════════════════════════════
     "insights": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "medium",
     },
     "merge_resolver": {
         "tools": [],  # Text-only analysis
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "low",
     },
     "commit_message": {
         "tools": [],
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "low",
     },
     "pr_reviewer": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,  # Read-only
-        "mcp_servers": ["context7"],
-        "auto_claude_tools": [],
+        "mcp_servers": ["context7", "auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "high",
     },
     # ═══════════════════════════════════════════════════════════════════════
-    # ANALYSIS PHASES
+    # ANALYSIS PHASES (+ ROI tracking)
     # ═══════════════════════════════════════════════════════════════════════
     "analysis": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["context7"],
-        "auto_claude_tools": [],
+        "mcp_servers": ["context7", "auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "medium",
     },
     "batch_analysis": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "low",
     },
     "batch_validation": {
         "tools": BASE_READ_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "low",
     },
     # ═══════════════════════════════════════════════════════════════════════
-    # ROADMAP & IDEATION
+    # ROADMAP & IDEATION (+ ROI tracking)
     # ═══════════════════════════════════════════════════════════════════════
     "roadmap_discovery": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["context7"],
-        "auto_claude_tools": [],
+        "mcp_servers": ["context7", "auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "high",
     },
     "competitor_analysis": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["context7"],  # WebSearch for competitor research
-        "auto_claude_tools": [],
+        "mcp_servers": ["context7", "auto-claude"],  # WebSearch + ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "high",
     },
     "ideation": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": [],
-        "auto_claude_tools": [],
+        "mcp_servers": ["auto-claude"],  # ROI tracking
+        "auto_claude_tools": ROI_TOOLS,
         "thinking_default": "high",
     },
 }

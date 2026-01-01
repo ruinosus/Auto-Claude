@@ -57,22 +57,27 @@ export function MCPCapabilitiesView({ server, expanded, onToggle }: MCPCapabilit
   const prompts = capabilities?.prompts || server.capabilities?.prompts || [];
   const resources = capabilities?.resources || server.capabilities?.resources || [];
 
+  // Use actual loaded counts, fallback to server counts
+  const toolCount = capabilities ? tools.length : server.toolCount;
+  const promptCount = capabilities ? prompts.length : server.promptCount;
+  const resourceCount = capabilities ? resources.length : server.resourceCount;
+
   return (
     <div className="border-t p-4 bg-muted/50">
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'tools' | 'prompts' | 'resources')}>
         <TabsList>
           <TabsTrigger value="tools">
-            🔧 Tools ({server.toolCount})
+            🔧 Tools ({toolCount})
           </TabsTrigger>
           <TabsTrigger value="prompts">
-            📝 Prompts ({server.promptCount})
+            📝 Prompts ({promptCount})
           </TabsTrigger>
           <TabsTrigger value="resources">
-            📁 Resources ({server.resourceCount})
+            📁 Resources ({resourceCount})
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="tools">
+        <TabsContent value="tools" className="max-h-[400px] overflow-y-auto">
           <MCPToolsList
             tools={tools}
             serverId={server.id}
@@ -80,12 +85,12 @@ export function MCPCapabilitiesView({ server, expanded, onToggle }: MCPCapabilit
           />
         </TabsContent>
 
-        <TabsContent value="prompts">
-          <MCPPromptsList prompts={prompts} />
+        <TabsContent value="prompts" className="max-h-[400px] overflow-y-auto">
+          <MCPPromptsList prompts={prompts} serverId={server.id} />
         </TabsContent>
 
-        <TabsContent value="resources">
-          <MCPResourcesList resources={resources} />
+        <TabsContent value="resources" className="max-h-[400px] overflow-y-auto">
+          <MCPResourcesList resources={resources} serverId={server.id} />
         </TabsContent>
       </Tabs>
 

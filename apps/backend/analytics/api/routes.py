@@ -67,25 +67,78 @@ def get_spec_id_from_trace(trace) -> str:
 
     Priority:
     1. metadata.spec_id (if present)
-    2. session_id (if present)
-    3. First part of trace name (before first '-')
-    4. 'trace-' + first 8 chars of trace.id
+    2. For ROI calculation traces: use feature_type from metadata
+    3. session_id (if present)
+    4. For spec traces: extract XXX-name from "spec-XXX-name-..."
+    5. First meaningful part of trace name (skip generic prefixes)
+    6. 'trace-' + first 8 chars of trace.id
     """
     # Try metadata first
-    spec_id = trace.metadata.get("spec_id") if trace.metadata else None
-    if spec_id:
-        return spec_id
+    if trace.metadata:
+        spec_id = trace.metadata.get("spec_id")
+        if spec_id:
+            return spec_id
+
+        # For ROI calculation traces, use feature_type as identifier
+        if trace.metadata.get("roi_calculation"):
+            feature_type = trace.metadata.get("feature_type", "unknown")
+            return f"feature:{feature_type}"
 
     # Fallback to session_id
     if trace.session_id:
         return trace.session_id
 
-    # Fallback to name prefix
-    if trace.name and "-" in trace.name:
-        return trace.name.split("-")[0]
+    # Try to extract spec ID from trace name
+    if trace.name:
+        name = trace.name
+
+        # Handle spec traces like "spec-001-bearer-token-authentication-writer"
+        if name.startswith("spec-"):
+            parts = name.split("-")
+            # Find the spec ID pattern (XXX-name-...)
+            if len(parts) >= 3:
+                # Reconstruct spec ID: parts[1] is the number, subsequent parts are the name
+                spec_parts = [parts[1]]
+                for i in range(2, len(parts)):
+                    # Stop at agent type suffixes
+                    if parts[i] in ["writer", "researcher", "gatherer", "coder", "planner",
+                                    "complexity_assessor", "qa_reviewer", "qa_fixer"]:
+                        break
+                    spec_parts.append(parts[i])
+                return "-".join(spec_parts)
+
+        # Skip generic prefixes that aren't spec IDs
+        if "-" in name:
+            prefix = name.split("-")[0]
+            # Skip ROI, insight, compaction prefixes - they're not spec IDs
+            if prefix in ["roi", "insight"]:
+                # Try to get a better ID from later parts
+                parts = name.split("-")
+                if len(parts) >= 2:
+                    return parts[1] if parts[1] not in ["extraction", "calculation"] else f"{prefix}-trace"
+            return prefix
 
     # Last resort: trace ID prefix
     return f"trace-{trace.id[:8]}"
+
+
+def normalize_model_name(model: str) -> str:
+    """
+    Normalize model names to group similar models together.
+
+    Examples:
+    - "claude-sonnet-4-5-20250929" -> "claude-sonnet-4-5"
+    - "claude-opus-4-5-20251101" -> "claude-opus-4-5"
+    - "claude-3-5-sonnet-20241022" -> "claude-3-5-sonnet"
+    """
+    if not model:
+        return "unknown"
+
+    # Remove date suffixes (format: -YYYYMMDD)
+    import re
+    normalized = re.sub(r'-\d{8}$', '', model)
+
+    return normalized
 
 
 def get_agent_type_from_trace(trace) -> str:
@@ -359,6 +412,9 @@ async def get_roi_summary(
     specs_with_positive_roi = 0
     confidence_sum = 0.0
 
+    # Hourly rate for calculating hours saved from value
+    HOURLY_RATE = 150.0
+
     for trace_id in trace_ids:
         # Get all scores for this trace
         trace_scores = await client.get_scores(trace_id=trace_id)
@@ -368,11 +424,22 @@ async def get_roi_summary(
         trace = await client.get_trace(trace_id)
         spec_id = get_spec_id_from_trace(trace) if trace else f"trace-{trace_id[:8]}"
 
+        # Use correct score names (total_value_usd, total_cost_usd)
+        # Fall back to legacy names for backwards compatibility
+        business_value = score_dict.get("total_value_usd", score_dict.get("business_value_usd", 0))
+        actual_cost = score_dict.get("total_cost_usd", score_dict.get("actual_cost_usd", 0))
+
+        # Calculate hours saved from value (value / hourly_rate)
+        # Use explicit dev_hours_saved if available, otherwise calculate
+        hours_saved = score_dict.get("dev_hours_saved", 0)
+        if hours_saved == 0 and business_value > 0:
+            hours_saved = business_value / HOURLY_RATE
+
         metrics = ROIMetrics(
             roi_percentage=score_dict.get("roi_percentage", 0),
-            business_value_usd=score_dict.get("business_value_usd", 0),
-            actual_cost_usd=score_dict.get("actual_cost_usd", 0),
-            dev_hours_saved=score_dict.get("dev_hours_saved", 0),
+            business_value_usd=business_value,
+            actual_cost_usd=actual_cost,
+            dev_hours_saved=hours_saved,
             lines_added=int(score_dict.get("lines_added", 0)),
             lines_removed=int(score_dict.get("lines_removed", 0)),
             files_changed=int(score_dict.get("files_changed", 0)),
@@ -396,8 +463,14 @@ async def get_roi_summary(
         if metrics.roi_percentage > 0:
             specs_with_positive_roi += 1
 
-    # Calculate total ROI
-    total_roi = ((total_business_value - total_cost) / total_cost * 100) if total_cost > 0 else 0
+    # Calculate total ROI from aggregated values
+    # If we have positive value but zero cost, ROI is infinite (use a high number)
+    if total_cost > 0:
+        total_roi = ((total_business_value - total_cost) / total_cost * 100)
+    elif total_business_value > 0:
+        total_roi = 10000.0  # 10000% ROI when cost is zero but value exists
+    else:
+        total_roi = 0.0
     avg_confidence = confidence_sum / len(by_spec) if by_spec else 0
 
     return ROISummaryResponse(
@@ -787,12 +860,14 @@ async def get_usage_summary(
         feature_data[agent_type]["count"] += 1
 
     # Get model distribution from generations (sample up to 100 traces for better accuracy)
+    # Normalize model names to group similar models (e.g., "claude-sonnet-4-5-20250929" -> "claude-sonnet-4-5")
     for trace in traces[:100]:
         generations = await client.get_generations(trace_id=trace.id)
         for gen in generations:
-            model_data[gen.model]["tokens"] += gen.total_tokens
-            model_data[gen.model]["cost"] += gen.cost
-            model_data[gen.model]["count"] += 1
+            normalized_model = normalize_model_name(gen.model)
+            model_data[normalized_model]["tokens"] += gen.total_tokens
+            model_data[normalized_model]["cost"] += gen.cost
+            model_data[normalized_model]["count"] += 1
 
     # Build response
     cost_over_time = sorted([
@@ -1225,6 +1300,101 @@ async def get_health_status() -> HealthStatusResponse:
 # =============================================================================
 # Recent Activity Endpoints
 # =============================================================================
+
+# =============================================================================
+# Artifacts Endpoints (Value Attribution Traceability)
+# =============================================================================
+
+@router.get("/artifacts")
+async def get_artifacts(
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+    trace_id: Optional[str] = Query(None, description="Get artifacts for specific trace"),
+    limit: int = Query(20, ge=1, le=100, description="Max results"),
+):
+    """
+    Get artifacts generated by insights/agents with value attribution.
+
+    Returns artifacts extracted from trace outputs including:
+    - Diagrams (mermaid, ascii)
+    - Code examples
+    - Recommendations
+    - Security findings
+
+    Each artifact includes its value contribution to ROI.
+    """
+    client = get_client()
+
+    try:
+        artifacts_response = []
+
+        if trace_id:
+            # Get specific trace
+            trace = await client.get_trace(trace_id)
+            if trace and trace.output:
+                output = trace.output if isinstance(trace.output, dict) else {}
+                value_attr = output.get("value_attribution", {})
+                artifacts = value_attr.get("artifacts", [])
+
+                artifacts_response.append({
+                    "trace_id": trace_id,
+                    "trace_name": trace.name,
+                    "timestamp": trace.timestamp.isoformat() if trace.timestamp else None,
+                    "query": trace.input[:200] if isinstance(trace.input, str) else str(trace.input)[:200],
+                    "total_value_usd": output.get("total_calculated_value", 0),
+                    "value_breakdown": {
+                        "diagrams": value_attr.get("diagrams", {}).get("total_value", 0),
+                        "security": value_attr.get("security_insights", {}).get("total_value", 0),
+                        "recommendations": value_attr.get("recommendations", {}).get("total_value", 0),
+                        "code_explanations": value_attr.get("code_explanations", {}).get("total_value", 0),
+                    },
+                    "artifacts": artifacts,
+                    "artifact_count": len(artifacts),
+                })
+        else:
+            # Get recent traces with artifacts
+            filter = TraceFilter(
+                project_id=project_id,
+                limit=limit,
+            )
+            traces = await client.get_traces(filter)
+
+            for trace in traces:
+                # Get full trace details to access output
+                full_trace = await client.get_trace(trace.id)
+                if not full_trace or not full_trace.output:
+                    continue
+
+                output = full_trace.output if isinstance(full_trace.output, dict) else {}
+                value_attr = output.get("value_attribution", {})
+                artifacts = value_attr.get("artifacts", [])
+
+                # Only include traces that have artifacts
+                if artifacts or output.get("total_calculated_value", 0) > 0:
+                    artifacts_response.append({
+                        "trace_id": trace.id,
+                        "trace_name": trace.name,
+                        "timestamp": trace.timestamp.isoformat() if trace.timestamp else None,
+                        "query": full_trace.input[:200] if isinstance(full_trace.input, str) else str(full_trace.input)[:200] if full_trace.input else "",
+                        "total_value_usd": output.get("total_calculated_value", 0),
+                        "value_breakdown": {
+                            "diagrams": value_attr.get("diagrams", {}).get("total_value", 0),
+                            "security": value_attr.get("security_insights", {}).get("total_value", 0),
+                            "recommendations": value_attr.get("recommendations", {}).get("total_value", 0),
+                            "code_explanations": value_attr.get("code_explanations", {}).get("total_value", 0),
+                        },
+                        "artifacts": artifacts,
+                        "artifact_count": len(artifacts),
+                    })
+
+        return {
+            "artifacts": artifacts_response,
+            "total": len(artifacts_response),
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get artifacts: {e}")
+        return {"artifacts": [], "total": 0, "error": str(e)}
+
 
 @router.get("/specs/recent-activity", response_model=RecentActivityResponse)
 async def get_recent_activity(limit: int = Query(default=10, le=50)) -> RecentActivityResponse:

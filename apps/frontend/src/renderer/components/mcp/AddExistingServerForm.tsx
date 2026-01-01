@@ -102,16 +102,22 @@ export function AddExistingServerForm({
     };
 
     if (connectionType === 'http' && httpData) {
+      config.name = httpData.name;
+      config.description = httpData.description;
       config.baseUrl = httpData.baseUrl;
       config.authType = httpData.authType === 'none' ? 'none' : httpData.authType === 'apiKey' ? 'api-key' : 'bearer';
       config.authValue = httpData.authValue;
       config.headers = httpData.customHeaders;
     } else if (connectionType === 'stdio' && stdioData) {
+      config.name = stdioData.name;
+      config.description = stdioData.description;
       config.command = stdioData.command;
       config.args = stdioData.args ? stdioData.args.split(' ').filter(Boolean) : [];
       config.workingDir = stdioData.workingDir;
       config.env = stdioData.env;
     } else if (connectionType === 'sse' && sseData) {
+      config.name = sseData.name;
+      config.description = sseData.description;
       config.baseUrl = sseData.sseEndpoint;
       config.reconnectOnDisconnect = sseData.reconnectOnDisconnect;
       config.reconnectDelay = sseData.reconnectDelay;
@@ -129,16 +135,22 @@ export function AddExistingServerForm({
     };
 
     if (connectionType === 'http' && httpData) {
+      config.name = httpData.name;
+      config.description = httpData.description;
       config.baseUrl = httpData.baseUrl;
       config.authType = httpData.authType === 'none' ? 'none' : httpData.authType === 'apiKey' ? 'api-key' : 'bearer';
       config.authValue = httpData.authValue;
       config.headers = httpData.customHeaders;
     } else if (connectionType === 'stdio' && stdioData) {
+      config.name = stdioData.name;
+      config.description = stdioData.description;
       config.command = stdioData.command;
       config.args = stdioData.args ? stdioData.args.split(' ').filter(Boolean) : [];
       config.workingDir = stdioData.workingDir;
       config.env = stdioData.env;
     } else if (connectionType === 'sse' && sseData) {
+      config.name = sseData.name;
+      config.description = sseData.description;
       config.baseUrl = sseData.sseEndpoint;
       config.reconnectOnDisconnect = sseData.reconnectOnDisconnect;
       config.reconnectDelay = sseData.reconnectDelay;

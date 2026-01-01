@@ -38,19 +38,19 @@ describe('MCPPromptsList', () => {
   ];
 
   it('renders list of prompts', () => {
-    render(<MCPPromptsList prompts={mockPrompts} />);
+    render(<MCPPromptsList prompts={mockPrompts} serverId="test-server" />);
     expect(screen.getByText('Test Prompt')).toBeTruthy();
     expect(screen.getByText('Simple Prompt')).toBeTruthy();
   });
 
   it('displays prompt descriptions', () => {
-    render(<MCPPromptsList prompts={mockPrompts} />);
+    render(<MCPPromptsList prompts={mockPrompts} serverId="test-server" />);
     expect(screen.getByText('A test prompt for testing')).toBeTruthy();
     expect(screen.getByText('A simple prompt without arguments')).toBeTruthy();
   });
 
   it('shows arguments with required indicator', () => {
-    render(<MCPPromptsList prompts={mockPrompts} />);
+    render(<MCPPromptsList prompts={mockPrompts} serverId="test-server" />);
 
     expect(screen.getByText('Arguments:')).toBeTruthy();
     expect(screen.getByText('user_name')).toBeTruthy();
@@ -63,7 +63,7 @@ describe('MCPPromptsList', () => {
   });
 
   it('shows template preview with first 3 lines', () => {
-    render(<MCPPromptsList prompts={mockPrompts} />);
+    render(<MCPPromptsList prompts={mockPrompts} serverId="test-server" />);
 
     const templatePreview = screen.getByText(/Hello {{user_name}}!/);
     expect(templatePreview).toBeTruthy();
@@ -73,14 +73,14 @@ describe('MCPPromptsList', () => {
   });
 
   it('shows "Use this prompt" button for each prompt', () => {
-    render(<MCPPromptsList prompts={mockPrompts} />);
+    render(<MCPPromptsList prompts={mockPrompts} serverId="test-server" />);
 
     const usePromptButtons = screen.getAllByText(/Use this prompt/);
     expect(usePromptButtons).toHaveLength(2);
   });
 
   it('handles click on "Use this prompt" button', () => {
-    render(<MCPPromptsList prompts={mockPrompts} />);
+    render(<MCPPromptsList prompts={mockPrompts} serverId="test-server" />);
 
     const usePromptButtons = screen.getAllByText(/Use this prompt/);
 
@@ -89,7 +89,7 @@ describe('MCPPromptsList', () => {
   });
 
   it('displays empty state when no prompts provided', () => {
-    render(<MCPPromptsList prompts={[]} />);
+    render(<MCPPromptsList prompts={[]} serverId="test-server" />);
     expect(screen.getByText('No prompts available')).toBeTruthy();
   });
 
@@ -103,7 +103,7 @@ describe('MCPPromptsList', () => {
       }
     ];
 
-    render(<MCPPromptsList prompts={promptsWithoutTemplate} />);
+    render(<MCPPromptsList prompts={promptsWithoutTemplate} serverId="test-server" />);
     expect(screen.getByText('No Template')).toBeTruthy();
     expect(screen.getByText('Prompt without template')).toBeTruthy();
   });
@@ -118,7 +118,7 @@ describe('MCPPromptsList', () => {
       }
     ];
 
-    render(<MCPPromptsList prompts={promptsWithoutArgs} />);
+    render(<MCPPromptsList prompts={promptsWithoutArgs} serverId="test-server" />);
     expect(screen.getByText('No Args')).toBeTruthy();
 
     // Should not show "Arguments:" section
@@ -136,7 +136,7 @@ describe('MCPPromptsList', () => {
       }
     ];
 
-    render(<MCPPromptsList prompts={promptWithLongTemplate} />);
+    render(<MCPPromptsList prompts={promptWithLongTemplate} serverId="test-server" />);
 
     const templateElement = screen.getByText(/Line of text/);
     expect(templateElement.textContent).toContain('...');

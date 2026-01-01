@@ -5,7 +5,9 @@ QA Fixer Agent Session
 Runs QA fixer sessions to resolve issues identified by the reviewer.
 """
 
+import re
 from pathlib import Path
+from typing import Any
 
 from claude_agent_sdk import ClaudeSDKClient
 from debug import debug, debug_detailed, debug_error, debug_section, debug_success
@@ -25,6 +27,7 @@ try:
         trace_context,
         log_generation_in_current_trace,
         get_session_trace_name,
+        flush_langfuse,
     )
     LANGFUSE_AVAILABLE = True
     # Initialize Langfuse early (idempotent - safe to call multiple times)
@@ -32,6 +35,13 @@ try:
 except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
+
+# ROI publisher (optional - graceful degradation if not available)
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
 
 # Prompt registry (optional - graceful degradation if not available)
 try:
@@ -62,6 +72,168 @@ def load_qa_fixer_prompt() -> str:
     if not prompt_file.exists():
         raise FileNotFoundError(f"QA fixer prompt not found: {prompt_file}")
     return prompt_file.read_text()
+
+
+# =============================================================================
+# ARTIFACT EXTRACTION
+# =============================================================================
+
+
+def extract_qa_fix_artifacts(
+    response_text: str,
+    tool_count: int,
+    status: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """
+    Extract artifacts and metrics from QA fixer response.
+
+    Artifact types and values (as specified in ROI_IMPLEMENTATION_TRACKER.md):
+    - fix_applied: $150 each - each fix applied
+    - issue_resolution: $100 - issue marked as resolved
+    - test_fix: $75 - test corrected/added
+
+    Args:
+        response_text: The response text from the QA fixer agent
+        tool_count: Number of tools used during the session
+        status: QA signoff status dict (from get_qa_signoff_status)
+
+    Returns:
+        Tuple of (artifacts list, metrics dict)
+    """
+    artifacts = []
+    metrics = {
+        "fixes_applied": 0,
+        "issues_resolved": 0,
+        "tests_fixed": 0,
+        "files_modified": 0,
+    }
+
+    response_lower = response_text.lower()
+
+    # Detect fixes applied from response
+    # Look for patterns like "fixed", "applied fix", "resolved", "corrected"
+    fix_patterns = [
+        r"(?:fixed|corrected|resolved|applied fix for)\s+(.{10,100})",
+        r"(?:modified|updated|changed)\s+(.{10,80})\s+to\s+fix",
+        r"fix(?:ed|ing)?\s+(?:the\s+)?(?:issue|bug|problem|error)\s+(?:in|with|for)\s+(.{10,80})",
+    ]
+
+    fix_descriptions = []
+    for pattern in fix_patterns:
+        matches = re.findall(pattern, response_lower, re.IGNORECASE)
+        for match in matches:
+            desc = match.strip()[:150]
+            if desc and desc not in fix_descriptions:
+                fix_descriptions.append(desc)
+                artifacts.append({
+                    "type": "fix_applied",
+                    "format": "text",
+                    "content": desc,
+                    "value_usd": 150,
+                    "description": f"Fix applied: {desc[:50]}...",
+                    "tab": "dev",
+                })
+                metrics["fixes_applied"] += 1
+
+    # Count Edit tool uses as proxy for fixes if no patterns found
+    if metrics["fixes_applied"] == 0 and tool_count > 0:
+        # Each Edit tool use likely represents a fix
+        # Use a conservative estimate: at least 1 fix for any tool activity
+        metrics["fixes_applied"] = max(1, tool_count // 2)
+        artifacts.append({
+            "type": "fix_applied",
+            "format": "text",
+            "content": f"Applied {metrics['fixes_applied']} fix(es) via tool operations",
+            "value_usd": 150 * metrics["fixes_applied"],
+            "description": f"Fixes applied via {tool_count} tool operations",
+            "tab": "dev",
+        })
+
+    # Detect issue resolutions
+    issue_resolution_patterns = [
+        r"(?:issue|bug|problem|error)\s+(?:is\s+now\s+)?(?:resolved|fixed|corrected)",
+        r"(?:resolved|fixed|corrected)\s+(?:the\s+)?(?:issue|bug|problem|error)",
+        r"all\s+(?:issues?|problems?|bugs?)\s+(?:have\s+been\s+)?(?:resolved|fixed|addressed)",
+    ]
+
+    for pattern in issue_resolution_patterns:
+        if re.search(pattern, response_lower, re.IGNORECASE):
+            metrics["issues_resolved"] += 1
+            artifacts.append({
+                "type": "issue_resolution",
+                "format": "text",
+                "content": "Issue marked as resolved after applying fixes",
+                "value_usd": 100,
+                "description": "Issue resolution",
+                "tab": "dev",
+            })
+            break
+
+    # Check QA status for resolution indication
+    if status and status.get("ready_for_qa_revalidation"):
+        if metrics["issues_resolved"] == 0:
+            metrics["issues_resolved"] = 1
+            artifacts.append({
+                "type": "issue_resolution",
+                "format": "text",
+                "content": "QA signoff indicates ready for revalidation",
+                "value_usd": 100,
+                "description": "Issue resolved - ready for QA revalidation",
+                "tab": "dev",
+            })
+
+    # Detect test fixes/additions
+    test_patterns = [
+        r"(?:fixed|corrected|updated|added)\s+(?:the\s+)?test(?:s|ing)?",
+        r"test(?:s)?\s+(?:now\s+)?pass(?:ing|es)?",
+        r"(?:added|created|wrote)\s+(?:new\s+)?test(?:s)?",
+        r"(?:updated|modified)\s+(?:the\s+)?spec(?:s)?",
+    ]
+
+    for pattern in test_patterns:
+        match = re.search(pattern, response_lower, re.IGNORECASE)
+        if match:
+            metrics["tests_fixed"] += 1
+            artifacts.append({
+                "type": "test_fix",
+                "format": "text",
+                "content": match.group(0).strip()[:150],
+                "value_usd": 75,
+                "description": "Test fix/addition",
+                "tab": "dev",
+            })
+
+    # Count file modifications from tool usage patterns
+    file_patterns = [
+        r"(?:editing|modifying|updating|writing to)\s+[\w/\\.-]+\.\w+",
+        r"Edit(?:ing)?\s+file[:\s]+([^\n]+)",
+        r"Write(?:ing)?\s+to[:\s]+([^\n]+)",
+    ]
+
+    files_modified = set()
+    for pattern in file_patterns:
+        matches = re.findall(pattern, response_text, re.IGNORECASE)
+        for match in matches:
+            if isinstance(match, str):
+                files_modified.add(match.strip()[:100])
+
+    metrics["files_modified"] = len(files_modified)
+
+    # Add any discovered code blocks as artifacts
+    code_pattern = r"```(\w+)?\n(.*?)```"
+    code_matches = re.findall(code_pattern, response_text, re.DOTALL)
+    for lang, code in code_matches[:3]:  # Limit to first 3 code blocks
+        if lang and lang.lower() not in ["text", "output", "log", "error"]:
+            artifacts.append({
+                "type": "code_fix",
+                "format": lang or "text",
+                "content": code.strip()[:500],
+                "value_usd": 50,
+                "description": f"Code fix ({lang or 'text'})",
+                "tab": "dev",
+            })
+
+    return artifacts, metrics
 
 
 # =============================================================================
@@ -333,6 +505,55 @@ async def run_qa_fixer_session(
             if status
             else False,
         )
+
+        # Extract artifacts and publish ROI metrics
+        if ROI_PUBLISHER_AVAILABLE and response_text:
+            try:
+                # Extract artifacts from the response
+                artifacts, roi_metrics = extract_qa_fix_artifacts(
+                    response_text=response_text,
+                    tool_count=tool_count,
+                    status=status,
+                )
+
+                debug(
+                    "qa_fixer",
+                    "Extracted artifacts",
+                    artifact_count=len(artifacts),
+                    fixes_applied=roi_metrics.get("fixes_applied", 0),
+                    issues_resolved=roi_metrics.get("issues_resolved", 0),
+                    tests_fixed=roi_metrics.get("tests_fixed", 0),
+                )
+
+                # Estimate token usage (rough estimate if not available)
+                # ~4 characters per token is a common approximation
+                estimated_tokens = (len(prompt) + len(response_text)) // 4
+
+                # Publish ROI to Langfuse
+                import asyncio
+                asyncio.create_task(
+                    publish_feature_roi(
+                        feature_type="qa_fixer",
+                        project_id=project_id or "unknown",
+                        cost_usd=0.0,  # Cost is tracked at trace level
+                        tokens=estimated_tokens,
+                        trace_id=langfuse_trace_id,
+                        metrics={
+                            "fixes_applied": roi_metrics.get("fixes_applied", 0),
+                            "issues_resolved": roi_metrics.get("issues_resolved", 0),
+                            "tests_fixed": roi_metrics.get("tests_fixed", 0),
+                            "files_modified": roi_metrics.get("files_modified", 0),
+                            "qa_attempts": fix_session,
+                            "qa_passed": bool(status and status.get("ready_for_qa_revalidation")),
+                        },
+                    )
+                )
+                debug("qa_fixer", "ROI publish task created")
+
+            except Exception as e:
+                # ROI extraction/publishing should not fail the fix session
+                debug_error("qa_fixer", f"Failed to publish ROI (non-fatal): {e}")
+
         if status and status.get("ready_for_qa_revalidation"):
             debug_success("qa_fixer", "Fixes applied, ready for QA revalidation")
             return "fixed", response_text, langfuse_trace_id
@@ -356,10 +577,31 @@ async def run_qa_fixer_session(
         # Close Langfuse trace context
         if langfuse_ctx:
             try:
-                # Set trace output before exiting
+                # Set trace output before exiting - include artifacts if available
                 if ctx:
                     trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                    ctx.set_output({"response": trace_output, "tool_count": tool_count})
+                    output_data = {"response": trace_output, "tool_count": tool_count}
+
+                    # Include ROI metrics if they were extracted
+                    if ROI_PUBLISHER_AVAILABLE and response_text:
+                        try:
+                            _, roi_metrics = extract_qa_fix_artifacts(
+                                response_text=response_text,
+                                tool_count=tool_count,
+                                status=status if 'status' in dir() else None,
+                            )
+                            output_data["roi_metrics"] = roi_metrics
+                        except Exception:
+                            pass  # Ignore extraction errors in finally block
+
+                    ctx.set_output(output_data)
                 langfuse_ctx.__exit__(None, None, None)
+
+                # Flush Langfuse to ensure ROI scores are sent
+                if LANGFUSE_AVAILABLE:
+                    try:
+                        flush_langfuse()
+                    except Exception:
+                        pass
             except Exception as e:
                 debug("qa_fixer", f"Failed to close Langfuse trace: {e}")

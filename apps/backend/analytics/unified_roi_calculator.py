@@ -48,6 +48,7 @@ from .roi_model import (
     BuildMetrics,
     GitHubMetrics,
     InsightsMetrics,
+    MergeMetrics,
     DEFAULT_HOURLY_RATE,
     VALUE_MULTIPLIERS,
     TIME_SAVINGS,
@@ -462,25 +463,46 @@ class UnifiedROICalculator:
         spec_id: Optional[str] = None,
         project_id: Optional[str] = None,
         trace_id: Optional[str] = None,
+        # Additional value metrics (detected from response)
+        diagrams_generated: int = 0,
+        security_insights: int = 0,
+        recommendations_count: int = 0,
+        code_explanations: int = 0,
     ) -> UnifiedROI:
         """
         Calculate ROI for insights/chat features.
 
         Insights generate value through:
-        - KNOWLEDGE: Learning about the codebase
-        - DECISION: Suggestions that lead to tasks
+        - KNOWLEDGE: Learning about the codebase, diagrams, code explanations
+        - DECISION: Suggestions that lead to tasks, recommendations
+        - PREVENTION: Security insights
         """
         value_breakdown = {}
 
-        # Knowledge value: exploration time saved
+        # Knowledge value: exploration time saved + diagrams + code explanations
         exploration_hours = TIME_SAVINGS["codebase_exploration"] / 60
-        value_breakdown[ValueType.KNOWLEDGE] = (
-            exploration_hours * self.hourly_rate * 0.4 * (files_explored / 10)
-        )
+        knowledge_value = exploration_hours * self.hourly_rate * 0.4 * (files_explored / 10)
 
-        # Decision value: tasks suggested and accepted
+        # Add diagram value ($150 per diagram - saves time understanding architecture)
+        knowledge_value += diagrams_generated * 150
+
+        # Add code explanation value ($25 per code block explained)
+        knowledge_value += code_explanations * 25
+
+        value_breakdown[ValueType.KNOWLEDGE] = knowledge_value
+
+        # Decision value: tasks suggested and accepted + recommendations
+        decision_value = 0
         if tasks_accepted > 0:
-            value_breakdown[ValueType.DECISION] = tasks_accepted * 100  # $100 per accepted task
+            decision_value += tasks_accepted * 100  # $100 per accepted task
+        # Add recommendation value ($50 per recommendation made)
+        decision_value += recommendations_count * 50
+        if decision_value > 0:
+            value_breakdown[ValueType.DECISION] = decision_value
+
+        # Prevention value: security insights ($200 per security issue identified)
+        if security_insights > 0:
+            value_breakdown[ValueType.PREVENTION] = security_insights * 200
 
         # Create metrics
         insights_metrics = InsightsMetrics(
@@ -507,6 +529,83 @@ class UnifiedROICalculator:
             insights_metrics=insights_metrics,
             confidence_score=0.6,
             tags=["insights", "chat"],
+        )
+
+        roi.calculate_total_value()
+        roi.calculate_roi()
+
+        return roi
+
+    def calculate_merge_roi(
+        self,
+        conflicts_resolved: int,
+        files_merged: int = 0,
+        manual_intervention_avoided: int = 0,
+        merge_decisions: int = 0,
+        code_choices: int = 0,
+        cost_usd: float = 0.0,
+        tokens: int = 0,
+        duration_seconds: float = 0.0,
+        model: str = "",
+        spec_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        trace_id: Optional[str] = None,
+    ) -> UnifiedROI:
+        """
+        Calculate ROI for merge conflict resolution.
+
+        Merge resolution generates value through:
+        - EXECUTION: Time saved resolving conflicts manually
+        - DECISION: Merge strategy decisions (ours/theirs/combined)
+        - PREVENTION: Avoiding manual intervention and merge errors
+        """
+        value_breakdown = {}
+
+        # Execution value: time saved on conflict resolution
+        # Each conflict takes ~20 minutes to resolve manually
+        resolution_hours = (conflicts_resolved * TIME_SAVINGS["conflict_resolution"]) / 60
+        value_breakdown[ValueType.EXECUTION] = resolution_hours * self.hourly_rate
+
+        # Decision value: merge decisions and code choices
+        # $75 per merge decision (ours/theirs/combined)
+        # $50 per code choice made
+        decision_value = (merge_decisions * 75) + (code_choices * 50)
+        if decision_value > 0:
+            value_breakdown[ValueType.DECISION] = decision_value
+
+        # Prevention value: avoiding manual intervention
+        # Manual intervention costs more time and has higher error risk
+        if manual_intervention_avoided > 0:
+            # Each avoided intervention saves ~30 minutes + reduces error risk
+            prevention_hours = (manual_intervention_avoided * 30) / 60
+            value_breakdown[ValueType.PREVENTION] = prevention_hours * self.hourly_rate * 0.5
+
+        # Create metrics
+        merge_metrics = MergeMetrics(
+            conflicts_resolved=conflicts_resolved,
+            files_merged=files_merged,
+            manual_intervention_avoided=manual_intervention_avoided,
+            merge_decisions=merge_decisions,
+            code_choices=code_choices,
+            estimated_resolution_time_saved_minutes=conflicts_resolved * TIME_SAVINGS["conflict_resolution"],
+        )
+
+        # Create unified ROI
+        roi = UnifiedROI(
+            feature_type=FeatureType.MERGE_RESOLVER,
+            spec_id=spec_id,
+            project_id=project_id,
+            trace_id=trace_id,
+            cost=CostMetrics(
+                total_tokens=tokens,
+                total_cost_usd=cost_usd,
+                duration_seconds=duration_seconds,
+                model=model,
+            ),
+            value_breakdown=value_breakdown,
+            merge_metrics=merge_metrics,
+            confidence_score=0.75,  # High confidence - measurable outcomes
+            tags=["merge", "conflict_resolution"],
         )
 
         roi.calculate_total_value()

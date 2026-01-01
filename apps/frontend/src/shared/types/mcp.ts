@@ -240,6 +240,50 @@ export interface MCPServersRegistry {
 }
 
 // ===== FastMCP Types (Phase 3A) =====
+// Following MCP Specification 2025-06-18 and FastMCP best practices
+
+/**
+ * Tool annotations per MCP spec - hints for client behavior
+ */
+export interface FastMCPToolAnnotations {
+  readOnlyHint?: boolean;      // Tool only reads data, no side effects
+  destructiveHint?: boolean;   // Tool may delete/modify data destructively
+  idempotentHint?: boolean;    // Safe to call multiple times
+  openWorldHint?: boolean;     // Tool interacts with external systems
+}
+
+/**
+ * Resource definition for FastMCP templates
+ */
+export interface FastMCPResource {
+  uri: string;                 // URI template e.g. "file://{path}" or "data://config"
+  name: string;                // Human-readable name
+  description: string;         // What this resource provides
+  mimeType?: string;           // MIME type e.g. "application/json", "text/plain"
+  parameters?: FastMCPResourceParameter[];  // For URI templates
+}
+
+export interface FastMCPResourceParameter {
+  name: string;
+  description: string;
+  required?: boolean;
+}
+
+/**
+ * Prompt definition for FastMCP templates
+ */
+export interface FastMCPPrompt {
+  name: string;                // Prompt identifier
+  description: string;         // What this prompt helps with
+  arguments?: FastMCPPromptArgument[];  // Dynamic arguments
+}
+
+export interface FastMCPPromptArgument {
+  name: string;
+  description: string;
+  required?: boolean;
+  default?: string;
+}
 
 export interface FastMCPTemplate {
   id: string;
@@ -247,6 +291,8 @@ export interface FastMCPTemplate {
   description: string;
   icon: string;  // Lucide icon name
   tools: FastMCPTool[];
+  resources?: FastMCPResource[];   // Optional resources
+  prompts?: FastMCPPrompt[];       // Optional prompts
   dependencies: string[];  // Package specs like "httpx>=0.25.0"
 }
 
@@ -254,6 +300,9 @@ export interface FastMCPTool {
   name: string;
   description: string;
   parameters: FastMCPToolParameter[];
+  annotations?: FastMCPToolAnnotations;  // MCP spec annotations
+  isAsync?: boolean;                      // Generate async def
+  returnType?: string;                    // Python return type hint
 }
 
 export interface FastMCPToolParameter {
@@ -262,6 +311,13 @@ export interface FastMCPToolParameter {
   required: boolean;
   default?: any;
   description?: string;
+  // Validation constraints (for Pydantic Field)
+  minLength?: number;
+  maxLength?: number;
+  minValue?: number;
+  maxValue?: number;
+  pattern?: string;  // Regex pattern
+  enum?: string[];   // Allowed values
 }
 
 export interface FastMCPServerConfig {
@@ -272,6 +328,8 @@ export interface FastMCPServerConfig {
   pythonVersion: '3.10' | '3.11' | '3.12' | '3.13';
   workingDir: string;
   tools: FastMCPTool[];
+  resources?: FastMCPResource[];
+  prompts?: FastMCPPrompt[];
   dependencies: string[];
 }
 

@@ -125,6 +125,8 @@ def _get_feature_type(feature_type_str: str) -> FeatureType:
             return FeatureType.BUILD_QA_FIXER
         else:
             return FeatureType.BUILD_QA_REVIEWER
+    elif "merge" in lower or "resolver" in lower or "conflict" in lower:
+        return FeatureType.MERGE_RESOLVER
 
     return FeatureType.OTHER
 
@@ -254,6 +256,27 @@ async def publish_feature_roi(
             tasks_suggested=metrics.get("tasks_suggested", 0),
             tasks_accepted=metrics.get("tasks_accepted", 0),
             files_explored=metrics.get("files_explored", 0),
+            cost_usd=cost_usd,
+            tokens=tokens,
+            duration_seconds=duration_seconds,
+            model=model,
+            spec_id=spec_id,
+            project_id=project_id,
+            trace_id=trace_id,
+            # Additional value metrics (detected from response)
+            diagrams_generated=metrics.get("diagrams_generated", 0),
+            security_insights=metrics.get("security_insights", 0),
+            recommendations_count=metrics.get("recommendations_count", 0),
+            code_explanations=metrics.get("code_explanations", 0),
+        )
+
+    elif ft.value.startswith("merge"):
+        roi = calculator.calculate_merge_roi(
+            conflicts_resolved=metrics.get("conflicts_resolved", 0),
+            files_merged=metrics.get("files_merged", 0),
+            manual_intervention_avoided=metrics.get("manual_intervention_avoided", 0),
+            merge_decisions=metrics.get("merge_decisions", 0),
+            code_choices=metrics.get("code_choices", 0),
             cost_usd=cost_usd,
             tokens=tokens,
             duration_seconds=duration_seconds,

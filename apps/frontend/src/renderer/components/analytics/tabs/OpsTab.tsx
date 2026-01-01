@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { AlertBadge } from '../shared/AlertBadge';
 import { DataTable } from '../shared/DataTable';
+import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
 import { formatDuration, formatPercent, formatRelativeTime } from '../utils/formatters';
 
 interface Alert {
@@ -116,6 +117,9 @@ export function OpsTab({ data, loading }: OpsTabProps) {
           emptyMessage="ops.noErrors"
         />
       </div>
+
+      {/* Operations Artifacts - Security, Performance */}
+      <ArtifactsPanel filterByTab="ops" title="Security & Performance Insights" />
     </div>
   );
 }

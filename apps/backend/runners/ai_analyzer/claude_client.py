@@ -49,6 +49,16 @@ try:
 except ImportError:
     CLAUDE_SDK_AVAILABLE = False
 
+# Import ROI MCP tools for activity tracking
+try:
+    from agents.tools_pkg import create_auto_claude_mcp_server, is_tools_available
+    from agents.tools_pkg.models import ROI_TOOLS
+    ROI_TOOLS_AVAILABLE = True
+except ImportError:
+    ROI_TOOLS_AVAILABLE = False
+    is_tools_available = lambda: False
+    ROI_TOOLS = []
+
 
 class ClaudeAnalysisClient:
     """Wrapper for Claude SDK client with analysis-specific configuration."""
@@ -259,11 +269,30 @@ class ClaudeAnalysisClient:
             f"Output your analysis as valid JSON only."
         )
 
+        # Build allowed tools list with ROI tracking
+        allowed_tools = list(self.ALLOWED_TOOLS)
+        mcp_servers = None
+
+        # Setup ROI MCP tools if available
+        if ROI_TOOLS_AVAILABLE and is_tools_available():
+            try:
+                analysis_roi_dir = self.project_dir / ".auto-claude" / "analysis"
+                analysis_roi_dir.mkdir(parents=True, exist_ok=True)
+
+                auto_claude_mcp = create_auto_claude_mcp_server(analysis_roi_dir, self.project_dir)
+                if auto_claude_mcp:
+                    mcp_servers = {"auto-claude": auto_claude_mcp}
+                    allowed_tools.extend(ROI_TOOLS)
+                    logger.info("[AI_ANALYZER] ROI MCP tools enabled for activity tracking")
+            except Exception as e:
+                logger.warning(f"[AI_ANALYZER] Failed to create ROI MCP server: {e}")
+
         return ClaudeSDKClient(
             options=ClaudeAgentOptions(
                 model=self.DEFAULT_MODEL,
                 system_prompt=system_prompt,
-                allowed_tools=self.ALLOWED_TOOLS,
+                allowed_tools=allowed_tools,
+                mcp_servers=mcp_servers,
                 # Load Skills from user and project directories
                 setting_sources=["user", "project"],
                 max_turns=self.MAX_TURNS,

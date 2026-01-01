@@ -8,6 +8,7 @@ Individual tool implementations organized by functionality.
 from .memory import create_memory_tools
 from .progress import create_progress_tools
 from .qa import create_qa_tools
+from .roi import create_roi_tools
 from .subtask import create_subtask_tools
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "create_progress_tools",
     "create_memory_tools",
     "create_qa_tools",
+    "create_roi_tools",
 ]

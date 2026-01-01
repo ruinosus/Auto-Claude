@@ -42,7 +42,7 @@ export function ClaudeAuthSection({
   );
 
   // Check if Auth Token is configured
-  const isAuthTokenConfigured = !!envConfig?.authToken;
+  const isAuthTokenConfigured = !!envConfig?.anthropicAuthToken;
 
   // Get overall auth status based on mode
   const getAuthStatusForMode = (): 'configured' | 'not_configured' => {
@@ -230,9 +230,9 @@ export function ClaudeAuthSection({
                 Token for CCR or custom proxy authentication
               </p>
               <PasswordInput
-                value={envConfig.authToken || ''}
+                value={envConfig.anthropicAuthToken || ''}
                 onChange={(value) => onUpdateConfig({
-                  authToken: value || undefined,
+                  anthropicAuthToken: value || undefined,
                 })}
                 placeholder="Enter your auth token..."
               />

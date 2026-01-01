@@ -6,7 +6,10 @@ Runs QA validation sessions to review implementation against
 acceptance criteria.
 """
 
+import re
+import time
 from pathlib import Path
+from typing import Any
 
 from claude_agent_sdk import ClaudeSDKClient
 from debug import debug, debug_detailed, debug_error, debug_section, debug_success
@@ -27,6 +30,7 @@ try:
         trace_context,
         log_generation_in_current_trace,
         get_session_trace_name,
+        flush_langfuse,
     )
     LANGFUSE_AVAILABLE = True
     # Initialize Langfuse early (idempotent - safe to call multiple times)
@@ -34,6 +38,149 @@ try:
 except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
+
+# ROI publisher (optional - graceful degradation if not available)
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
+# =============================================================================
+# ARTIFACT EXTRACTION
+# =============================================================================
+
+
+def extract_qa_review_artifacts(
+    response_text: str,
+    qa_signoff: dict | None,
+) -> list[dict[str, Any]]:
+    """
+    Extract QA review artifacts from response and signoff status.
+
+    Artifacts extracted:
+    - qa_finding ($100 each) - each finding in the report
+    - qa_verdict ($50) - APPROVED/REJECTED decision
+    - test_suggestion ($75) - suggestions for tests
+    - acceptance_check ($25) - each criterion verified
+
+    Args:
+        response_text: The full response from the QA agent
+        qa_signoff: The qa_signoff object from implementation_plan.json
+
+    Returns:
+        List of artifact dictionaries with type, content, value_usd, etc.
+    """
+    artifacts = []
+
+    # Extract qa_verdict
+    if qa_signoff:
+        status = qa_signoff.get("status", "unknown")
+        artifacts.append({
+            "type": "qa_verdict",
+            "format": "text",
+            "content": status.upper(),
+            "value_usd": 50,
+            "description": f"QA verdict: {status.upper()}",
+            "tab": "dev",
+        })
+
+        # Extract qa_findings from rejected issues
+        issues_found = qa_signoff.get("issues_found", [])
+        for i, issue in enumerate(issues_found):
+            issue_title = issue.get("title", "Unknown issue")
+            issue_type = issue.get("type", "unknown")
+            issue_location = issue.get("location", "")
+            fix_required = issue.get("fix_required", "")
+
+            content = f"[{issue_type.upper()}] {issue_title}"
+            if issue_location:
+                content += f" at {issue_location}"
+            if fix_required:
+                content += f" - Fix: {fix_required}"
+
+            artifacts.append({
+                "type": "qa_finding",
+                "format": "text",
+                "content": content[:500],
+                "value_usd": 100,
+                "description": f"QA finding #{i+1}: {issue_type}",
+                "severity": issue_type,
+                "tab": "dev",
+            })
+
+        # Extract acceptance_check from tests_passed (approved case)
+        tests_passed = qa_signoff.get("tests_passed", {})
+        for test_type, result in tests_passed.items():
+            artifacts.append({
+                "type": "acceptance_check",
+                "format": "text",
+                "content": f"{test_type}: {result}",
+                "value_usd": 25,
+                "description": f"Test verification: {test_type}",
+                "tab": "dev",
+            })
+
+    # Extract test_suggestions from response text using patterns
+    # Look for test-related suggestions
+    test_patterns = [
+        r"(?:should|could|consider|recommend).*(?:add|write|create|implement).*(?:test|spec|assertion)",
+        r"(?:test|spec) (?:for|to verify|to check|that covers)",
+        r"(?:add|write|create) (?:a |an )?(?:unit |integration |e2e |end-to-end )?test",
+        r"(?:missing|lack|need).*(?:test|coverage|spec)",
+    ]
+
+    sentences = re.split(r'[.!?\n]', response_text)
+    test_suggestions_found = set()  # Use set to avoid duplicates
+
+    for sentence in sentences:
+        sentence_lower = sentence.lower().strip()
+        if len(sentence_lower) < 20:
+            continue
+
+        for pattern in test_patterns:
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                # Clean up the sentence
+                clean_sentence = sentence.strip()[:300]
+                if clean_sentence and clean_sentence not in test_suggestions_found:
+                    test_suggestions_found.add(clean_sentence)
+                    artifacts.append({
+                        "type": "test_suggestion",
+                        "format": "text",
+                        "content": clean_sentence,
+                        "value_usd": 75,
+                        "description": "Test improvement suggestion",
+                        "tab": "dev",
+                    })
+                break  # Only match once per sentence
+
+    # Extract additional acceptance_checks from response text
+    # Look for checkmarks or explicit verification statements
+    check_patterns = [
+        r"(?:\[x\]|\[X\]|✓|✔|PASS|passed)\s*(.+)",
+        r"(?:verified|confirmed|checked|validated)\s*(?:that\s+)?(.+)",
+        r"acceptance criteria.*(?:met|satisfied|fulfilled)",
+    ]
+
+    for sentence in sentences:
+        for pattern in check_patterns:
+            match = re.search(pattern, sentence, re.IGNORECASE)
+            if match:
+                content = match.group(1) if match.lastindex else sentence
+                content = content.strip()[:200]
+                if content and len(content) > 10:
+                    artifacts.append({
+                        "type": "acceptance_check",
+                        "format": "text",
+                        "content": content,
+                        "value_usd": 25,
+                        "description": "Acceptance criteria check",
+                        "tab": "dev",
+                    })
+                    break  # Only match once per sentence
+
+    return artifacts
+
 
 # =============================================================================
 # QA REVIEWER SESSION
@@ -213,6 +360,7 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
             debug("qa_reviewer", f"Langfuse trace created: {langfuse_trace_id}")
 
     try:
+        start_time = time.time()
         debug("qa_reviewer", "Sending query to Claude SDK...")
         await client.query(prompt)
         debug_success("qa_reviewer", "Query sent successfully")
@@ -368,6 +516,7 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
 
         # Check the QA result from implementation_plan.json
         status = get_qa_signoff_status(spec_dir)
+        duration_seconds = time.time() - start_time
         debug(
             "qa_reviewer",
             "QA session completed",
@@ -375,7 +524,66 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
             tool_count=tool_count,
             response_length=len(response_text),
             qa_status=status.get("status") if status else "unknown",
+            duration_seconds=duration_seconds,
         )
+
+        # Publish ROI metrics (wrapped in try/except to not break QA)
+        if ROI_PUBLISHER_AVAILABLE and project_id:
+            try:
+                # Extract artifacts from the QA review
+                artifacts = extract_qa_review_artifacts(response_text, status)
+
+                # Count metrics from status and artifacts
+                findings_count = len(status.get("issues_found", [])) if status else 0
+                criteria_checked = len([a for a in artifacts if a["type"] == "acceptance_check"])
+                suggestions_count = len([a for a in artifacts if a["type"] == "test_suggestion"])
+                verdict = status.get("status", "unknown") if status else "unknown"
+                qa_passed = verdict == "approved"
+
+                # Estimate cost and tokens (simplified - actual tracking would come from SDK)
+                # Estimate ~4 chars per token, rough estimate for ROI calculation
+                estimated_tokens = len(response_text) // 4 + len(prompt) // 4
+                estimated_cost = (estimated_tokens / 1000) * 0.003  # Rough cost estimate
+
+                # Calculate total artifact value
+                total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+                # Publish ROI
+                roi_result = await publish_feature_roi(
+                    feature_type="qa_reviewer",
+                    project_id=project_id,
+                    cost_usd=estimated_cost,
+                    tokens=estimated_tokens,
+                    metrics={
+                        "qa_attempts": qa_session,
+                        "qa_passed": qa_passed,
+                        "findings_count": findings_count,
+                        "criteria_checked": criteria_checked,
+                        "suggestions_count": suggestions_count,
+                        "verdict": verdict,
+                        "tool_count": tool_count,
+                        "artifacts_count": len(artifacts),
+                        "artifact_value_usd": total_artifact_value,
+                    },
+                    duration_seconds=duration_seconds,
+                    model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
+                    spec_id=spec_id,
+                    trace_id=langfuse_trace_id,
+                )
+
+                debug(
+                    "qa_reviewer",
+                    "ROI published",
+                    trace_id=langfuse_trace_id,
+                    artifacts_count=len(artifacts),
+                    artifact_value=total_artifact_value,
+                    roi_percentage=roi_result.get("roi_percentage", 0),
+                )
+
+            except Exception as e:
+                # ROI publishing should never break QA
+                debug_error("qa_reviewer", f"Failed to publish ROI (non-fatal): {e}")
+
         if status and status.get("status") == "approved":
             debug_success("qa_reviewer", "QA APPROVED")
             return "approved", response_text, langfuse_trace_id

@@ -58,14 +58,14 @@ export function DataTable<T extends object>({
           </tr>
         </thead>
         <tbody>
-          {data.map((row, idx) => (
+          {data.map((row, rowIdx) => (
             <tr
-              key={idx}
+              key={rowIdx}
               onClick={() => onRowClick?.(row)}
               className={`border-b border-gray-100 dark:border-gray-800 ${onRowClick ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700' : ''}`}
             >
-              {columns.map((col) => (
-                <td key={String(col.key)} className={`py-2 px-3 text-gray-900 dark:text-gray-100 ${col.className || ''}`}>
+              {columns.map((col, colIdx) => (
+                <td key={`${rowIdx}-${colIdx}`} className={`py-2 px-3 text-gray-900 dark:text-gray-100 ${col.className || ''}`}>
                   {col.render ? col.render(row) : String(row[col.key as keyof T] ?? '')}
                 </td>
               ))}

@@ -22,6 +22,7 @@ try:
         is_langfuse_ready,
         trace_context,
         log_generation_in_current_trace,
+        flush_langfuse,
     )
     LANGFUSE_AVAILABLE = True
     # Initialize Langfuse early (idempotent - safe to call multiple times)
@@ -29,6 +30,13 @@ try:
 except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
+
+# ROI publisher integration (optional - graceful degradation if not available)
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +96,147 @@ def sanitize_user_content(content: str, max_length: int = 100000) -> str:
         sanitized = sanitized[:max_length] + "\n\n... (content truncated for length)"
 
     return sanitized
+
+
+def extract_mr_review_artifacts(
+    findings: list,
+    verdict: str,
+    summary: str,
+) -> list[dict]:
+    """
+    Extract artifacts from MR review results for ROI tracking.
+
+    Artifact types and values:
+    - review_comment ($50) - Each finding/comment in the review
+    - code_suggestion ($100) - Findings with suggested fixes (code suggestions)
+    - security_issue ($300) - Security-related findings
+    - bug_detected ($200) - Bug/quality findings
+    - approval_decision ($75) - The merge verdict decision
+
+    Args:
+        findings: List of MRReviewFinding objects
+        verdict: The MergeVerdict value
+        summary: The review summary text
+
+    Returns:
+        List of artifact dictionaries with type, content, value_usd, etc.
+    """
+    artifacts = []
+
+    # Security keywords for detection
+    security_keywords = [
+        "security", "vulnerability", "injection", "xss", "csrf",
+        "authentication", "authorization", "exposure", "leak", "sensitive"
+    ]
+
+    # Bug keywords for detection
+    bug_keywords = [
+        "bug", "error", "fix", "issue", "problem", "broken",
+        "crash", "exception", "failure", "defect", "incorrect"
+    ]
+
+    for finding in findings:
+        # Get finding attributes (handle both object and dict)
+        if hasattr(finding, "category"):
+            category = finding.category.value if hasattr(finding.category, "value") else str(finding.category)
+            severity = finding.severity.value if hasattr(finding.severity, "value") else str(finding.severity)
+            title = finding.title
+            description = finding.description or ""
+            suggested_fix = finding.suggested_fix
+            file_path = finding.file or "unknown"
+            line = finding.line or 0
+        else:
+            category = finding.get("category", "quality")
+            severity = finding.get("severity", "medium")
+            title = finding.get("title", "Untitled")
+            description = finding.get("description", "")
+            suggested_fix = finding.get("suggested_fix")
+            file_path = finding.get("file", "unknown")
+            line = finding.get("line", 0)
+
+        content_preview = f"{title}: {description[:150]}" if description else title
+
+        # 1. Every finding is a review_comment ($50)
+        artifacts.append({
+            "type": "review_comment",
+            "format": "text",
+            "content": content_preview,
+            "value_usd": 50,
+            "description": f"Review comment: {title}",
+            "tab": "dev",
+            "metadata": {
+                "file": file_path,
+                "line": line,
+                "severity": severity,
+                "category": category,
+            }
+        })
+
+        # 2. If has suggested_fix, it's a code_suggestion ($100)
+        if suggested_fix:
+            artifacts.append({
+                "type": "code_suggestion",
+                "format": "code",
+                "content": suggested_fix[:500] if len(suggested_fix) > 500 else suggested_fix,
+                "value_usd": 100,
+                "description": f"Code suggestion for: {title}",
+                "tab": "dev",
+                "metadata": {
+                    "file": file_path,
+                    "line": line,
+                }
+            })
+
+        # 3. Security findings ($300)
+        combined_text = f"{title} {description} {category}".lower()
+        if category == "security" or any(kw in combined_text for kw in security_keywords):
+            artifacts.append({
+                "type": "security_issue",
+                "format": "text",
+                "content": content_preview,
+                "value_usd": 300,
+                "description": f"Security issue: {title}",
+                "tab": "ops",
+                "metadata": {
+                    "file": file_path,
+                    "line": line,
+                    "severity": severity,
+                }
+            })
+
+        # 4. Bug/quality findings ($200)
+        elif category == "quality" or any(kw in combined_text for kw in bug_keywords):
+            if severity in ("critical", "high"):
+                artifacts.append({
+                    "type": "bug_detected",
+                    "format": "text",
+                    "content": content_preview,
+                    "value_usd": 200,
+                    "description": f"Bug detected: {title}",
+                    "tab": "dev",
+                    "metadata": {
+                        "file": file_path,
+                        "line": line,
+                        "severity": severity,
+                    }
+                })
+
+    # 5. Approval decision artifact ($75)
+    verdict_str = verdict.value if hasattr(verdict, "value") else str(verdict)
+    artifacts.append({
+        "type": "approval_decision",
+        "format": "text",
+        "content": f"Merge verdict: {verdict_str}. {summary[:200]}" if summary else f"Merge verdict: {verdict_str}",
+        "value_usd": 75,
+        "description": f"Approval decision: {verdict_str}",
+        "tab": "techlead",
+        "metadata": {
+            "verdict": verdict_str,
+            "findings_count": len(findings),
+        }
+    })
+
+    return artifacts
 
 
 class MRReviewEngine:
@@ -303,16 +452,64 @@ Provide your review in the following JSON format:
                 "analyzing", 70, "Parsing review results...", mr_iid=context.mr_iid
             )
 
-            return self._parse_review_result(result_text)
+            # Parse the review result
+            findings, verdict, summary, blockers = self._parse_review_result(result_text)
+
+            # Publish ROI metrics BEFORE closing trace (so scores attach to trace)
+            if ROI_PUBLISHER_AVAILABLE:
+                try:
+                    # Extract artifacts from review results
+                    artifacts = extract_mr_review_artifacts(findings, verdict, summary)
+
+                    # Count metrics for ROI calculation
+                    security_count = sum(
+                        1 for f in findings
+                        if (hasattr(f, "category") and f.category.value == "security")
+                        or (isinstance(f, dict) and f.get("category") == "security")
+                    )
+                    code_suggestions_count = sum(
+                        1 for f in findings
+                        if (hasattr(f, "suggested_fix") and f.suggested_fix)
+                        or (isinstance(f, dict) and f.get("suggested_fix"))
+                    )
+
+                    # Estimate review time saved (roughly 5-10 min per file reviewed)
+                    review_time_saved_hours = len(context.changed_files) * 0.1  # ~6 min per file
+
+                    # Publish ROI
+                    import asyncio
+                    asyncio.create_task(publish_feature_roi(
+                        feature_type="mr_review",
+                        project_id=project_id,
+                        trace_id=langfuse_trace_id,
+                        metrics={
+                            "files_reviewed": len(context.changed_files),
+                            "comments_posted": len(findings),
+                            "issues_found": len(findings),
+                            "security_issues": security_count,
+                            "code_suggestions": code_suggestions_count,
+                            "approval": verdict.value if hasattr(verdict, "value") else str(verdict),
+                            "review_time_saved_hours": review_time_saved_hours,
+                            "lines_changed": context.total_additions + context.total_deletions,
+                        },
+                        artifacts=artifacts,
+                    ))
+                    logger.info(f"[GitLab MR] ROI published for MR !{context.mr_iid}")
+                except Exception as e:
+                    logger.warning(f"[GitLab MR] Failed to publish ROI: {e}")
+
+            return findings, verdict, summary, blockers
 
         except Exception as e:
             print(f"[AI] Review error: {e}", flush=True)
             raise RuntimeError(f"Review failed: {e}") from e
         finally:
-            # Close Langfuse trace context
+            # Close Langfuse trace context and flush
             if langfuse_ctx:
                 try:
                     langfuse_ctx.__exit__(None, None, None)
+                    if LANGFUSE_AVAILABLE:
+                        flush_langfuse()
                 except Exception as e:
                     logger.debug(f"[GitLab MR] Failed to close Langfuse trace: {e}")
 

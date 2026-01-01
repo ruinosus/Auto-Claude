@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { formatCurrency, formatPercent, formatTokens } from '../utils/formatters';
 import { Sparkles, Zap, MessageCircle, GitPullRequest, Cpu, Code, CheckCircle, FileText } from 'lucide-react';
+import { ArtifactsPanel } from '../artifacts';
 
 // Feature type icons
 const FEATURE_ICONS: Record<string, React.ReactNode> = {
@@ -61,9 +62,10 @@ interface TechLeadTabProps {
     modelDistribution: ModelUsage[];
   };
   loading?: boolean;
+  projectId?: string;
 }
 
-export function TechLeadTab({ data, loading }: TechLeadTabProps) {
+export function TechLeadTab({ data, loading, projectId }: TechLeadTabProps) {
   const { t } = useTranslation(['analytics']);
 
   const budgetPercent = (data.budget.used / data.budget.total) * 100;
@@ -204,6 +206,9 @@ export function TechLeadTab({ data, loading }: TechLeadTabProps) {
           </div>
         )}
       </div>
+
+      {/* Generated Artifacts - What was actually produced? */}
+      <ArtifactsPanel projectId={projectId} />
     </div>
   );
 }

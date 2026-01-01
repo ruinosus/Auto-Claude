@@ -24,14 +24,56 @@ describe('FastMCP Code Generator', () => {
   it('should generate server.py with FastMCP imports', () => {
     const code = generateServerPy(config);
     expect(code).toContain('from fastmcp import FastMCP');
-    expect(code).toContain('mcp = FastMCP("test-server")');
+    expect(code).toContain('mcp = FastMCP("test-server"');
+  });
+
+  it('should generate ToolError import for production-ready code', () => {
+    const code = generateServerPy(config);
+    expect(code).toContain('from fastmcp.exceptions import ToolError');
   });
 
   it('should generate tools with decorators', () => {
     const code = generateServerPy(config);
     expect(code).toContain('@mcp.tool()');
-    expect(code).toContain('def read_file(path: str):');
-    expect(code).toContain('"""Read a file"""');
+    expect(code).toContain('def read_file(');
+    expect(code).toContain('path: str');
+    expect(code).toContain('Read a file');
+  });
+
+  it('should generate tool with annotations', () => {
+    const configWithAnnotations: FastMCPServerConfig = {
+      ...config,
+      tools: [{
+        name: 'read_file',
+        description: 'Read a file',
+        parameters: [{ name: 'path', type: 'string', required: true }],
+        annotations: { readOnlyHint: true, destructiveHint: false }
+      }]
+    };
+    const code = generateServerPy(configWithAnnotations);
+    expect(code).toContain('@mcp.tool(annotations=');
+    expect(code).toContain('"readOnlyHint": True');
+    expect(code).toContain('"destructiveHint": False');
+  });
+
+  it('should generate async functions when isAsync is true', () => {
+    const configWithAsync: FastMCPServerConfig = {
+      ...config,
+      tools: [{
+        name: 'fetch_data',
+        description: 'Fetch data',
+        parameters: [{ name: 'url', type: 'string', required: true }],
+        isAsync: true
+      }]
+    };
+    const code = generateServerPy(configWithAsync);
+    expect(code).toContain('async def fetch_data(');
+  });
+
+  it('should generate validation code for required string parameters', () => {
+    const code = generateServerPy(config);
+    expect(code).toContain('if not path or not path.strip():');
+    expect(code).toContain('raise ToolError("path cannot be empty"');
   });
 
   it('should generate main block', () => {
@@ -53,6 +95,119 @@ describe('FastMCP Code Generator', () => {
     expect(readme).toContain('# test-server');
     expect(readme).toContain('Test server');
     expect(readme).toContain('uv run server.py');
+  });
+
+  describe('Enum parameters with Literal type', () => {
+    it('should generate Literal type for enum parameters', () => {
+      const configWithEnum: FastMCPServerConfig = {
+        ...config,
+        tools: [{
+          name: 'process',
+          description: 'Process data',
+          parameters: [
+            {
+              name: 'operation',
+              type: 'string',
+              required: true,
+              enum: ['read', 'write', 'delete']
+            }
+          ]
+        }]
+      };
+      const code = generateServerPy(configWithEnum);
+      expect(code).toContain('from typing import Literal');
+      expect(code).toContain('Literal["read", "write", "delete"]');
+    });
+  });
+
+  describe('Validation constraints', () => {
+    it('should generate minLength validation', () => {
+      const configWithMinLength: FastMCPServerConfig = {
+        ...config,
+        tools: [{
+          name: 'test_func',
+          description: 'Test',
+          parameters: [
+            { name: 'text', type: 'string', required: true, minLength: 3 }
+          ]
+        }]
+      };
+      const code = generateServerPy(configWithMinLength);
+      expect(code).toContain('len(text) < 3');
+      expect(code).toContain('must be at least 3 characters');
+    });
+
+    it('should generate maxValue validation for numbers', () => {
+      const configWithMaxValue: FastMCPServerConfig = {
+        ...config,
+        tools: [{
+          name: 'test_func',
+          description: 'Test',
+          parameters: [
+            { name: 'timeout', type: 'number', required: false, maxValue: 60 }
+          ]
+        }]
+      };
+      const code = generateServerPy(configWithMaxValue);
+      expect(code).toContain('timeout > 60');
+      expect(code).toContain('cannot exceed 60');
+    });
+
+    it('should generate URL pattern validation', () => {
+      const configWithPattern: FastMCPServerConfig = {
+        ...config,
+        tools: [{
+          name: 'fetch',
+          description: 'Fetch URL',
+          parameters: [
+            { name: 'url', type: 'string', required: true, pattern: '^https?://.+' }
+          ]
+        }]
+      };
+      const code = generateServerPy(configWithPattern);
+      expect(code).toContain("startswith(('http://', 'https://'))");
+    });
+  });
+
+  describe('Resources generation', () => {
+    it('should generate resource functions', () => {
+      const configWithResources: FastMCPServerConfig = {
+        ...config,
+        resources: [
+          {
+            uri: 'data://config',
+            name: 'Server Config',
+            description: 'Get server configuration',
+            mimeType: 'application/json'
+          }
+        ]
+      };
+      const code = generateServerPy(configWithResources);
+      expect(code).toContain('@mcp.resource("data://config")');
+      expect(code).toContain('def get_server_config()');
+      expect(code).toContain('Get server configuration');
+    });
+  });
+
+  describe('Prompts generation', () => {
+    it('should generate prompt functions', () => {
+      const configWithPrompts: FastMCPServerConfig = {
+        ...config,
+        prompts: [
+          {
+            name: 'analyze_code',
+            description: 'Analyze code for issues',
+            arguments: [
+              { name: 'code', description: 'Code to analyze', required: true }
+            ]
+          }
+        ]
+      };
+      const code = generateServerPy(configWithPrompts);
+      expect(code).toContain('@mcp.prompt()');
+      expect(code).toContain('def analyze_code(code: str)');
+      expect(code).toContain('Analyze code for issues');
+    });
   });
 
   describe('Python value conversion', () => {
@@ -86,19 +241,19 @@ describe('FastMCP Code Generator', () => {
       expect(code).toContain('flag: bool = False');
     });
 
-    it('should convert null to None', () => {
-      const configWithNull: FastMCPServerConfig = {
+    it('should handle optional parameters without default as None', () => {
+      const configWithOptional: FastMCPServerConfig = {
         ...config,
         tools: [{
           name: 'test_func',
           description: 'Test',
           parameters: [
-            { name: 'value', type: 'string', required: false, default: null }
+            { name: 'value', type: 'string', required: false }
           ]
         }]
       };
-      const code = generateServerPy(configWithNull);
-      expect(code).toContain('value: str = None');
+      const code = generateServerPy(configWithOptional);
+      expect(code).toContain('value: str | None = None');
     });
 
     it('should handle string defaults with quotes', () => {
@@ -183,7 +338,8 @@ describe('FastMCP Code Generator', () => {
         }]
       };
       const code = generateServerPy(configWithValidName);
-      expect(code).toContain('def valid_function_name(valid_param_name: str):');
+      expect(code).toContain('def valid_function_name(');
+      expect(code).toContain('valid_param_name: str');
     });
   });
 
@@ -199,10 +355,7 @@ describe('FastMCP Code Generator', () => {
       };
       const code = generateServerPy(configWithTripleQuotes);
       // Triple quotes should be escaped as \"\"\" in the output
-      expect(code).toContain('"""This is a \\\"\\\"\\\"malicious\\\"\\\"\\\" description"""');
-      // Verify the function is properly closed and doesn't break out
-      expect(code).toContain('# TODO: Implement test_func');
-      expect(code).toContain('pass');
+      expect(code).toContain('\\\"\\\"\\\"malicious\\\"\\\"\\\"');
     });
 
     it('should escape backslashes in server name', () => {
@@ -211,7 +364,7 @@ describe('FastMCP Code Generator', () => {
         serverName: 'test\\server'
       };
       const code = generateServerPy(configWithBackslash);
-      expect(code).toContain('mcp = FastMCP("test\\\\server")');
+      expect(code).toContain('mcp = FastMCP("test\\\\server"');
     });
 
     it('should handle quotes in server name', () => {
@@ -221,7 +374,16 @@ describe('FastMCP Code Generator', () => {
       };
       const code = generateServerPy(configWithQuotes);
       // Quotes should be escaped with backslash
-      expect(code).toContain('mcp = FastMCP("test\\"server")');
+      expect(code).toContain('mcp = FastMCP("test\\"server"');
+    });
+  });
+
+  describe('Error handling', () => {
+    it('should generate try-except blocks in tools', () => {
+      const code = generateServerPy(config);
+      expect(code).toContain('try:');
+      expect(code).toContain('except Exception as e:');
+      expect(code).toContain('raise ToolError(');
     });
   });
 });

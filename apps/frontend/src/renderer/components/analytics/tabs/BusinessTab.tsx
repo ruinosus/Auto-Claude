@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { DataTable } from '../shared/DataTable';
+import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
 import { formatCurrency, formatHours, formatPercent } from '../utils/formatters';
 
 interface TopSpec {
@@ -236,6 +237,9 @@ export function BusinessTab({ data, loading, onExportPDF }: BusinessTabProps) {
           </div>
         </div>
       </div>
+
+      {/* Business Artifacts - Recommendations, Cost Analysis */}
+      <ArtifactsPanel filterByTab="business" title="Strategic Recommendations" />
     </div>
   );
 }

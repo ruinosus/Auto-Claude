@@ -1,12 +1,14 @@
 /**
  * Format a number as currency (USD)
+ * @param value - Numeric value in USD
+ * @param decimals - Number of decimal places (default: 2)
  */
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number, decimals = 2): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(value);
 }
 

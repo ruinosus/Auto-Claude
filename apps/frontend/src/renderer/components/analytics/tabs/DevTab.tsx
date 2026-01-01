@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { DataTable } from '../shared/DataTable';
+import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
 import { formatCurrency, formatHours, formatPercent } from '../utils/formatters';
 import { BarChart3, TrendingUp, Clock, CheckCircle, XCircle, Activity } from 'lucide-react';
 
@@ -155,10 +156,10 @@ export function DevTab({ data, loading, onSpecClick }: DevTabProps) {
             </div>
           ) : (
             <div className="space-y-2">
-              {topSpecsByCost.map((spec) => {
+              {topSpecsByCost.map((spec, idx) => {
                 const widthPercent = (spec.cost / maxCost) * 100;
                 return (
-                  <div key={spec.id} className="flex items-center gap-3 group cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 p-1 rounded" onClick={() => onSpecClick?.(spec)}>
+                  <div key={`${spec.id}-${idx}`} className="flex items-center gap-3 group cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 p-1 rounded" onClick={() => onSpecClick?.(spec)}>
                     <div className="w-32 truncate text-sm text-gray-600 dark:text-gray-400" title={spec.name}>
                       {spec.name}
                     </div>
@@ -192,6 +193,9 @@ export function DevTab({ data, loading, onSpecClick }: DevTabProps) {
           emptyMessage="dev.noSpecs"
         />
       </div>
+
+      {/* Developer Artifacts - Code, Bug Fixes, Tests */}
+      <ArtifactsPanel filterByTab="dev" title="Code Artifacts" />
     </div>
   );
 }

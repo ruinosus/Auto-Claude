@@ -8,9 +8,11 @@ Core logic for multi-pass PR code review.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, List, Dict
 
 # Analytics tracking
 try:
@@ -30,6 +32,7 @@ try:
         is_langfuse_ready,
         trace_context,
         log_generation_in_current_trace,
+        flush_langfuse,
     )
     LANGFUSE_AVAILABLE = True
     # Initialize Langfuse early (idempotent - safe to call multiple times)
@@ -37,6 +40,13 @@ try:
 except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
+
+# Import ROI publisher
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
 
 try:
     from ..context_gatherer import PRContext
@@ -72,6 +82,155 @@ class ProgressCallback:
     message: str
     pr_number: int | None = None
     extra: dict[str, Any] | None = None
+
+
+def extract_pr_review_artifacts(
+    findings: List["PRReviewFinding"],
+    structural_issues: List["StructuralIssue"],
+    ai_triages: List["AICommentTriage"],
+    quick_scan: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Extract valuable artifacts from PR review results.
+
+    Artifact values based on ROI_IMPLEMENTATION_TRACKER.md section 1.1:
+    - review_comment: $50 each (general review findings)
+    - code_suggestion: $100 (comments with code suggestions)
+    - security_issue: $300 (security-related findings)
+    - bug_detected: $200 (bug-related findings)
+    - approval_decision: $75 (review verdict)
+
+    Args:
+        findings: List of PRReviewFinding objects from review passes
+        structural_issues: List of StructuralIssue objects
+        ai_triages: List of AICommentTriage objects
+        quick_scan: Quick scan summary dict with verdict
+
+    Returns:
+        List of artifact dicts with type, value_usd, content, and description
+    """
+    artifacts = []
+
+    # Security-related keywords for detection
+    security_keywords = [
+        "security", "vulnerability", "injection", "xss", "csrf", "sql",
+        "authentication", "authorization", "auth", "token", "secret",
+        "password", "credential", "sanitize", "escape", "validate"
+    ]
+
+    # Bug-related keywords for detection
+    bug_keywords = [
+        "bug", "error", "fix", "issue", "broken", "crash", "fail",
+        "null", "undefined", "exception", "race condition", "deadlock",
+        "memory leak", "infinite loop"
+    ]
+
+    # Process each finding
+    for finding in findings:
+        title_lower = finding.title.lower()
+        desc_lower = finding.description.lower()
+        combined = f"{title_lower} {desc_lower}"
+
+        # Check if it's a security issue
+        is_security = any(kw in combined for kw in security_keywords)
+        if is_security or finding.category.value == "security":
+            artifacts.append({
+                "type": "security_issue",
+                "format": "finding",
+                "content": f"{finding.title}: {finding.description[:200]}",
+                "value_usd": 300,
+                "description": f"Security finding: {finding.title}",
+                "tab": "ops",
+                "severity": finding.severity.value,
+                "file": finding.file,
+                "line": finding.line,
+            })
+            continue
+
+        # Check if it's a bug detection
+        is_bug = any(kw in combined for kw in bug_keywords)
+        if is_bug:
+            artifacts.append({
+                "type": "bug_detected",
+                "format": "finding",
+                "content": f"{finding.title}: {finding.description[:200]}",
+                "value_usd": 200,
+                "description": f"Bug detected: {finding.title}",
+                "tab": "dev",
+                "severity": finding.severity.value,
+                "file": finding.file,
+                "line": finding.line,
+            })
+            continue
+
+        # Check if finding has a code suggestion
+        if finding.suggested_fix:
+            artifacts.append({
+                "type": "code_suggestion",
+                "format": "suggestion",
+                "content": f"{finding.title}: {finding.suggested_fix[:300]}",
+                "value_usd": 100,
+                "description": f"Code suggestion: {finding.title}",
+                "tab": "dev",
+                "severity": finding.severity.value,
+                "file": finding.file,
+                "line": finding.line,
+            })
+        else:
+            # General review comment
+            artifacts.append({
+                "type": "review_comment",
+                "format": "comment",
+                "content": f"{finding.title}: {finding.description[:200]}",
+                "value_usd": 50,
+                "description": f"Review comment: {finding.title}",
+                "tab": "dev",
+                "severity": finding.severity.value,
+                "file": finding.file,
+                "line": finding.line,
+            })
+
+    # Process structural issues
+    for issue in structural_issues:
+        artifacts.append({
+            "type": "review_comment",
+            "format": "structural",
+            "content": f"{issue.title}: {issue.description[:200]}",
+            "value_usd": 50,
+            "description": f"Structural issue: {issue.title}",
+            "tab": "techlead",
+            "issue_type": issue.issue_type,
+            "severity": issue.severity.value,
+        })
+
+    # Process AI comment triages
+    for triage in ai_triages:
+        # Triaging AI comments is valuable - helps filter noise
+        artifacts.append({
+            "type": "review_comment",
+            "format": "ai_triage",
+            "content": f"Triaged {triage.tool_name} comment: {triage.verdict.value}",
+            "value_usd": 50,
+            "description": f"AI comment triage: {triage.tool_name} - {triage.verdict.value}",
+            "tab": "dev",
+            "tool_name": triage.tool_name,
+            "verdict": triage.verdict.value,
+        })
+
+    # Add approval decision artifact based on quick scan verdict
+    verdict = quick_scan.get("verdict", "unknown")
+    if verdict and verdict != "unknown":
+        artifacts.append({
+            "type": "approval_decision",
+            "format": "verdict",
+            "content": f"Review verdict: {verdict}",
+            "value_usd": 75,
+            "description": f"PR review decision: {verdict}",
+            "tab": "business",
+            "verdict": verdict,
+        })
+
+    return artifacts
 
 
 class PRReviewEngine:
@@ -586,6 +745,71 @@ class PRReviewEngine:
             f"{len(structural_issues)} structural issues, {len(ai_triages)} AI triages",
             flush=True,
         )
+
+        # Publish ROI metrics (in try/except to not fail the review if ROI fails)
+        if ROI_PUBLISHER_AVAILABLE:
+            try:
+                # Extract artifacts from review results
+                artifacts = extract_pr_review_artifacts(
+                    unique_findings, structural_issues, ai_triages, scan_result
+                )
+
+                # Count specific issue types for metrics
+                security_issues = sum(
+                    1 for f in unique_findings
+                    if f.category.value == "security" or any(
+                        kw in f"{f.title} {f.description}".lower()
+                        for kw in ["security", "vulnerability", "injection", "xss"]
+                    )
+                )
+                bug_issues = sum(
+                    1 for f in unique_findings
+                    if any(
+                        kw in f"{f.title} {f.description}".lower()
+                        for kw in ["bug", "error", "fix", "issue", "broken"]
+                    )
+                )
+
+                # Determine approval status from scan result
+                verdict = scan_result.get("verdict", "unknown")
+                approval = verdict in ["approved", "approve", "ready_to_merge", "ready"]
+
+                # Get project_id for ROI tracking
+                project_id = self.project_dir.name if self.project_dir else "unknown"
+
+                # Publish ROI
+                roi_result = await publish_feature_roi(
+                    feature_type="github_pr_review",
+                    project_id=project_id,
+                    cost_usd=0.0,  # Cost is tracked in Langfuse traces
+                    tokens=0,  # Tokens are tracked in Langfuse traces
+                    metrics={
+                        "prs_reviewed": 1,
+                        "files_reviewed": len(context.changed_files),
+                        "comments_posted": len(unique_findings),
+                        "issues_found": len(unique_findings) + len(structural_issues),
+                        "security_issues": security_issues,
+                        "bug_issues": bug_issues,
+                        "structural_issues": len(structural_issues),
+                        "ai_triages": len(ai_triages),
+                        "approval": approval,
+                        "verdict": verdict,
+                        "artifacts": artifacts,
+                    },
+                    spec_id=f"pr-{context.pr_number}",
+                    trace_id=None,  # Will create its own trace
+                )
+
+                print(
+                    f"[AI] ROI published: {roi_result.get('roi_percentage', 0):.1f}% ROI, "
+                    f"${roi_result.get('total_value_usd', 0):.2f} value, "
+                    f"{len(artifacts)} artifacts extracted",
+                    flush=True,
+                )
+
+            except Exception as e:
+                # Log but don't fail the review
+                print(f"[AI] Warning: Failed to publish ROI metrics: {e}", flush=True)
 
         return unique_findings, structural_issues, ai_triages, scan_result
 

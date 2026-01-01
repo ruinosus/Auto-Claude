@@ -37,6 +37,8 @@ except ImportError:
 
 from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 from phase_config import resolve_model_id
+from agents.tools_pkg.models import ROI_TOOLS
+from agents.tools_pkg import create_auto_claude_mcp_server, is_tools_available
 from debug import (
     debug,
     debug_detailed,
@@ -157,6 +159,8 @@ Your capabilities:
 3. Help plan implementation of new features
 4. Provide code examples and explanations
 
+## Task Suggestions
+
 When the user asks you to create a task, wants to turn the conversation into a task, or when you believe creating a task would be helpful, output a task suggestion in this exact format on a SINGLE LINE:
 __TASK_SUGGESTION__:{{"title": "Task title here", "description": "Detailed description of what the task involves", "metadata": {{"category": "feature", "complexity": "medium", "impact": "medium"}}}}
 
@@ -249,15 +253,38 @@ Current question: {message}"""
         # Create Claude SDK client with appropriate settings for insights
         # Pass Azure Foundry env vars to SDK subprocess
         sdk_env = get_sdk_env_vars()
+
+        # Setup MCP servers for ROI tracking (if tools are available)
+        mcp_servers = {}
+        roi_tools_enabled = False
+
+        if is_tools_available():
+            try:
+                insights_roi_dir = project_path / ".auto-claude" / "insights"
+                insights_roi_dir.mkdir(parents=True, exist_ok=True)
+
+                auto_claude_mcp = create_auto_claude_mcp_server(insights_roi_dir, project_path)
+                if auto_claude_mcp:
+                    mcp_servers["auto-claude"] = auto_claude_mcp
+                    roi_tools_enabled = True
+                    debug("insights_runner", "Auto-claude MCP server enabled for ROI tracking")
+            except Exception as e:
+                debug_error("insights_runner", f"Failed to create ROI MCP server: {e}")
+                # Continue without ROI tools
+        else:
+            debug("insights_runner", "ROI tools not available (SDK tools not installed)")
+
+        # Build allowed tools list
+        allowed_tools = ["Read", "Glob", "Grep"]
+        if roi_tools_enabled:
+            allowed_tools.extend(ROI_TOOLS)
+
         client = ClaudeSDKClient(
             options=ClaudeAgentOptions(
                 model=model,  # Use configured model
                 system_prompt=system_prompt,
-                allowed_tools=[
-                    "Read",
-                    "Glob",
-                    "Grep",
-                ],
+                allowed_tools=allowed_tools,
+                mcp_servers=mcp_servers if mcp_servers else None,  # Only pass if we have servers
                 # Removed setting_sources to avoid loading skills/MCP servers
                 # that can cause initialization timeouts
                 max_turns=30,  # Allow sufficient turns for codebase exploration
@@ -295,6 +322,7 @@ Current question: {message}"""
             # Stream the response
             response_text = ""
             current_tool = None
+            tools_used_count = 0  # Track number of tools used for ROI calculation
 
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
@@ -342,6 +370,7 @@ Current question: {message}"""
                                         tool_input = inp["path"]
 
                             current_tool = tool_name
+                            tools_used_count += 1  # Increment for ROI calculation
                             print(
                                 f"__TOOL_START__:{json.dumps({'name': tool_name, 'input': tool_input})}",
                                 flush=True,
@@ -416,20 +445,13 @@ Current question: {message}"""
                 except Exception as e:
                     debug_error("insights_runner", f"Failed to finalize tracking: {e}")
 
-            # Finalize Langfuse trace
-            if trace_ctx:
-                try:
-                    # Set trace output before exiting
-                    if langfuse_ctx_obj:
-                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                        langfuse_ctx_obj.set_output({"response": trace_output})
-                    trace_ctx.__exit__(None, None, None)
-                    flush_langfuse()
-                    debug("insights_runner", "Langfuse trace finalized")
-                except Exception as e:
-                    debug_error("insights_runner", f"Failed to finalize Langfuse trace: {e}")
+            # Capture trace_id BEFORE closing the trace context
+            langfuse_trace_id = None
+            if langfuse_ctx_obj and hasattr(langfuse_ctx_obj, 'trace_id'):
+                langfuse_trace_id = langfuse_ctx_obj.trace_id
+                debug("insights_runner", "Captured Langfuse trace_id", trace_id=langfuse_trace_id)
 
-            # Publish ROI metrics
+            # Publish ROI metrics BEFORE closing the trace (so scores attach to trace)
             if ROI_PUBLISHER_AVAILABLE:
                 try:
                     # Count task suggestions in response
@@ -447,22 +469,357 @@ Current question: {message}"""
                         total_tokens = len(response_text) // 4  # ~4 chars per token
                         total_cost = (total_tokens / 1000) * 0.003
 
-                    # Count tool uses (files explored)
-                    files_explored = response_text.count("__TOOL_START__")
+                    # Count tool uses (files explored) - use tracked counter
+                    files_explored = tools_used_count
 
-                    await publish_insights_roi(
+                    # Extract additional value metrics from response WITH TRACEABILITY
+                    response_lower = response_text.lower()
+                    import re
+
+                    # Detect diagrams (mermaid, ascii art, etc.)
+                    diagrams_generated = (
+                        response_text.count("```mermaid") +
+                        response_text.count("```ascii") +
+                        response_text.count("```diagram")
+                    )
+                    diagram_types = []
+                    if "```mermaid" in response_text:
+                        diagram_types.append("mermaid")
+                    if "```ascii" in response_text:
+                        diagram_types.append("ascii")
+                    if "```diagram" in response_text:
+                        diagram_types.append("diagram")
+
+                    # Detect security insights WITH CONTEXT
+                    security_keywords = ["security", "vulnerability", "xss", "sql injection", "csrf", "authentication", "authorization"]
+                    security_matches = [kw for kw in security_keywords if kw in response_lower]
+                    security_insights = len(security_matches)
+
+                    # Detect recommendations WITH CONTEXT - extract sentences containing recommendations
+                    recommendation_patterns = ["recommend", "suggestion", "should consider", "best practice", "improvement"]
+                    recommendations_found = []
+                    sentences = re.split(r'[.!?\n]', response_text)
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        for pattern in recommendation_patterns:
+                            if pattern in sentence_lower and len(sentence.strip()) > 20:
+                                recommendations_found.append(sentence.strip()[:150])  # Limit length
+                                break
+                    recommendations_count = len(recommendations_found)
+
+                    # Detect code explanations (code blocks in response)
+                    code_explanations = response_text.count("```")
+
+                    # Extract ARTIFACTS (concrete outputs that have value)
+                    artifacts = []
+
+                    # Extract mermaid diagrams as artifacts
+                    mermaid_pattern = r'```mermaid\n(.*?)```'
+                    mermaid_matches = re.findall(mermaid_pattern, response_text, re.DOTALL)
+                    for i, diagram in enumerate(mermaid_matches):
+                        artifacts.append({
+                            "type": "diagram",
+                            "format": "mermaid",
+                            "content": diagram.strip(),
+                            "value_usd": 150,
+                            "description": f"Mermaid diagram #{i+1}",
+                        })
+
+                    # Extract code blocks as artifacts (exclude mermaid)
+                    code_pattern = r'```(\w+)?\n(.*?)```'
+                    code_matches = re.findall(code_pattern, response_text, re.DOTALL)
+                    for lang, code in code_matches:
+                        if lang and lang.lower() not in ['mermaid', 'ascii', 'diagram']:
+                            artifacts.append({
+                                "type": "code_example",
+                                "format": lang or "text",
+                                "content": code.strip()[:500],  # Limit size
+                                "value_usd": 25,
+                                "description": f"Code example ({lang or 'text'})",
+                            })
+
+                    # Extract structured recommendations as artifacts
+                    for i, rec in enumerate(recommendations_found[:5]):
+                        artifacts.append({
+                            "type": "recommendation",
+                            "format": "text",
+                            "content": rec,
+                            "value_usd": 50,
+                            "description": f"Recommendation #{i+1}",
+                        })
+
+                    # Extract security findings as artifacts
+                    for kw in security_matches:
+                        # Find the sentence containing this security keyword
+                        for sentence in sentences:
+                            if kw in sentence.lower() and len(sentence.strip()) > 30:
+                                artifacts.append({
+                                    "type": "security_finding",
+                                    "format": "text",
+                                    "content": sentence.strip()[:200],
+                                    "keyword": kw,
+                                    "value_usd": 200,
+                                    "description": f"Security insight: {kw}",
+                                    "tab": "ops",
+                                })
+                                break
+
+                    # Extract bug fix suggestions as artifacts
+                    bug_keywords = ["fix", "bug", "error", "issue", "problem", "solve", "resolve"]
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        if any(kw in sentence_lower for kw in bug_keywords) and "should" in sentence_lower:
+                            if len(sentence.strip()) > 40:
+                                artifacts.append({
+                                    "type": "bug_fix",
+                                    "format": "text",
+                                    "content": sentence.strip()[:250],
+                                    "value_usd": 100,
+                                    "description": "Bug fix suggestion",
+                                    "tab": "dev",
+                                })
+                                break
+
+                    # Extract test suggestions as artifacts
+                    test_keywords = ["test", "testing", "unit test", "integration test", "spec", "assertion"]
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        if any(kw in sentence_lower for kw in test_keywords):
+                            if len(sentence.strip()) > 30 and "should" in sentence_lower:
+                                artifacts.append({
+                                    "type": "test_case",
+                                    "format": "text",
+                                    "content": sentence.strip()[:250],
+                                    "value_usd": 75,
+                                    "description": "Test suggestion",
+                                    "tab": "dev",
+                                })
+                                break
+
+                    # Extract documentation artifacts
+                    doc_keywords = ["documentation", "document", "readme", "guide", "tutorial", "explanation"]
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        if any(kw in sentence_lower for kw in doc_keywords):
+                            if len(sentence.strip()) > 40:
+                                artifacts.append({
+                                    "type": "documentation",
+                                    "format": "text",
+                                    "content": sentence.strip()[:250],
+                                    "value_usd": 50,
+                                    "description": "Documentation insight",
+                                    "tab": "techlead",
+                                })
+                                break
+
+                    # Extract API design suggestions
+                    api_keywords = ["api", "endpoint", "route", "rest", "graphql", "request", "response"]
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        if any(kw in sentence_lower for kw in api_keywords):
+                            if len(sentence.strip()) > 40 and ("design" in sentence_lower or "structure" in sentence_lower or "pattern" in sentence_lower):
+                                artifacts.append({
+                                    "type": "api_design",
+                                    "format": "text",
+                                    "content": sentence.strip()[:250],
+                                    "value_usd": 100,
+                                    "description": "API design insight",
+                                    "tab": "techlead",
+                                })
+                                break
+
+                    # Extract performance insights
+                    perf_keywords = ["performance", "optimize", "optimization", "slow", "fast", "latency", "cache", "memory"]
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        if any(kw in sentence_lower for kw in perf_keywords):
+                            if len(sentence.strip()) > 40:
+                                artifacts.append({
+                                    "type": "performance_insight",
+                                    "format": "text",
+                                    "content": sentence.strip()[:250],
+                                    "value_usd": 150,
+                                    "description": "Performance insight",
+                                    "tab": "ops",
+                                })
+                                break
+
+                    # Extract cost/business insights
+                    cost_keywords = ["cost", "price", "budget", "expense", "roi", "value", "revenue", "savings"]
+                    for sentence in sentences:
+                        sentence_lower = sentence.lower()
+                        if any(kw in sentence_lower for kw in cost_keywords):
+                            if len(sentence.strip()) > 40:
+                                artifacts.append({
+                                    "type": "cost_analysis",
+                                    "format": "text",
+                                    "content": sentence.strip()[:250],
+                                    "value_usd": 75,
+                                    "description": "Cost/Business insight",
+                                    "tab": "business",
+                                })
+                                break
+
+                    # Add tab to existing artifact types
+                    for artifact in artifacts:
+                        if "tab" not in artifact:
+                            if artifact["type"] == "diagram":
+                                artifact["tab"] = "techlead"
+                            elif artifact["type"] == "code_example":
+                                artifact["tab"] = "dev"
+                            elif artifact["type"] == "recommendation":
+                                artifact["tab"] = "business"
+
+                    # Build value attribution details for traceability
+                    value_attribution = {
+                        "diagrams": {
+                            "count": diagrams_generated,
+                            "types": diagram_types,
+                            "value_per_item": 150,
+                            "total_value": diagrams_generated * 150,
+                        },
+                        "security_insights": {
+                            "count": security_insights,
+                            "keywords_found": security_matches,
+                            "value_per_item": 200,
+                            "total_value": security_insights * 200,
+                        },
+                        "recommendations": {
+                            "count": recommendations_count,
+                            "samples": recommendations_found[:5],  # First 5 recommendations
+                            "value_per_item": 50,
+                            "total_value": recommendations_count * 50,
+                        },
+                        "code_explanations": {
+                            "count": code_explanations,
+                            "value_per_item": 25,
+                            "total_value": code_explanations * 25,
+                        },
+                        "files_explored": {
+                            "count": files_explored,
+                            "value_contribution": "knowledge base calculation",
+                        },
+                        "artifacts": artifacts,  # Link to concrete outputs
+                        "total_artifacts": len(artifacts),
+                    }
+
+                    # Save value attribution to physical file for traceability
+                    from datetime import datetime as dt
+                    insights_dir = project_path / ".auto-claude" / "insights"
+                    insights_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Create activity report file
+                    timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+                    activity_file = insights_dir / f"activity_{timestamp}.json"
+
+                    activity_report = {
+                        "timestamp": dt.now().isoformat(),
+                        "trace_id": langfuse_trace_id,
+                        "project_id": project_id,
+                        "model": model,
+                        "cost_usd": total_cost,
+                        "tokens": total_tokens,
+                        "value_attribution": value_attribution,
+                        "total_value_usd": sum(
+                            v.get("total_value", 0) for v in value_attribution.values()
+                            if isinstance(v, dict) and "total_value" in v
+                        ),
+                        "query_summary": message[:200] + "..." if len(message) > 200 else message,
+                        "response_summary": response_text[:500] + "..." if len(response_text) > 500 else response_text,
+                    }
+
+                    try:
+                        with open(activity_file, "w") as f:
+                            json.dump(activity_report, f, indent=2, default=str)
+                        debug("insights_runner", f"Activity saved to {activity_file}")
+
+                        # Update index file for easy lookup
+                        index_file = insights_dir / "activities_index.json"
+                        index_data = []
+                        if index_file.exists():
+                            try:
+                                with open(index_file) as f:
+                                    index_data = json.load(f)
+                            except Exception:
+                                index_data = []
+
+                        index_data.append({
+                            "file": activity_file.name,
+                            "timestamp": activity_report["timestamp"],
+                            "trace_id": langfuse_trace_id,
+                            "total_value_usd": activity_report["total_value_usd"],
+                            "cost_usd": total_cost,
+                            "activities_detected": {
+                                "diagrams": diagrams_generated,
+                                "security_insights": security_insights,
+                                "recommendations": recommendations_count,
+                                "code_explanations": code_explanations,
+                                "files_explored": files_explored,
+                            }
+                        })
+
+                        with open(index_file, "w") as f:
+                            json.dump(index_data, f, indent=2, default=str)
+
+                    except Exception as e:
+                        debug_error("insights_runner", f"Failed to save activity file: {e}")
+
+                    # Use publish_feature_roi for richer metrics
+                    from analytics.roi_publisher import publish_feature_roi
+
+                    await publish_feature_roi(
+                        feature_type="insights_chat",
                         project_id=project_id,
-                        messages_exchanged=1,  # This is one message exchange
-                        tasks_suggested=tasks_suggested,
-                        tasks_accepted=0,  # We don't know this until user acts
-                        files_explored=files_explored,
                         cost_usd=total_cost,
                         tokens=total_tokens,
                         model=model,
+                        trace_id=langfuse_trace_id,  # Pass trace_id to attach scores to same trace
+                        metrics={
+                            "messages_exchanged": 1,
+                            "tasks_suggested": tasks_suggested,
+                            "tasks_accepted": 0,
+                            "files_explored": files_explored,
+                            # Additional value metrics (detected from response)
+                            "diagrams_generated": diagrams_generated,
+                            "security_insights": security_insights,
+                            "recommendations_count": recommendations_count,
+                            "code_explanations": code_explanations,
+                        },
                     )
-                    debug("insights_runner", "ROI published", tasks=tasks_suggested, files=files_explored)
+
+                    debug(
+                        "insights_runner",
+                        "ROI published",
+                        trace_id=langfuse_trace_id,
+                        tasks=tasks_suggested,
+                        files=files_explored,
+                        diagrams=diagrams_generated,
+                        security=security_insights,
+                        recommendations=recommendations_count,
+                    )
                 except Exception as e:
                     debug_error("insights_runner", f"Failed to publish ROI: {e}")
+
+            # Finalize Langfuse trace (AFTER publishing ROI scores)
+            if trace_ctx:
+                try:
+                    # Set trace output before exiting - include value attribution for traceability
+                    if langfuse_ctx_obj:
+                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                        # Include value attribution if ROI was published
+                        output_data = {"response": trace_output}
+                        if ROI_PUBLISHER_AVAILABLE and 'value_attribution' in dir():
+                            output_data["value_attribution"] = value_attribution
+                            output_data["total_calculated_value"] = sum(
+                                v.get("total_value", 0) for v in value_attribution.values()
+                                if isinstance(v, dict) and "total_value" in v
+                            )
+                        langfuse_ctx_obj.set_output(output_data)
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                    debug("insights_runner", "Langfuse trace finalized")
+                except Exception as e:
+                    debug_error("insights_runner", f"Failed to finalize Langfuse trace: {e}")
 
     except Exception as e:
         print(f"Error using Claude SDK: {e}", file=sys.stderr)

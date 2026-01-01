@@ -68,6 +68,9 @@ class FeatureType(Enum):
     INSIGHTS_CHAT = "insights_chat"
     INSIGHTS_ANALYZER = "insights_analyzer"
 
+    # Merge
+    MERGE_RESOLVER = "merge_resolver"
+
     # Other
     OTHER = "other"
 
@@ -164,6 +167,19 @@ class InsightsMetrics:
 
 
 @dataclass
+class MergeMetrics:
+    """Metrics specific to merge conflict resolution."""
+    conflicts_resolved: int = 0
+    files_merged: int = 0
+    manual_intervention_avoided: int = 0
+    merge_decisions: int = 0  # ours/theirs/combined decisions
+    code_choices: int = 0  # code choice decisions made
+
+    # Time savings
+    estimated_resolution_time_saved_minutes: float = 0.0
+
+
+@dataclass
 class UnifiedROI:
     """
     Universal ROI structure for any Auto-Claude feature.
@@ -194,6 +210,7 @@ class UnifiedROI:
     build_metrics: Optional[BuildMetrics] = None
     github_metrics: Optional[GitHubMetrics] = None
     insights_metrics: Optional[InsightsMetrics] = None
+    merge_metrics: Optional[MergeMetrics] = None
 
     # Calculated fields
     total_value_usd: float = 0.0
@@ -253,6 +270,13 @@ class UnifiedROI:
             scores["prs_reviewed"] = float(self.github_metrics.prs_reviewed)
             scores["issues_triaged"] = float(self.github_metrics.issues_triaged)
 
+        if self.merge_metrics:
+            scores["conflicts_resolved"] = float(self.merge_metrics.conflicts_resolved)
+            scores["files_merged"] = float(self.merge_metrics.files_merged)
+            scores["manual_intervention_avoided"] = float(self.merge_metrics.manual_intervention_avoided)
+            scores["merge_decisions"] = float(self.merge_metrics.merge_decisions)
+            scores["code_choices"] = float(self.merge_metrics.code_choices)
+
         return scores
 
 
@@ -298,6 +322,9 @@ VALUE_MULTIPLIERS = {
     # Insights - knowledge value
     FeatureType.INSIGHTS_CHAT: 1.0,
     FeatureType.INSIGHTS_ANALYZER: 1.5,
+
+    # Merge - automation value (conflict resolution is high value)
+    FeatureType.MERGE_RESOLVER: 2.0,
 }
 
 # Estimated time savings by action (in minutes)
@@ -308,6 +335,7 @@ TIME_SAVINGS = {
     "roadmap_planning": 120,  # Time to plan roadmap manually
     "spec_writing": 180,  # Time to write a spec manually
     "codebase_exploration": 45,  # Time to explore unfamiliar codebase
+    "conflict_resolution": 20,  # Average time to manually resolve a merge conflict
 }
 
 # Bug/issue prevention values (estimated cost of bug in production)

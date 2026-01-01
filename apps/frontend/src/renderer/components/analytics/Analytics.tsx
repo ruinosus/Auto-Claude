@@ -373,7 +373,7 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
           </TabsContent>
 
           <TabsContent value="techlead" className="mt-6">
-            <TechLeadTab data={techLeadData} loading={isLoading} />
+            <TechLeadTab data={techLeadData} loading={isLoading} projectId={projectName} />
           </TabsContent>
 
           <TabsContent value="ops" className="mt-6">

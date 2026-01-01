@@ -25,6 +25,8 @@ export interface MCPAPI {
     callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
     listPrompts: (serverId: string) => Promise<MCPPrompt[]>;
     listResources: (serverId: string) => Promise<MCPResource[]>;
+    getPrompt: (serverId: string, promptName: string, args?: Record<string, string>) => Promise<{ content: string; error?: string }>;
+    readResource: (serverId: string, uri: string) => Promise<{ content: string; mimeType?: string; error?: string }>;
     startFastMCPServer: (serverPath: string) => Promise<{ success: boolean; port?: number; error?: string }>;
     stopFastMCPServer: (serverPath: string) => Promise<{ success: boolean; error?: string }>;
     generateFastMCPServer: (config: FastMCPServerConfig) => Promise<MCPInstallResult>;
@@ -58,6 +60,12 @@ export const createMCPAPI = (): MCPAPI => ({
 
     listResources: (serverId: string): Promise<MCPResource[]> =>
       invokeIpc(IPC_CHANNELS.MCP_LIST_RESOURCES, serverId),
+
+    getPrompt: (serverId: string, promptName: string, args?: Record<string, string>): Promise<{ content: string; error?: string }> =>
+      invokeIpc(IPC_CHANNELS.MCP_GET_PROMPT, serverId, promptName, args),
+
+    readResource: (serverId: string, uri: string): Promise<{ content: string; mimeType?: string; error?: string }> =>
+      invokeIpc(IPC_CHANNELS.MCP_READ_RESOURCE, serverId, uri),
 
     startFastMCPServer: (serverPath: string): Promise<{ success: boolean; port?: number; error?: string }> =>
       invokeIpc(IPC_CHANNELS.MCP_START_FASTMCP_SERVER, serverPath),

@@ -500,6 +500,8 @@ export const IPC_CHANNELS = {
   MCP_CALL_TOOL: 'mcp:callTool',
   MCP_LIST_PROMPTS: 'mcp:listPrompts',
   MCP_LIST_RESOURCES: 'mcp:listResources',
+  MCP_GET_PROMPT: 'mcp:getPrompt',
+  MCP_READ_RESOURCE: 'mcp:readResource',
   MCP_START_FASTMCP_SERVER: 'mcp:startFastMCPServer',
   MCP_STOP_FASTMCP_SERVER: 'mcp:stopFastMCPServer',
   MCP_GENERATE_FASTMCP_SERVER: 'mcp:generateFastMCPServer',

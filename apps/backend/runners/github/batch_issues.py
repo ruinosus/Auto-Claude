@@ -51,7 +51,127 @@ try:
 except ImportError as e:
     TRACKING_AVAILABLE = False
 
+# Import ROI publisher
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+def extract_triage_artifacts(
+    triage_results: list[dict],
+    issues: list[dict],
+) -> list[dict]:
+    """
+    Extract artifacts from triage results for ROI calculation.
+
+    Artifact values (as defined in ROI_IMPLEMENTATION_TRACKER.md section 4.2):
+    - triage_classification: $30 - classification of the issue
+    - priority_assignment: $50 - priority assigned
+    - label_suggestion: $20 - label suggested
+    - duplicate_detected: $75 - duplicate detected
+    - assignee_suggestion: $40 - assignee suggestion
+
+    Args:
+        triage_results: List of batch/triage results from analyze_and_batch_issues
+        issues: Original list of issues that were triaged
+
+    Returns:
+        List of artifact dicts with type, value_usd, content, description, tab
+    """
+    artifacts = []
+
+    for batch in triage_results:
+        issue_numbers = batch.get("issue_numbers", [])
+        theme = batch.get("theme", "")
+        reasoning = batch.get("reasoning", "")
+        confidence = batch.get("confidence", 0.0)
+
+        # Each batch represents a triage classification
+        if issue_numbers:
+            artifacts.append({
+                "type": "triage_classification",
+                "format": "text",
+                "content": f"Issues {issue_numbers}: {theme}",
+                "value_usd": 30,
+                "description": f"Classified {len(issue_numbers)} issue(s) as: {theme[:50]}",
+                "tab": "ops",
+                "confidence": confidence,
+            })
+
+        # Check if priority was assigned (inferred from theme/reasoning)
+        priority_keywords = ["critical", "high priority", "urgent", "blocker", "low priority", "medium priority"]
+        theme_lower = theme.lower()
+        reasoning_lower = reasoning.lower()
+
+        for priority_kw in priority_keywords:
+            if priority_kw in theme_lower or priority_kw in reasoning_lower:
+                artifacts.append({
+                    "type": "priority_assignment",
+                    "format": "text",
+                    "content": f"Priority '{priority_kw}' assigned to issues {issue_numbers}",
+                    "value_usd": 50,
+                    "description": f"Priority assignment: {priority_kw}",
+                    "tab": "ops",
+                })
+                break  # Only count one priority per batch
+
+        # Check for label suggestions (inferred from theme)
+        label_keywords = [
+            "bug", "feature", "enhancement", "documentation", "refactor",
+            "performance", "security", "ui", "ux", "frontend", "backend",
+            "api", "database", "testing", "infrastructure", "ci/cd",
+        ]
+
+        for label_kw in label_keywords:
+            if label_kw in theme_lower:
+                artifacts.append({
+                    "type": "label_suggestion",
+                    "format": "text",
+                    "content": f"Label '{label_kw}' suggested for issues {issue_numbers}",
+                    "value_usd": 20,
+                    "description": f"Label suggestion: {label_kw}",
+                    "tab": "ops",
+                })
+                break  # Only count one label per batch
+
+    # Check for duplicates (batches with multiple issues indicate related/potential duplicates)
+    for batch in triage_results:
+        issue_numbers = batch.get("issue_numbers", [])
+        reasoning = batch.get("reasoning", "").lower()
+
+        # If multiple issues in batch and reasoning mentions similarity/duplicate
+        if len(issue_numbers) > 1:
+            if any(kw in reasoning for kw in ["duplicate", "same", "identical", "related"]):
+                artifacts.append({
+                    "type": "duplicate_detected",
+                    "format": "text",
+                    "content": f"Potential duplicates detected: {issue_numbers}",
+                    "value_usd": 75,
+                    "description": f"Duplicate/related issues: {issue_numbers}",
+                    "tab": "ops",
+                })
+
+    # Check for assignee suggestions in original issues (if present in labels/metadata)
+    for issue in issues:
+        labels = issue.get("labels", [])
+        assignee = issue.get("assignee")
+
+        if assignee:
+            artifacts.append({
+                "type": "assignee_suggestion",
+                "format": "text",
+                "content": f"Issue #{issue.get('number')} assigned to {assignee}",
+                "value_usd": 40,
+                "description": f"Assignee suggestion for issue #{issue.get('number')}",
+                "tab": "ops",
+            })
+
+    return artifacts
+
 
 # Import validators
 try:
@@ -276,6 +396,9 @@ Respond with JSON only:
             # Parse JSON response
             result = self._parse_json_response(response_text)
 
+            # Get batches for ROI calculation
+            batches = result.get("batches", [])
+
             # Finalize tracking
             if self.tracker:
                 try:
@@ -284,13 +407,61 @@ Respond with JSON only:
                 except Exception as e:
                     logger.error(f"[BATCH_ANALYZER] Failed to finalize tracking: {e}")
 
+            # Publish ROI metrics BEFORE closing Langfuse trace
+            if ROI_PUBLISHER_AVAILABLE:
+                try:
+                    # Extract artifacts from triage results
+                    artifacts = extract_triage_artifacts(batches, issues)
+
+                    # Calculate triage metrics
+                    issues_triaged = len(issues)
+                    labels_assigned = sum(1 for a in artifacts if a.get("type") == "label_suggestion")
+                    priorities_set = sum(1 for a in artifacts if a.get("type") == "priority_assignment")
+                    duplicates_found = sum(1 for a in artifacts if a.get("type") == "duplicate_detected")
+
+                    # Estimate cost from tokens
+                    total_tokens = total_input_tokens + total_output_tokens
+                    # Sonnet pricing: $3/M input, $15/M output
+                    cost_usd = (total_input_tokens * 0.003 / 1000) + (total_output_tokens * 0.015 / 1000)
+
+                    await publish_feature_roi(
+                        feature_type="github_issue_triage",
+                        project_id=self.project_id,
+                        cost_usd=cost_usd,
+                        tokens=total_tokens,
+                        model="claude-sonnet-4-20250514",
+                        trace_id=langfuse_trace_id,
+                        metrics={
+                            "issues_triaged": issues_triaged,
+                            "labels_assigned": labels_assigned,
+                            "priorities_set": priorities_set,
+                            "duplicates_found": duplicates_found,
+                            "batches_created": len(batches),
+                        },
+                    )
+                    logger.info(
+                        f"[BATCH_ANALYZER] ROI published: "
+                        f"issues={issues_triaged}, labels={labels_assigned}, "
+                        f"priorities={priorities_set}, duplicates={duplicates_found}, "
+                        f"trace_id={langfuse_trace_id}"
+                    )
+                except Exception as e:
+                    logger.error(f"[BATCH_ANALYZER] Failed to publish ROI: {e}")
+
             # Finalize Langfuse trace
             if trace_ctx:
                 try:
-                    # Set trace output before exiting
+                    # Set trace output before exiting - include artifacts for traceability
                     if langfuse_ctx_obj:
                         trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                        langfuse_ctx_obj.set_output({"response": trace_output, "batches_count": len(result.get("batches", []))})
+                        output_data = {
+                            "response": trace_output,
+                            "batches_count": len(batches),
+                        }
+                        # Include artifacts if ROI was published
+                        if ROI_PUBLISHER_AVAILABLE:
+                            output_data["artifacts_count"] = len(artifacts) if 'artifacts' in dir() else 0
+                        langfuse_ctx_obj.set_output(output_data)
                     trace_ctx.__exit__(None, None, None)
                     flush_langfuse()
                     logger.info("[BATCH_ANALYZER] Langfuse trace finalized")

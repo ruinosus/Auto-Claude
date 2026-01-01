@@ -753,6 +753,8 @@ export interface ElectronAPI {
     callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
     listPrompts: (serverId: string) => Promise<import('./mcp').MCPPrompt[]>;
     listResources: (serverId: string) => Promise<import('./mcp').MCPResource[]>;
+    getPrompt: (serverId: string, promptName: string, args?: Record<string, string>) => Promise<{ content: string; error?: string }>;
+    readResource: (serverId: string, uri: string) => Promise<{ content: string; mimeType?: string; error?: string }>;
     startFastMCPServer: (serverPath: string) => Promise<{ success: boolean; port?: number; error?: string }>;
     stopFastMCPServer: (serverPath: string) => Promise<{ success: boolean; error?: string }>;
     generateFastMCPServer: (config: import('./mcp').FastMCPServerConfig) => Promise<import('./mcp').MCPInstallResult>;

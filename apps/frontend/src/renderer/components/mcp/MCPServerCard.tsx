@@ -75,7 +75,10 @@ export function MCPServerCard({ server, onConfigure }: MCPServerCardProps) {
               </Button>
             )}
 
-            {server.enabled && (server.toolCount > 0 || server.promptCount > 0 || server.resourceCount > 0) && (
+            {server.enabled && (
+              // Show button for custom servers (capabilities loaded dynamically) OR servers with known capabilities
+              server.type === 'custom' || server.toolCount > 0 || server.promptCount > 0 || server.resourceCount > 0
+            ) && (
               <Button
                 variant="ghost"
                 size="sm"

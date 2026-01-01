@@ -51,6 +51,14 @@ try:
 except ImportError:
     ANALYTICS_AVAILABLE = False
 
+# ROI Publisher for feature-level ROI tracking
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    from analytics.roi_score_publisher import get_git_diff_stats
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 # Langfuse integration (optional - graceful degradation if not available)
 try:
     from analytics.langfuse_integration import (
@@ -72,6 +80,166 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def extract_coder_artifacts(
+    subtask: dict,
+    commit_message: str | None,
+    diff_stats: dict,
+    success: bool,
+) -> list[dict]:
+    """
+    Extract artifacts from coder session for ROI tracking.
+
+    Args:
+        subtask: The subtask that was worked on
+        commit_message: Git commit message (if any)
+        diff_stats: Git diff stats with lines_added, lines_removed, files_changed
+        success: Whether the subtask was completed successfully
+
+    Returns:
+        List of artifact dicts with type, content, value_usd, description, tab
+    """
+    artifacts = []
+
+    # Code implementation artifact ($200)
+    if success and diff_stats.get("lines_added", 0) > 0:
+        artifacts.append({
+            "type": "code_implementation",
+            "format": "code",
+            "content": f"Implemented: {subtask.get('description', 'subtask')[:200]}",
+            "value_usd": 200,
+            "description": f"Code implementation (+{diff_stats.get('lines_added', 0)} lines)",
+            "tab": "dev",
+        })
+
+    # Commit summary artifact ($25 each)
+    if commit_message:
+        artifacts.append({
+            "type": "commit_summary",
+            "format": "text",
+            "content": commit_message[:500],
+            "value_usd": 25,
+            "description": "Git commit",
+            "tab": "dev",
+        })
+
+    # Refactoring artifact ($150) - detect from commit message or file changes
+    if commit_message:
+        refactor_keywords = ["refactor", "clean", "restructure", "reorganize", "simplify", "extract"]
+        if any(kw in commit_message.lower() for kw in refactor_keywords):
+            artifacts.append({
+                "type": "refactoring",
+                "format": "text",
+                "content": f"Refactoring: {commit_message[:200]}",
+                "value_usd": 150,
+                "description": "Code refactoring",
+                "tab": "techlead",
+            })
+
+    # Test written artifact ($100) - detect from commit message or subtask
+    subtask_desc = subtask.get("description", "").lower()
+    if commit_message:
+        test_keywords = ["test", "spec", "unittest", "pytest", "jest", "mocha"]
+        if any(kw in commit_message.lower() for kw in test_keywords) or any(kw in subtask_desc for kw in test_keywords):
+            artifacts.append({
+                "type": "test_written",
+                "format": "text",
+                "content": f"Tests: {commit_message[:200]}",
+                "value_usd": 100,
+                "description": "Test code added",
+                "tab": "dev",
+            })
+
+    return artifacts
+
+
+async def publish_coder_roi(
+    project_dir: Path,
+    spec_dir: Path,
+    subtask_id: str,
+    subtask: dict,
+    commit_before: str | None,
+    commit_after: str | None,
+    trace_id: str | None,
+    success: bool,
+) -> None:
+    """
+    Publish ROI metrics for a coder session.
+
+    Args:
+        project_dir: Project directory for git operations
+        spec_dir: Spec directory
+        subtask_id: The subtask ID
+        subtask: The subtask dict
+        commit_before: Commit hash before session
+        commit_after: Commit hash after session
+        trace_id: Langfuse trace ID (if available)
+        success: Whether the subtask was completed
+    """
+    if not ROI_PUBLISHER_AVAILABLE:
+        logger.debug("ROI publisher not available, skipping coder ROI")
+        return
+
+    try:
+        # Get git diff stats
+        diff_stats = get_git_diff_stats(project_dir, commit_before)
+
+        # Get commit message if there was a new commit
+        commit_message = None
+        if commit_after and commit_after != commit_before:
+            import subprocess
+            try:
+                result = subprocess.run(
+                    ["git", "log", "-1", "--format=%s", commit_after],
+                    cwd=project_dir,
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    commit_message = result.stdout.strip()
+            except Exception:
+                pass
+
+        # Extract artifacts
+        artifacts = extract_coder_artifacts(subtask, commit_message, diff_stats, success)
+
+        # Count commits made
+        commits_made = 1 if commit_after and commit_after != commit_before else 0
+
+        # Count tests written (simple heuristic from artifacts)
+        tests_written = len([a for a in artifacts if a["type"] == "test_written"])
+
+        # Get project_id from spec_dir parent or project_dir
+        project_id = project_dir.name
+
+        # Publish ROI
+        await publish_feature_roi(
+            feature_type="coder",
+            project_id=project_id,
+            cost_usd=0.0,  # Cost is tracked at trace level, we just track metrics here
+            tokens=0,  # Tokens tracked at trace level
+            metrics={
+                "files_changed": diff_stats.get("files_changed", 0),
+                "lines_added": diff_stats.get("lines_added", 0),
+                "lines_removed": diff_stats.get("lines_removed", 0),
+                "commits_made": commits_made,
+                "tests_written": tests_written,
+                "subtasks_completed": 1 if success else 0,
+                "subtasks_total": 1,
+            },
+            spec_id=spec_dir.name,
+            trace_id=trace_id,
+        )
+
+        logger.info(
+            f"Coder ROI published: +{diff_stats.get('lines_added', 0)} -{diff_stats.get('lines_removed', 0)} "
+            f"files={diff_stats.get('files_changed', 0)} commits={commits_made} "
+            f"artifacts={len(artifacts)}"
+        )
+
+    except Exception as e:
+        logger.warning(f"Failed to publish coder ROI: {e}")
+
+
 async def post_session_processing(
     spec_dir: Path,
     project_dir: Path,
@@ -83,6 +251,7 @@ async def post_session_processing(
     linear_enabled: bool = False,
     status_manager: StatusManager | None = None,
     source_spec_dir: Path | None = None,
+    trace_id: str | None = None,
 ) -> bool:
     """
     Process session results and update memory automatically.
@@ -100,6 +269,7 @@ async def post_session_processing(
         linear_enabled: Whether Linear integration is enabled
         status_manager: Optional status manager for ccstatusline
         source_spec_dir: Original spec directory (for syncing back from worktree)
+        trace_id: Langfuse trace ID for ROI tracking (optional)
 
     Returns:
         True if subtask was completed successfully
@@ -216,6 +386,21 @@ async def post_session_processing(
         except Exception as e:
             logger.warning(f"Error saving session memory: {e}")
             print_status("Memory save failed", "warning")
+
+        # Publish coder ROI metrics (non-blocking, wrapped in try/except)
+        try:
+            await publish_coder_roi(
+                project_dir=project_dir,
+                spec_dir=spec_dir,
+                subtask_id=subtask_id,
+                subtask=subtask,
+                commit_before=commit_before,
+                commit_after=commit_after,
+                trace_id=trace_id,
+                success=True,
+            )
+        except Exception as e:
+            logger.debug(f"Coder ROI publishing failed (non-critical): {e}")
 
         return True
 

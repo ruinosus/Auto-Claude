@@ -42,7 +42,7 @@ describe('MCPResourcesList', () => {
   ];
 
   it('renders list of resources', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
     expect(screen.getByText('Project README')).toBeTruthy();
     expect(screen.getByText('Project Config')).toBeTruthy();
     expect(screen.getByText('User Profile API')).toBeTruthy();
@@ -50,20 +50,20 @@ describe('MCPResourcesList', () => {
   });
 
   it('displays resource URIs in code format', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
     expect(screen.getByText('file:///user/docs/readme.md')).toBeTruthy();
     expect(screen.getByText('file:///user/{project}/config.json')).toBeTruthy();
   });
 
   it('displays resource descriptions when provided', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
     expect(screen.getByText('Main project documentation')).toBeTruthy();
     expect(screen.getByText('Configuration file for project')).toBeTruthy();
     expect(screen.getByText('Fetch user profile data')).toBeTruthy();
   });
 
   it('shows Template badge for template resources', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
 
     // Should have 3 template badges (resources with isTemplate: true)
     const templateBadges = screen.getAllByText('Template');
@@ -79,19 +79,19 @@ describe('MCPResourcesList', () => {
       }
     ];
 
-    render(<MCPResourcesList resources={nonTemplateResources} />);
+    render(<MCPResourcesList resources={nonTemplateResources} serverId="test-server" />);
 
     expect(screen.queryByText('Template')).toBeNull();
   });
 
   it('displays MIME type when provided', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
     expect(screen.getByText(/Type: text\/markdown/)).toBeTruthy();
     expect(screen.getByText(/Type: application\/json/)).toBeTruthy();
   });
 
   it('displays template parameters when provided', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
 
     // Check for parameter displays
     expect(screen.getByText(/Parameters:.*\{project\}/)).toBeTruthy();
@@ -100,7 +100,7 @@ describe('MCPResourcesList', () => {
   });
 
   it('shows copy URI button for each resource', () => {
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
 
     // Should have copy buttons - one for each resource
     const copyButtons = screen.getAllByTitle('Copy URI');
@@ -116,7 +116,7 @@ describe('MCPResourcesList', () => {
       }
     });
 
-    render(<MCPResourcesList resources={mockResources} />);
+    render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
 
     const copyButtons = screen.getAllByTitle('Copy URI');
     fireEvent.click(copyButtons[0]);
@@ -126,7 +126,7 @@ describe('MCPResourcesList', () => {
   });
 
   it('displays empty state when no resources provided', () => {
-    render(<MCPResourcesList resources={[]} />);
+    render(<MCPResourcesList resources={[]} serverId="test-server" />);
     expect(screen.getByText('No resources available')).toBeTruthy();
   });
 
@@ -139,7 +139,7 @@ describe('MCPResourcesList', () => {
       }
     ];
 
-    render(<MCPResourcesList resources={resourcesWithoutDescription} />);
+    render(<MCPResourcesList resources={resourcesWithoutDescription} serverId="test-server" />);
     expect(screen.getByText('Test Resource')).toBeTruthy();
     expect(screen.getByText('file:///test.txt')).toBeTruthy();
   });
@@ -154,7 +154,7 @@ describe('MCPResourcesList', () => {
       }
     ];
 
-    render(<MCPResourcesList resources={resourcesWithoutMimeType} />);
+    render(<MCPResourcesList resources={resourcesWithoutMimeType} serverId="test-server" />);
 
     // Should not show "Type:" section
     expect(screen.queryByText(/Type:/)).toBeNull();
@@ -169,7 +169,7 @@ describe('MCPResourcesList', () => {
       }
     ];
 
-    render(<MCPResourcesList resources={templateResourcesWithoutParams} />);
+    render(<MCPResourcesList resources={templateResourcesWithoutParams} serverId="test-server" />);
     expect(screen.getByText('Test Template')).toBeTruthy();
     expect(screen.getByText('Template')).toBeTruthy();
   });
@@ -184,7 +184,7 @@ describe('MCPResourcesList', () => {
       }
     ];
 
-    render(<MCPResourcesList resources={multiParamResources} />);
+    render(<MCPResourcesList resources={multiParamResources} serverId="test-server" />);
 
     // Should show all parameters comma-separated
     const paramsText = screen.getByText(/Parameters:/);
@@ -194,7 +194,7 @@ describe('MCPResourcesList', () => {
   });
 
   it('uses URI as key for rendering', () => {
-    const { container } = render(<MCPResourcesList resources={mockResources} />);
+    const { container } = render(<MCPResourcesList resources={mockResources} serverId="test-server" />);
 
     // Each resource should be in its own container
     const resourceCards = container.querySelectorAll('.border.rounded');

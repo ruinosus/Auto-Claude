@@ -5,8 +5,12 @@ Planner Agent Module
 Handles follow-up planner sessions for adding new subtasks to completed specs.
 """
 
+import json
 import logging
+import re
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from core.client import create_client
 from phase_config import get_phase_model, get_phase_thinking_budget
@@ -29,7 +33,224 @@ from ui import (
 
 from .session import run_agent_session
 
+# Langfuse integration (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    _langfuse_init_result = False
+
+# ROI publisher (optional - graceful degradation if not available)
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+
+def extract_planner_artifacts(
+    plan_data: dict | None,
+    subtasks: list[dict],
+    response_text: str = "",
+) -> list[dict]:
+    """
+    Extract artifacts from a planning session.
+
+    Args:
+        plan_data: The implementation plan dictionary (if available)
+        subtasks: List of subtask dictionaries from the plan
+        response_text: Raw response text from the planner agent
+
+    Returns:
+        List of artifact dictionaries with type, value_usd, content, etc.
+    """
+    artifacts = []
+
+    # 1. Implementation plan artifact ($300) - the complete plan
+    if plan_data:
+        artifacts.append({
+            "type": "implementation_plan",
+            "format": "json",
+            "content": json.dumps(plan_data, indent=2)[:1000],  # Limit size
+            "value_usd": 300,
+            "description": f"Implementation plan: {plan_data.get('feature', 'Unknown feature')}",
+            "tab": "techlead",
+        })
+
+    # 2. Subtask definition artifacts ($50 each)
+    for subtask in subtasks:
+        subtask_desc = subtask.get("description", "")[:200]
+        artifacts.append({
+            "type": "subtask_definition",
+            "format": "text",
+            "content": subtask_desc,
+            "value_usd": 50,
+            "description": f"Subtask: {subtask.get('id', 'unknown')}",
+            "tab": "dev",
+        })
+
+    # 3. Architecture decision artifacts ($200 each) - extract from response text
+    architecture_keywords = [
+        "architecture", "design pattern", "structure", "approach",
+        "framework", "component", "module", "layer", "service"
+    ]
+    if response_text:
+        sentences = re.split(r'[.!?\n]', response_text)
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(kw in sentence_lower for kw in architecture_keywords):
+                if "decision" in sentence_lower or "choose" in sentence_lower or "use" in sentence_lower:
+                    if len(sentence.strip()) > 40:
+                        artifacts.append({
+                            "type": "architecture_decision",
+                            "format": "text",
+                            "content": sentence.strip()[:250],
+                            "value_usd": 200,
+                            "description": "Architecture decision",
+                            "tab": "techlead",
+                        })
+                        break  # Only extract one per session
+
+    # 4. Risk assessment artifacts ($100 each) - extract from response text
+    risk_keywords = [
+        "risk", "potential issue", "concern", "challenge", "difficulty",
+        "complexity", "dependency", "blocker", "caution", "warning"
+    ]
+    if response_text:
+        sentences = re.split(r'[.!?\n]', response_text)
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(kw in sentence_lower for kw in risk_keywords):
+                if len(sentence.strip()) > 30:
+                    artifacts.append({
+                        "type": "risk_assessment",
+                        "format": "text",
+                        "content": sentence.strip()[:250],
+                        "value_usd": 100,
+                        "description": "Risk assessment",
+                        "tab": "ops",
+                    })
+                    break  # Only extract one per session
+
+    return artifacts
+
+
+async def publish_planner_roi(
+    project_dir: Path,
+    spec_dir: Path,
+    plan_data: dict | None,
+    subtasks: list[dict],
+    phases_count: int,
+    response_text: str,
+    trace_id: str | None,
+    complexity_level: str = "standard",
+) -> dict[str, Any] | None:
+    """
+    Publish ROI metrics for a planner session.
+
+    Args:
+        project_dir: Project root directory
+        spec_dir: Spec directory
+        plan_data: The implementation plan dictionary
+        subtasks: List of subtasks from the plan
+        phases_count: Number of phases in the plan
+        response_text: Raw response text from the planner
+        trace_id: Langfuse trace ID (if available)
+        complexity_level: Complexity level of the spec
+
+    Returns:
+        ROI result dictionary or None if publishing failed
+    """
+    if not ROI_PUBLISHER_AVAILABLE:
+        logger.debug("ROI publisher not available, skipping ROI publish")
+        return None
+
+    try:
+        project_id = project_dir.name
+        spec_id = spec_dir.name
+
+        # Extract artifacts
+        artifacts = extract_planner_artifacts(plan_data, subtasks, response_text)
+
+        # Count risks identified from response text
+        risks_identified = 0
+        risk_keywords = ["risk", "concern", "challenge", "difficulty", "blocker"]
+        if response_text:
+            response_lower = response_text.lower()
+            for kw in risk_keywords:
+                risks_identified += response_lower.count(kw)
+            risks_identified = min(risks_identified, 10)  # Cap at 10
+
+        # Metrics for planner
+        metrics = {
+            "subtasks_created": len(subtasks),
+            "phases_defined": phases_count,
+            "risks_identified": risks_identified,
+            "complexity_level": complexity_level,
+            # Also include as build metrics since planner is part of build phase
+            "subtasks_completed": 0,  # Planning phase - no subtasks completed yet
+            "subtasks_total": len(subtasks),
+            "files_changed": 0,
+            "lines_added": 0,
+            "lines_removed": 0,
+        }
+
+        # Publish ROI
+        result = await publish_feature_roi(
+            feature_type="planner",  # Will map to BUILD_PLANNER
+            project_id=project_id,
+            cost_usd=0.0,  # Cost tracked separately in session
+            tokens=0,  # Tokens tracked separately in session
+            metrics=metrics,
+            spec_id=spec_id,
+            trace_id=trace_id,
+        )
+
+        # Save artifacts to file for traceability
+        try:
+            artifacts_dir = spec_dir / "artifacts"
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            artifacts_file = artifacts_dir / f"planner_artifacts_{timestamp}.json"
+
+            artifact_report = {
+                "timestamp": datetime.now().isoformat(),
+                "trace_id": trace_id,
+                "spec_id": spec_id,
+                "project_id": project_id,
+                "metrics": metrics,
+                "artifacts": artifacts,
+                "total_value_usd": sum(a.get("value_usd", 0) for a in artifacts),
+                "roi_result": result,
+            }
+
+            with open(artifacts_file, "w") as f:
+                json.dump(artifact_report, f, indent=2, default=str)
+
+            logger.debug(f"Planner artifacts saved to {artifacts_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save planner artifacts: {e}")
+
+        logger.info(
+            f"Published planner ROI: {len(subtasks)} subtasks, "
+            f"{phases_count} phases, {len(artifacts)} artifacts"
+        )
+
+        return result
+
+    except Exception as e:
+        logger.warning(f"Failed to publish planner ROI: {e}")
+        return None
 
 
 async def run_followup_planner(
@@ -146,6 +367,47 @@ async def run_followup_planner(
                 # Reset the plan status to in_progress (in case planner didn't)
                 plan.reset_for_followup()
                 plan.save(plan_file)
+
+                # Publish ROI metrics for the planning session
+                try:
+                    # Extract subtasks as dicts for ROI
+                    subtasks_data = [
+                        {"id": s.id, "description": s.description}
+                        for s in all_subtasks
+                    ]
+
+                    # Load plan data as dict
+                    with open(plan_file) as f:
+                        plan_data = json.load(f)
+
+                    # Determine complexity level from spec metadata
+                    complexity_level = "standard"
+                    task_metadata_file = spec_dir / "task_metadata.json"
+                    if task_metadata_file.exists():
+                        try:
+                            with open(task_metadata_file) as f:
+                                task_meta = json.load(f)
+                                complexity_level = task_meta.get("complexity", "standard")
+                        except Exception:
+                            pass
+
+                    await publish_planner_roi(
+                        project_dir=project_dir,
+                        spec_dir=spec_dir,
+                        plan_data=plan_data,
+                        subtasks=subtasks_data,
+                        phases_count=len(plan.phases),
+                        response_text=response,
+                        trace_id=trace_id,
+                        complexity_level=complexity_level,
+                    )
+
+                    # Flush Langfuse to ensure ROI is sent
+                    if LANGFUSE_AVAILABLE and is_langfuse_ready():
+                        flush_langfuse()
+
+                except Exception as e:
+                    logger.warning(f"Failed to publish planner ROI: {e}")
 
                 print()
                 content = [

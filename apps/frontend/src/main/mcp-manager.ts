@@ -3,156 +3,131 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { MCPServer, MCPServerConfig, MCPTestConnectionResult, CustomServerConfig, MCPServersRegistry, FastMCPServerConfig } from '../shared/types/mcp';
 import { updateEnvVars, getEnvPath, readEnvFile } from './mcp-config';
+import { getBuiltInServers } from './mcp-servers-config';
+import { MCPManager } from './mcp-manager-v2';
+
+// Singleton MCPManager instance for testing connections
+let testMcpManager: MCPManager | null = null;
+
+function getTestMcpManager(): MCPManager {
+  if (!testMcpManager) {
+    testMcpManager = new MCPManager();
+  }
+  return testMcpManager;
+}
 
 /**
- * Get built-in MCP server definitions
+ * Find a server by ID from all sources (built-in + global registry + project registry)
  */
-function getBuiltInServers(): MCPServer[] {
-  return [
-    {
-      id: 'context7',
-      name: 'Context7',
-      description: 'Real-time documentation lookup for any library',
-      type: 'builtin',
-      category: 'Documentation',
-      status: 'connected',
-      enabled: true,
-      requiredEnvVars: [],
-      capabilities: {
-        tools: [] // Will be loaded dynamically
-      },
-      toolCount: 2,
-      promptCount: 0,
-      resourceCount: 0,
-      connectionType: 'sdk',
-      icon: 'Book',
-      color: 'blue',
-      customConfig: {
-        connectionType: 'stdio',
-        command: 'npx',
-        args: ['-y', '@upstash/context7-mcp']
-      }
-    },
-    {
-      id: 'linear',
-      name: 'Linear',
-      description: 'Project management and issue tracking',
-      type: 'builtin',
-      category: 'Project Management',
-      status: 'disabled',
-      enabled: false,
-      requiredEnvVars: ['LINEAR_API_KEY'],
-      configUrl: 'https://linear.app/settings/api',
-      capabilities: {},
-      toolCount: 12,
-      promptCount: 0,
-      resourceCount: 0,
-      connectionType: 'http',
-      icon: 'Zap',
-      color: 'blue'
-    },
-    {
-      id: 'graphiti',
-      name: 'Graphiti Memory',
-      description: 'Knowledge graph memory with semantic search',
-      type: 'builtin',
-      category: 'Memory',
-      status: 'disabled',
-      enabled: false,
-      requiredEnvVars: ['GRAPHITI_MCP_URL'],
-      optionalEnvVars: ['GRAPHITI_LLM_PROVIDER', 'GRAPHITI_EMBEDDER_PROVIDER'],
-      capabilities: {},
-      toolCount: 5,
-      promptCount: 3,
-      resourceCount: 8,
-      connectionType: 'http',
-      pythonVersion: '3.12+',
-      systemRequirements: ['real_ladybug', 'graphiti-core'],
-      icon: 'Brain',
-      color: 'purple'
-    },
-    {
-      id: 'electron',
-      name: 'Electron Automation',
-      description: 'Desktop app testing via Chrome DevTools Protocol',
-      type: 'builtin',
-      category: 'Browser Automation',
-      status: 'disabled',
-      enabled: false,
-      requiredEnvVars: ['ELECTRON_MCP_ENABLED'],
-      optionalEnvVars: ['ELECTRON_DEBUG_PORT'],
-      capabilities: {},
-      toolCount: 4,
-      promptCount: 0,
-      resourceCount: 0,
-      connectionType: 'http',
-      icon: 'Monitor',
-      color: 'blue'
-    },
-    {
-      id: 'puppeteer',
-      name: 'Puppeteer Browser',
-      description: 'Web browser automation and testing',
-      type: 'builtin',
-      category: 'Browser Automation',
-      status: 'disabled',
-      enabled: false,
-      requiredEnvVars: [],
-      capabilities: {},
-      toolCount: 8,
-      promptCount: 0,
-      resourceCount: 0,
-      connectionType: 'stdio',
-      icon: 'Globe',
-      color: 'blue',
-      customConfig: {
-        connectionType: 'stdio',
-        command: 'npx',
-        args: ['-y', '@modelcontextprotocol/server-puppeteer']
-      }
-    },
-    {
-      id: 'auto-claude-tools',
-      name: 'Auto-Claude Tools',
-      description: 'Internal MCP server for build progress and context. Set AUTO_CLAUDE_TOOLS_MODE=stdio or http',
-      type: 'internal',
-      category: 'Internal',
-      status: 'connected',
-      enabled: true,
-      requiredEnvVars: [],
-      capabilities: {},
-      toolCount: 3,
-      promptCount: 0,
-      resourceCount: 0,
-      // Check env var for mode selection (default: http for better performance)
-      connectionType: process.env.AUTO_CLAUDE_TOOLS_MODE === 'stdio' ? 'stdio' as const : 'http' as const,
-      icon: 'Wrench',
-      color: 'gray',
-      // Configure based on mode
-      ...(process.env.AUTO_CLAUDE_TOOLS_MODE === 'stdio' ? {
-        // Option A: STDIO subprocess
-        customConfig: {
-          connectionType: 'stdio' as const,
-          command: 'npx',
-          args: [
-            'tsx',
-            path.join(__dirname, 'mcp-servers', 'auto-claude-tools-stdio.ts')
-          ],
-          env: {
-            ...process.env,
-            ELECTRON_API_PORT: '9824'
-          }
-        }
-      } : {
-        // Option B: HTTP localhost (default)
-        endpoint: 'http://localhost:9823/mcp',
-        customConfig: {
-          connectionType: 'http' as const,
-          baseUrl: 'http://localhost:9823/mcp'
-        }
-      })
+async function findServerById(serverId: string, projectPath?: string): Promise<MCPServer | null> {
+  // Check built-in servers first
+  const builtInServers = getBuiltInServers();
+  const builtIn = builtInServers.find(s => s.id === serverId);
+  if (builtIn) return builtIn;
+
+  // Check global registry
+  try {
+    const globalRegistry = await loadRegistry('global');
+    const globalServer = globalRegistry.servers.find(s => s.id === serverId);
+    if (globalServer) return globalServer;
+  } catch (error) {
+    // Ignore if registry doesn't exist
+  }
+
+  // Check project registry if projectPath provided
+  if (projectPath) {
+    try {
+      const projectRegistry = await loadRegistry('project', projectPath);
+      const projectServer = projectRegistry.servers.find(s => s.id === serverId);
+      if (projectServer) return projectServer;
+    } catch (error) {
+      // Ignore if registry doesn't exist
     }
-  ];
+  }
+
+  return null;
+}
+
+/**
+ * Convert MCPServer to config format for MCPManager connection
+ * Handles both nested (customConfig) and root-level (legacy/FastMCP) formats
+ */
+function serverToConfig(server: MCPServer): any {
+  // Support both formats: customConfig nested OR root-level fields
+  const serverAny = server as any;
+  const hasCustomConfig = server.customConfig && Object.keys(server.customConfig).length > 0;
+
+  // Get values from customConfig if available, otherwise from root level
+  const command = server.customConfig?.command || serverAny.command;
+  const args = server.customConfig?.args || serverAny.args;
+  const baseUrl = server.customConfig?.baseUrl || serverAny.url || server.endpoint;
+  const workingDir = server.customConfig?.workingDir || serverAny.cwd;
+  const env = server.customConfig?.env || serverAny.env;
+  const authType = server.customConfig?.authType;
+  const authValue = server.customConfig?.authValue;
+
+  // Build headers from customConfig or root level, including auth conversion
+  const sourceHeaders = server.customConfig?.headers || serverAny.headers || {};
+  const headers: Record<string, string> = { ...sourceHeaders };
+
+  // Convert authType/authValue to proper Authorization header
+  if (authType && authValue) {
+    if (authType === 'bearer') {
+      headers['Authorization'] = `Bearer ${authValue}`;
+    } else if (authType === 'api-key') {
+      headers['Authorization'] = authValue;
+    }
+  }
+
+  // Determine transport: prefer explicit transport field, fallback to connectionType
+  const transport = serverAny.transport || (server.connectionType === 'http' ? 'http' : 'stdio');
+
+  return {
+    id: server.id,
+    name: server.name,
+    description: server.description,
+    transport: transport as 'http' | 'stdio',
+    command,
+    args,
+    url: baseUrl,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    cwd: workingDir,
+    env,
+    enabled: true,
+    category: server.category,
+    icon: server.icon
+  };
+}
+
+/**
+ * Convert CustomServerConfig to MCPServerConfig format for MCPManager connection
+ */
+function customConfigToServerConfig(config: CustomServerConfig): any {
+  // Build headers from config, including auth conversion
+  const headers: Record<string, string> = { ...(config.headers || {}) };
+
+  // Convert authType/authValue to proper Authorization header
+  if (config.authType && config.authValue) {
+    if (config.authType === 'bearer') {
+      headers['Authorization'] = `Bearer ${config.authValue}`;
+    } else if (config.authType === 'api-key') {
+      headers['Authorization'] = config.authValue;
+    }
+  }
+
+  return {
+    id: `test-${Date.now()}`,
+    name: config.name || 'Test Server',
+    description: config.description,
+    transport: config.connectionType === 'http' || config.connectionType === 'sse' ? 'http' as const : 'stdio' as const,
+    command: config.command,
+    args: config.args,
+    url: config.baseUrl,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+    cwd: config.workingDir,
+    env: config.env,
+    enabled: true
+  };
 }
 
 /**
@@ -162,7 +137,7 @@ async function isServerEnabled(serverId: string, projectPath?: string): Promise<
   const envPath = getEnvPath(projectPath);
   const envVars = await readEnvFile(envPath);
 
-  // Check server-specific env vars
+  // Check server-specific env vars for built-in servers
   switch (serverId) {
     case 'linear':
       return !!envVars.LINEAR_API_KEY;
@@ -172,10 +147,15 @@ async function isServerEnabled(serverId: string, projectPath?: string): Promise<
       return envVars.ELECTRON_MCP_ENABLED === 'true';
     case 'context7':
     case 'auto-claude-tools':
-      return true; // Always enabled
     case 'puppeteer':
-      return false; // Auto-enabled based on project type
+      return true; // Always enabled
     default:
+      // For custom servers, check if they exist in registry
+      // Custom servers are enabled by default when added
+      const server = await findServerById(serverId, projectPath);
+      if (server) {
+        return server.enabled !== false; // Default to enabled
+      }
       return false;
   }
 }
@@ -326,14 +306,20 @@ export function registerMCPHandlers() {
         ...projectRegistry.servers
       ];
 
-      // Check enabled status for each server
+      // Check enabled status for each server and update status accordingly
       // Note: We don't load capabilities here anymore to avoid blocking/timeouts
       // Capabilities are loaded on-demand when user expands a server
       const serversWithStatus = await Promise.all(
-        allServers.map(async (server) => ({
-          ...server,
-          enabled: await isServerEnabled(server.id, projectPath)
-        }))
+        allServers.map(async (server) => {
+          const enabled = await isServerEnabled(server.id, projectPath);
+          const result = {
+            ...server,
+            enabled,
+            status: enabled ? 'connected' as const : 'disabled' as const
+          };
+          console.log(`[MCP List] Server ${server.id}: enabled=${enabled}, toolCount=${server.toolCount}, status=${result.status}`);
+          return result;
+        })
       );
 
       return serversWithStatus;
@@ -376,12 +362,19 @@ export function registerMCPHandlers() {
           return await testElectronConnection(port);
 
         case 'context7':
-        case 'auto-claude-tools':
           return {
             success: true,
             status: 'connected' as const,
             message: 'Always available',
-            toolsFound: serverId === 'context7' ? 2 : 6
+            toolsFound: 2
+          };
+
+        case 'auto-claude-tools':
+          return {
+            success: true,
+            status: 'connected' as const,
+            message: 'Always available - Build progress, context, and ROI tracking',
+            toolsFound: 11
           };
 
         case 'puppeteer':
@@ -416,40 +409,28 @@ export function registerMCPHandlers() {
       const { MCPManager } = await import('./mcp-manager-v2');
       const mcpManager = new MCPManager();
 
-      // Get server config from built-in servers or registry
-      const builtInServers = getBuiltInServers();
-      const server = builtInServers.find(s => s.id === serverId);
+      // Find server from all sources (built-in + custom registries)
+      const server = await findServerById(serverId);
 
       if (!server) {
         throw new Error(`Server ${serverId} not found`);
       }
 
       // Convert to MCPServerConfig
-      const serverConfig = {
-        id: server.id,
-        name: server.name,
-        description: server.description,
-        transport: server.connectionType === 'sdk' ? 'stdio' as const :
-                   server.connectionType === 'http' ? 'http' as const :
-                   server.connectionType === 'stdio' ? 'stdio' as const :
-                   'stdio' as const,
-        command: server.customConfig?.command,
-        args: server.customConfig?.args,
-        url: server.customConfig?.baseUrl || server.endpoint,
-        headers: server.customConfig?.headers,
-        cwd: server.customConfig?.workingDir,
-        env: server.customConfig?.env,
-        enabled: true,
-        category: server.category,
-        icon: server.icon
-      };
+      const serverConfig = serverToConfig(server);
 
       // Connect and fetch capabilities
       console.log(`[MCP Manager] Connecting to ${serverId}...`);
       await mcpManager.connect(serverConfig);
 
-      const tools = await mcpManager.listTools(serverId);
-      console.log(`[MCP Manager] Loaded ${tools.length} tools for ${serverId}`);
+      // Fetch all capabilities in parallel
+      const [tools, prompts, resources] = await Promise.all([
+        mcpManager.listTools(serverId),
+        mcpManager.listPrompts(serverId),
+        mcpManager.listResources(serverId)
+      ]);
+
+      console.log(`[MCP Manager] Loaded for ${serverId}: ${tools.length} tools, ${prompts.length} prompts, ${resources.length} resources`);
 
       // Transform tools to include inputSchema
       const transformedTools = tools.map((tool: any) => ({
@@ -460,13 +441,46 @@ export function registerMCPHandlers() {
         parameters: []
       }));
 
+      // Transform prompts
+      const transformedPrompts = prompts.map((prompt: any) => ({
+        name: prompt.name,
+        displayName: prompt.name,
+        description: prompt.description || '',
+        arguments: prompt.arguments?.map((arg: any) => ({
+          name: arg.name,
+          description: arg.description || '',
+          required: arg.required || false
+        })) || []
+      }));
+
+      // Transform resources
+      const transformedResources = resources.map((resource: any) => ({
+        uri: resource.uri,
+        name: resource.name || resource.uri,
+        description: resource.description || '',
+        mimeType: resource.mimeType,
+        isTemplate: !!resource.uriTemplate
+      }));
+
       return {
         tools: transformedTools,
-        prompts: [],
-        resources: []
+        prompts: transformedPrompts,
+        resources: transformedResources
       };
     } catch (error) {
       console.error(`[MCP Manager] Failed to get capabilities for ${serverId}:`, error);
+
+      // Fallback to static capabilities from any source
+      const server = await findServerById(serverId);
+      if (server?.capabilities?.tools && server.capabilities.tools.length > 0) {
+        console.log(`[MCP Manager] Using static capabilities for ${serverId}: ${server.capabilities.tools.length} tools`);
+        return {
+          tools: server.capabilities.tools,
+          prompts: server.capabilities.prompts || [],
+          resources: server.capabilities.resources || []
+        };
+      }
+
       return {
         tools: [],
         prompts: [],
@@ -483,33 +497,15 @@ export function registerMCPHandlers() {
       const { MCPManager } = await import('./mcp-manager-v2');
       const mcpManager = new MCPManager();
 
-      // Get server config from built-in servers or registry
-      const builtInServers = getBuiltInServers();
-      const server = builtInServers.find(s => s.id === serverId);
+      // Find server from all sources (built-in + custom registries)
+      const server = await findServerById(serverId);
 
       if (!server) {
         throw new Error(`Server ${serverId} not found`);
       }
 
       // Convert to MCPServerConfig
-      const serverConfig = {
-        id: server.id,
-        name: server.name,
-        description: server.description,
-        transport: server.connectionType === 'sdk' ? 'stdio' as const :
-                   server.connectionType === 'http' ? 'http' as const :
-                   server.connectionType === 'stdio' ? 'stdio' as const :
-                   'stdio' as const,
-        command: server.customConfig?.command,
-        args: server.customConfig?.args,
-        url: server.customConfig?.baseUrl || server.endpoint,
-        headers: server.customConfig?.headers,
-        cwd: server.customConfig?.workingDir,
-        env: server.customConfig?.env,
-        enabled: true,
-        category: server.category,
-        icon: server.icon
-      };
+      const serverConfig = serverToConfig(server);
 
       console.log(`[MCP Manager] Calling tool ${toolName} on server ${serverId} with args:`, args);
 
@@ -526,17 +522,136 @@ export function registerMCPHandlers() {
   });
 
   /**
-   * List prompts (stub)
+   * List prompts from an MCP server
    */
   ipcMain.handle('mcp:listPrompts', async (event, serverId: string) => {
-    return [];
+    try {
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
+      // Find server from all sources (built-in + custom registries)
+      const server = await findServerById(serverId);
+
+      if (!server) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      const serverConfig = serverToConfig(server);
+
+      await mcpManager.connect(serverConfig);
+      const prompts = await mcpManager.listPrompts(serverId);
+
+      return prompts.map((prompt: any) => ({
+        name: prompt.name,
+        displayName: prompt.name,
+        description: prompt.description || '',
+        arguments: prompt.arguments?.map((arg: any) => ({
+          name: arg.name,
+          description: arg.description || '',
+          required: arg.required || false
+        })) || []
+      }));
+    } catch (error) {
+      console.error(`[MCP Manager] Error listing prompts for ${serverId}:`, error);
+      return [];
+    }
   });
 
   /**
-   * List resources (stub)
+   * List resources from an MCP server
    */
   ipcMain.handle('mcp:listResources', async (event, serverId: string) => {
-    return [];
+    try {
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
+      // Find server from all sources (built-in + custom registries)
+      const server = await findServerById(serverId);
+
+      if (!server) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      const serverConfig = serverToConfig(server);
+
+      await mcpManager.connect(serverConfig);
+      const resources = await mcpManager.listResources(serverId);
+
+      return resources.map((resource: any) => ({
+        uri: resource.uri,
+        name: resource.name || resource.uri,
+        description: resource.description || '',
+        mimeType: resource.mimeType,
+        isTemplate: !!resource.uriTemplate
+      }));
+    } catch (error) {
+      console.error(`[MCP Manager] Error listing resources for ${serverId}:`, error);
+      return [];
+    }
+  });
+
+  /**
+   * Get a prompt from an MCP server (execute prompt template)
+   */
+  ipcMain.handle('mcp:getPrompt', async (event, serverId: string, promptName: string, args?: Record<string, string>) => {
+    try {
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
+      // Find server from all sources (built-in + custom registries)
+      const server = await findServerById(serverId);
+
+      if (!server) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      const serverConfig = serverToConfig(server);
+
+      await mcpManager.connect(serverConfig);
+      const content = await mcpManager.getPrompt(serverId, promptName, args);
+
+      return { content };
+    } catch (error) {
+      console.error(`[MCP Manager] Error getting prompt ${promptName}:`, error);
+      return { content: '', error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * Read a resource from an MCP server
+   */
+  ipcMain.handle('mcp:readResource', async (event, serverId: string, uri: string) => {
+    try {
+      const { MCPManager } = await import('./mcp-manager-v2');
+      const mcpManager = new MCPManager();
+
+      // Find server from all sources (built-in + custom registries)
+      const server = await findServerById(serverId);
+
+      if (!server) {
+        throw new Error(`Server ${serverId} not found`);
+      }
+
+      const serverConfig = serverToConfig(server);
+
+      await mcpManager.connect(serverConfig);
+      const result = await mcpManager.readResource(serverId, uri);
+
+      // Extract content from the result
+      const contents = result.contents || [];
+      if (contents.length === 0) {
+        return { content: '', mimeType: 'text/plain' };
+      }
+
+      const firstContent = contents[0];
+      const content = firstContent.text || (firstContent.blob ? atob(firstContent.blob) : '');
+      const mimeType = firstContent.mimeType || 'text/plain';
+
+      return { content, mimeType };
+    } catch (error) {
+      console.error(`[MCP Manager] Error reading resource ${uri}:`, error);
+      return { content: '', error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   /**
@@ -561,7 +676,7 @@ export function registerMCPHandlers() {
     try {
       console.log('[FastMCP] Importing registry-integration module...');
       const { generateAndRegisterServer } = await import('./registry-integration');
-      const registryPath = path.join(app.getPath('home'), '.mcp-servers.json');
+      const registryPath = getRegistryPath('global');
       console.log('[FastMCP] Registry path:', registryPath);
 
       console.log('[FastMCP] Calling generateAndRegisterServer...');
@@ -616,15 +731,21 @@ export function registerMCPHandlers() {
         description: config.description || '',
         type: 'custom',
         category: 'Custom',
-        status: 'disconnected',
-        enabled: false,
+        status: 'connected', // Start as connected, will update on actual connection
+        enabled: true, // Custom servers are enabled by default
         requiredEnvVars: [],
-        capabilities: {},
-        toolCount: 0,
+        capabilities: {
+          tools: [],
+          prompts: [],
+          resources: []
+        },
+        toolCount: 0, // Will be loaded dynamically via getCapabilities
         promptCount: 0,
         resourceCount: 0,
         connectionType: config.connectionType === 'http' || config.connectionType === 'sse' ? 'http' : 'stdio',
-        customConfig: config
+        customConfig: config,
+        icon: config.connectionType === 'http' || config.connectionType === 'sse' ? 'Globe' : 'Terminal',
+        color: 'purple'
       };
 
       // Add to registry
@@ -647,7 +768,7 @@ export function registerMCPHandlers() {
   });
 
   /**
-   * Test connection to custom MCP server (simulated for now)
+   * Test connection to custom MCP server - REAL implementation
    */
   ipcMain.handle('mcp:testConnectionCustom', async (event, config: CustomServerConfig) => {
     try {
@@ -657,31 +778,73 @@ export function registerMCPHandlers() {
         return {
           success: false,
           status: 'error' as const,
-          error: validationError
+          message: validationError
         };
       }
 
-      // For now, return simulated success with mock capabilities
-      // In production, this would actually attempt connection
-      return {
-        success: true,
-        status: 'connected' as const,
-        message: `Successfully connected to ${config.connectionType} server`,
-        capabilities: {
-          tools: [
-            { name: 'test-tool', description: 'A test tool' }
-          ],
-          prompts: [
-            { name: 'test-prompt', description: 'A test prompt' }
-          ],
-          resources: []
+      // Convert CustomServerConfig to MCPServerConfig format
+      const serverConfig = customConfigToServerConfig(config);
+
+      console.log('[mcp:testConnectionCustom] Testing connection to:', {
+        transport: serverConfig.transport,
+        url: serverConfig.url,
+        command: serverConfig.command,
+        hasHeaders: !!serverConfig.headers
+      });
+
+      // Get MCPManager instance and attempt real connection
+      const mcpManager = getTestMcpManager();
+
+      try {
+        // Connect to the server (this actually tests the connection)
+        await mcpManager.connect(serverConfig);
+
+        // If connection successful, fetch capabilities
+        const tools = await mcpManager.listTools(serverConfig.id);
+        const prompts = await mcpManager.listPrompts(serverConfig.id);
+        const resources = await mcpManager.listResources(serverConfig.id);
+
+        // Disconnect after test (cleanup)
+        await mcpManager.disconnect(serverConfig.id);
+
+        console.log('[mcp:testConnectionCustom] Connection successful:', {
+          tools: tools.length,
+          prompts: prompts.length,
+          resources: resources.length
+        });
+
+        return {
+          success: true,
+          status: 'connected' as const,
+          message: `Successfully connected to ${config.connectionType} server`,
+          capabilities: {
+            tools: tools.map(t => ({ name: t.name, description: t.description })),
+            prompts: prompts.map(p => ({ name: p.name, description: p.description })),
+            resources: resources.map(r => ({ uri: r.uri, name: r.name }))
+          }
+        };
+      } catch (connectionError) {
+        console.error('[mcp:testConnectionCustom] Connection failed:', connectionError);
+
+        // Cleanup on error
+        try {
+          await mcpManager.disconnect(serverConfig.id);
+        } catch (e) {
+          // Ignore cleanup errors
         }
-      };
+
+        return {
+          success: false,
+          status: 'error' as const,
+          message: connectionError instanceof Error ? connectionError.message : String(connectionError)
+        };
+      }
     } catch (error) {
+      console.error('[mcp:testConnectionCustom] Error:', error);
       return {
         success: false,
         status: 'error' as const,
-        error: error instanceof Error ? error.message : String(error)
+        message: error instanceof Error ? error.message : String(error)
       };
     }
   });

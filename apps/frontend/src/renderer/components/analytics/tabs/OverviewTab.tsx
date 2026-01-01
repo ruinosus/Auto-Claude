@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
+import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
 import { formatCurrency, formatTokens, formatHours, formatPercent } from '../utils/formatters';
 import {
   Zap,
@@ -292,6 +293,9 @@ export function OverviewTab({ data, loading }: OverviewTabProps) {
           </div>
         )}
       </div>
+
+      {/* Generated Artifacts */}
+      <ArtifactsPanel filterByTab="overview" title="All Generated Artifacts" />
     </div>
   );
 }

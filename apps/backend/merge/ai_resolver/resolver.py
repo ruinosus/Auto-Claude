@@ -11,7 +11,9 @@ resolution of conflicts using AI with minimal context.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
+from typing import Any, Dict, List, Optional
 
 from ..types import (
     ConflictRegion,
@@ -31,6 +33,89 @@ from .prompts import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Import Langfuse integration for tracing
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    # Initialize Langfuse early (idempotent - safe to call multiple times)
+    _langfuse_init_result = init_langfuse()
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    _langfuse_init_result = False
+
+# Import ROI publisher
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
+
+def extract_merge_artifacts(resolutions: List[MergeResult]) -> List[Dict[str, Any]]:
+    """
+    Extract artifacts from merge resolutions for ROI tracking.
+
+    Args:
+        resolutions: List of MergeResult objects from conflict resolution
+
+    Returns:
+        List of artifacts with type, value, and description
+    """
+    artifacts = []
+
+    for resolution in resolutions:
+        # Extract conflict_resolution artifacts ($150 each)
+        for conflict in resolution.conflicts_resolved:
+            artifacts.append({
+                "type": "conflict_resolution",
+                "format": "merge",
+                "content": f"Resolved conflict at {conflict.location} in {conflict.file_path}",
+                "value_usd": 150,
+                "description": f"AI resolved conflict: {conflict.reason[:100] if conflict.reason else 'conflict'}",
+                "tab": "dev",
+                "file_path": conflict.file_path,
+                "location": conflict.location,
+                "severity": conflict.severity.value if conflict.severity else "unknown",
+            })
+
+        # Extract merge_decision artifacts ($75 each)
+        if resolution.decision in [MergeDecision.AI_MERGED, MergeDecision.KEEP_OURS,
+                                   MergeDecision.KEEP_THEIRS, MergeDecision.COMBINED]:
+            decision_name = resolution.decision.value if hasattr(resolution.decision, 'value') else str(resolution.decision)
+            artifacts.append({
+                "type": "merge_decision",
+                "format": "decision",
+                "content": f"Merge decision: {decision_name} for {resolution.file_path}",
+                "value_usd": 75,
+                "description": f"Merge strategy: {decision_name}",
+                "tab": "dev",
+                "decision": decision_name,
+                "file_path": resolution.file_path,
+            })
+
+        # Extract code_choice artifacts ($50 each) from merged content
+        if resolution.merged_content:
+            # Count code blocks in merged content as code choices
+            code_blocks = re.findall(r'```(\w+)?\n(.*?)```', resolution.merged_content, re.DOTALL)
+            for i, (lang, _) in enumerate(code_blocks):
+                artifacts.append({
+                    "type": "code_choice",
+                    "format": lang or "text",
+                    "content": f"Code choice #{i+1} in {resolution.file_path}",
+                    "value_usd": 50,
+                    "description": f"AI selected code ({lang or 'text'})",
+                    "tab": "dev",
+                    "file_path": resolution.file_path,
+                })
+
+    return artifacts
 
 # Type for the AI call function
 AICallFunction = Callable[[str, str], str]
@@ -241,6 +326,7 @@ class AIResolver:
         baseline_codes: dict[str, str],
         task_snapshots: list[TaskSnapshot],
         batch: bool = True,
+        project_id: Optional[str] = None,
     ) -> list[MergeResult]:
         """
         Resolve multiple conflicts.
@@ -250,44 +336,196 @@ class AIResolver:
             baseline_codes: Map of location -> baseline code
             task_snapshots: All task snapshots
             batch: Whether to batch conflicts (reduces API calls)
+            project_id: Optional project ID for ROI tracking
 
         Returns:
             List of MergeResults
         """
         results = []
 
-        if batch and len(conflicts) > 1:
-            # Try to batch conflicts from the same file
-            by_file: dict[str, list[ConflictRegion]] = {}
-            for conflict in conflicts:
-                if conflict.file_path not in by_file:
-                    by_file[conflict.file_path] = []
-                by_file[conflict.file_path].append(conflict)
+        # Setup Langfuse trace context if available
+        use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready() and trace_context
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        langfuse_trace_id = None
 
-            for file_path, file_conflicts in by_file.items():
-                if len(file_conflicts) == 1:
-                    # Single conflict, resolve individually
-                    baseline = baseline_codes.get(file_conflicts[0].location, "")
-                    results.append(
-                        self.resolve_conflict(
-                            file_conflicts[0], baseline, task_snapshots
-                        )
-                    )
-                else:
-                    # Multiple conflicts in same file - batch resolve
-                    result = self._resolve_file_batch(
-                        file_path, file_conflicts, baseline_codes, task_snapshots
-                    )
-                    results.append(result)
-        else:
-            # Resolve each individually
-            for conflict in conflicts:
-                baseline = baseline_codes.get(conflict.location, "")
-                results.append(
-                    self.resolve_conflict(conflict, baseline, task_snapshots)
+        if use_langfuse:
+            try:
+                trace_name = f"merge-resolver-{len(conflicts)}-conflicts"
+                trace_ctx = trace_context(
+                    name=trace_name,
+                    project_id=project_id,
+                    agent_type="merge_resolver",
+                    metadata={
+                        "conflicts_count": len(conflicts),
+                        "batch_mode": batch,
+                        "files_involved": list(set(c.file_path for c in conflicts)),
+                    },
+                    tags=["merge", "conflict_resolution", f"conflicts:{len(conflicts)}"],
+                    input_data={
+                        "conflicts_count": len(conflicts),
+                        "batch_mode": batch,
+                    },
                 )
+                langfuse_ctx_obj = trace_ctx.__enter__()
+                if langfuse_ctx_obj and hasattr(langfuse_ctx_obj, 'trace_id'):
+                    langfuse_trace_id = langfuse_ctx_obj.trace_id
+                    logger.info(f"Created Langfuse trace for merge resolver: {langfuse_trace_id}")
+            except Exception as e:
+                logger.warning(f"Failed to create Langfuse trace: {e}")
+                trace_ctx = None
+
+        try:
+            if batch and len(conflicts) > 1:
+                # Try to batch conflicts from the same file
+                by_file: dict[str, list[ConflictRegion]] = {}
+                for conflict in conflicts:
+                    if conflict.file_path not in by_file:
+                        by_file[conflict.file_path] = []
+                    by_file[conflict.file_path].append(conflict)
+
+                for file_path, file_conflicts in by_file.items():
+                    if len(file_conflicts) == 1:
+                        # Single conflict, resolve individually
+                        baseline = baseline_codes.get(file_conflicts[0].location, "")
+                        results.append(
+                            self.resolve_conflict(
+                                file_conflicts[0], baseline, task_snapshots
+                            )
+                        )
+                    else:
+                        # Multiple conflicts in same file - batch resolve
+                        result = self._resolve_file_batch(
+                            file_path, file_conflicts, baseline_codes, task_snapshots
+                        )
+                        results.append(result)
+            else:
+                # Resolve each individually
+                for conflict in conflicts:
+                    baseline = baseline_codes.get(conflict.location, "")
+                    results.append(
+                        self.resolve_conflict(conflict, baseline, task_snapshots)
+                    )
+
+            # Publish ROI metrics
+            self._publish_roi_sync(
+                results=results,
+                project_id=project_id,
+                trace_id=langfuse_trace_id,
+            )
+
+        finally:
+            # Finalize Langfuse trace
+            if trace_ctx and langfuse_ctx_obj:
+                try:
+                    # Calculate summary metrics
+                    total_resolved = sum(len(r.conflicts_resolved) for r in results)
+                    total_remaining = sum(len(r.conflicts_remaining) for r in results)
+                    total_tokens = sum(r.tokens_used for r in results)
+
+                    langfuse_ctx_obj.set_output({
+                        "conflicts_resolved": total_resolved,
+                        "conflicts_remaining": total_remaining,
+                        "total_tokens": total_tokens,
+                        "ai_calls": sum(r.ai_calls_made for r in results),
+                    })
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception as e:
+                    logger.warning(f"Failed to finalize Langfuse trace: {e}")
 
         return results
+
+    def _publish_roi_sync(
+        self,
+        results: list[MergeResult],
+        project_id: Optional[str],
+        trace_id: Optional[str],
+    ) -> None:
+        """
+        Publish ROI metrics synchronously (wraps async call).
+
+        Args:
+            results: List of merge results
+            project_id: Project identifier
+            trace_id: Langfuse trace ID
+        """
+        if not ROI_PUBLISHER_AVAILABLE:
+            return
+
+        try:
+            import asyncio
+
+            # Calculate metrics from results
+            conflicts_resolved = sum(len(r.conflicts_resolved) for r in results)
+            files_merged = len(set(r.file_path for r in results if r.conflicts_resolved))
+            total_tokens = sum(r.tokens_used for r in results)
+
+            # Count decisions and code choices
+            merge_decisions = sum(
+                1 for r in results
+                if r.decision in [MergeDecision.AI_MERGED, MergeDecision.KEEP_OURS,
+                                  MergeDecision.KEEP_THEIRS, MergeDecision.COMBINED]
+            )
+            code_choices = sum(
+                len(re.findall(r'```(\w+)?\n', r.merged_content or ''))
+                for r in results
+            )
+
+            # Count manual interventions avoided (conflicts that didn't need human review)
+            manual_intervention_avoided = sum(
+                1 for r in results
+                if r.decision != MergeDecision.NEEDS_HUMAN_REVIEW
+                and r.decision != MergeDecision.FAILED
+            )
+
+            # Estimate cost (rough estimate based on tokens)
+            estimated_cost = (total_tokens / 1000) * 0.003  # ~$0.003 per 1K tokens
+
+            # Extract artifacts for traceability
+            artifacts = extract_merge_artifacts(results)
+
+            # Publish ROI
+            async def _publish():
+                try:
+                    roi_result = await publish_feature_roi(
+                        feature_type="merge_resolver",
+                        project_id=project_id or "unknown",
+                        cost_usd=estimated_cost,
+                        tokens=total_tokens,
+                        trace_id=trace_id,
+                        metrics={
+                            "conflicts_resolved": conflicts_resolved,
+                            "files_merged": files_merged,
+                            "manual_intervention_avoided": manual_intervention_avoided,
+                            "merge_decisions": merge_decisions,
+                            "code_choices": code_choices,
+                        },
+                    )
+                    logger.info(
+                        f"ROI published for merge resolver: "
+                        f"resolved={conflicts_resolved}, files={files_merged}, "
+                        f"decisions={merge_decisions}, choices={code_choices}"
+                    )
+                    return roi_result
+                except Exception as e:
+                    logger.warning(f"Failed to publish ROI: {e}")
+                    return None
+
+            # Run async function
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're already in an async context, schedule it
+                    asyncio.ensure_future(_publish())
+                else:
+                    loop.run_until_complete(_publish())
+            except RuntimeError:
+                # No event loop, create one
+                asyncio.run(_publish())
+
+        except Exception as e:
+            logger.warning(f"Failed to publish merge resolver ROI: {e}")
 
     def _resolve_file_batch(
         self,
