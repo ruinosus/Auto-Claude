@@ -18,7 +18,8 @@
     "gitlabIssues": "Issues GitLab",
     "gitlabMRs": "MRs GitLab",
     "worktrees": "Worktrees",
-    "agentTools": "Aperçu MCP"
+    "agentTools": "Config Agent",
+    "mcpOverview": "Serveurs MCP"
   },
   "actions": {
     "settings": "Paramètres",

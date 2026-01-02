@@ -45,6 +45,7 @@ import { Changelog } from './components/Changelog';
 import { Worktrees } from './components/Worktrees';
 import { Analytics } from './components/analytics/Analytics';
 import { AgentTools } from './components/AgentTools';
+import { MCPOverview } from './components/MCPOverview';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RateLimitModal } from './components/RateLimitModal';
 import { SDKRateLimitModal } from './components/SDKRateLimitModal';
@@ -827,6 +828,7 @@ export function App() {
                   />
                 )}
                 {activeView === 'agent-tools' && <AgentTools />}
+                {activeView === 'mcp-overview' && <MCPOverview />}
               </>
             ) : (
               <WelcomeScreen
