@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { getArtifacts, ArtifactTrace, Artifact } from '../../../services/analytics-api';
 import { formatCurrency } from '../utils/formatters';
 import { MermaidPreview } from './MermaidPreview';
+import { MarkdownPreview } from './MarkdownPreview';
 import { ArtifactDetailModal } from './ArtifactDetailModal';
 import {
   GitBranch,
@@ -508,6 +509,8 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
                           {/* Content preview - render based on type */}
                           {artifact.type === 'diagram' && artifact.format === 'mermaid' ? (
                             <MermaidPreview content={artifact.content || ''} />
+                          ) : artifact.format === 'markdown' || artifact.type === 'documentation' ? (
+                            <MarkdownPreview content={artifact.content || ''} />
                           ) : artifact.type === 'recommendation' ? (
                             <div className="bg-black/30 rounded p-4 text-sm text-gray-200 leading-relaxed">
                               <Lightbulb className="h-4 w-4 text-yellow-400 inline mr-2" />

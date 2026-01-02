@@ -16,6 +16,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { LocalArtifact } from '../../../../shared/types/analytics-v2';
 import { formatCurrency } from '../utils/formatters';
+import { MarkdownPreview } from './MarkdownPreview';
+import { MermaidPreview } from './MermaidPreview';
 
 // Custom dark theme matching the UI background (#0f0f1a)
 const customDarkTheme: { [key: string]: React.CSSProperties } = {
@@ -209,9 +211,17 @@ export function ArtifactDetailModal({
   };
 
   const isCodeContent = (artifact: LocalArtifact) => {
-    const codeFormats = ['code', 'json', 'typescript', 'javascript', 'python', 'diff', 'mermaid'];
+    const codeFormats = ['code', 'json', 'typescript', 'javascript', 'python', 'diff'];
     const codeTypes = ['code_example', 'code_implementation', 'code_suggestion', 'code_choice', 'fix_applied'];
     return codeFormats.includes(artifact.format || '') || codeTypes.includes(artifact.type);
+  };
+
+  const isMarkdownContent = (artifact: LocalArtifact) => {
+    return artifact.format === 'markdown' || artifact.type === 'documentation';
+  };
+
+  const isMermaidContent = (artifact: LocalArtifact) => {
+    return artifact.format === 'mermaid' || (artifact.type === 'diagram' && artifact.format === 'mermaid');
   };
 
   if (!isOpen) return null;
@@ -334,7 +344,11 @@ export function ArtifactDetailModal({
 
               {/* Full content */}
               <div className="bg-[#0f0f1a] rounded-lg overflow-hidden">
-                {isCodeContent(artifact) ? (
+                {isMermaidContent(artifact) ? (
+                  <MermaidPreview content={artifact.content} />
+                ) : isMarkdownContent(artifact) ? (
+                  <MarkdownPreview content={artifact.content} />
+                ) : isCodeContent(artifact) ? (
                   <SyntaxHighlighter
                     language={getLanguageFromFormat(artifact.format)}
                     style={customDarkTheme}
