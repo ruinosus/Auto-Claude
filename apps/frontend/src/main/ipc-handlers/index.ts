@@ -39,7 +39,7 @@ import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { registerMCPHandlers } from '../mcp-manager';
 import { registerDebugHandlers } from './debug-handlers';
 import { registerClaudeCodeHandlers } from './claude-code-handlers';
-import { registerMcpHandlers } from './mcp-handlers';
+// Note: registerMcpHandlers removed - conflicts with registerMCPHandlers for mcp:testConnection
 import { notificationService } from '../notification-service';
 import { setupNotificationHandlers } from './notification-handlers';
 
@@ -141,8 +141,8 @@ export function setupIpcHandlers(
   // Claude Code CLI handlers (version checking, installation)
   registerClaudeCodeHandlers();
 
-  // MCP server health check handlers
-  registerMcpHandlers();
+  // Note: MCP health check handlers (registerMcpHandlers) removed as registerMCPHandlers
+  // already provides mcp:testConnection handler. MCP_CHECK_HEALTH can be added to mcp-manager if needed.
 
   console.warn('[IPC] All handler modules registered successfully');
 }
@@ -177,6 +177,5 @@ export {
   registerMCPHandlers,
   setupNotificationHandlers,
   registerDebugHandlers,
-  registerClaudeCodeHandlers,
-  registerMcpHandlers
+  registerClaudeCodeHandlers
 };
