@@ -33,7 +33,8 @@ import {
   Loader2,
   RefreshCw,
   AlertTriangle,
-  Lock
+  Lock,
+  GitBranch
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { ScrollArea } from './ui/scroll-area';
@@ -339,6 +340,16 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
       'mcp__puppeteer__puppeteer_evaluate',
     ],
   },
+  mermaid: {
+    name: 'Mermaid Chart',
+    description: 'Official Mermaid MCP - create, validate, and render diagrams with playground links.',
+    icon: GitBranch,
+    tools: [
+      'mcp__mermaid__validate',
+      'mcp__mermaid__render',
+      'mcp__mermaid__playground_link',
+    ],
+  },
 };
 
 // All available MCP servers that can be added to agents
@@ -348,6 +359,7 @@ const ALL_MCP_SERVERS = [
   'linear',
   'electron',
   'puppeteer',
+  'mermaid',
   'auto-claude'
 ] as const;
 
@@ -368,20 +380,24 @@ interface AgentCardProps {
   overrides: AgentMcpOverride | undefined;
   mcpServerStates: ProjectEnvConfig['mcpServers'];
   customServers: CustomMcpServer[];
+  availableMcpServers: string[];
+  mcpServersMeta: Record<string, { name: string; description: string; icon: React.ElementType }>;
   onAddMcp: (agentId: string, mcpId: string) => void;
   onRemoveMcp: (agentId: string, mcpId: string) => void;
 }
 
-function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServerStates, customServers, onAddMcp, onRemoveMcp }: AgentCardProps) {
+function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServerStates, customServers, availableMcpServers, mcpServersMeta, onAddMcp, onRemoveMcp }: AgentCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const { t } = useTranslation(['settings']);
   const category = CATEGORIES[config.category as keyof typeof CATEGORIES];
   const CategoryIcon = category.icon;
 
-  // Build combined MCP server info including custom servers
+  // Build combined MCP server info including custom servers (use dynamic mcpServersMeta)
   const allMcpServers = useMemo(() => {
-    const servers = { ...MCP_SERVERS };
+    // Start with dynamic servers from backend
+    const servers: Record<string, { name: string; description: string; icon: React.ElementType }> = { ...mcpServersMeta };
+    // Add custom servers
     for (const custom of customServers) {
       servers[custom.id] = {
         name: custom.name,
@@ -390,7 +406,7 @@ function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServer
       };
     }
     return servers;
-  }, [customServers]);
+  }, [mcpServersMeta, customServers]);
 
   // Calculate effective MCPs: defaults + adds - removes, then filter by project-level MCP states
   const effectiveMcps = useMemo(() => {
@@ -429,7 +445,8 @@ function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServer
 
   // Get MCPs that can be added (not already in effective list) - includes custom servers
   const customServerIds = customServers.map(s => s.id);
-  const allAvailableMcpIds = [...ALL_MCP_SERVERS, ...customServerIds];
+  // Use dynamic list from backend instead of static ALL_MCP_SERVERS
+  const allAvailableMcpIds = [...availableMcpServers, ...customServerIds];
   const availableMcps = allAvailableMcpIds.filter(
     mcp => !effectiveMcps.includes(mcp) && !removedMcps.includes(mcp) && mcp !== 'auto-claude'
   );
@@ -657,7 +674,45 @@ export function AgentTools() {
   const [envConfig, setEnvConfig] = useState<ProjectEnvConfig | null>(null);
   const [, setIsLoading] = useState(false);
 
-  // Custom MCP server management is now handled by MCPManager component
+  // Dynamic MCP servers loaded from backend
+  const [dynamicMcpServers, setDynamicMcpServers] = useState<Array<{ id: string; name: string; description: string }>>([]);
+
+  // Load MCP servers dynamically from backend
+  useEffect(() => {
+    const loadMcpServers = async () => {
+      try {
+        const servers = await window.electronAPI.mcp.list(selectedProject?.path);
+        setDynamicMcpServers(servers.map(s => ({
+          id: s.id,
+          name: s.name,
+          description: s.description
+        })));
+      } catch (error) {
+        console.error('Failed to load MCP servers:', error);
+      }
+    };
+    loadMcpServers();
+  }, [selectedProject?.path]);
+
+  // Build dynamic ALL_MCP_SERVERS list from loaded servers
+  const dynamicAllMcpServers = useMemo(() => {
+    return dynamicMcpServers.map(s => s.id);
+  }, [dynamicMcpServers]);
+
+  // Build dynamic MCP_SERVERS metadata from loaded servers
+  const dynamicMcpServersMeta = useMemo(() => {
+    const meta: Record<string, { name: string; description: string; icon: React.ElementType }> = {};
+    for (const server of dynamicMcpServers) {
+      // Use existing icon from static MCP_SERVERS if available, otherwise default
+      const existingMeta = MCP_SERVERS[server.id];
+      meta[server.id] = {
+        name: server.name,
+        description: server.description,
+        icon: existingMeta?.icon || Server
+      };
+    }
+    return meta;
+  }, [dynamicMcpServers]);
 
   // Load project env config when project changes
   useEffect(() => {
@@ -944,6 +999,8 @@ export function AgentTools() {
                           overrides={envConfig?.agentMcpOverrides?.[id]}
                           mcpServerStates={envConfig?.mcpServers}
                           customServers={envConfig?.customMcpServers || []}
+                          availableMcpServers={dynamicAllMcpServers}
+                          mcpServersMeta={dynamicMcpServersMeta}
                           onAddMcp={handleAddMcp}
                           onRemoveMcp={handleRemoveMcp}
                         />

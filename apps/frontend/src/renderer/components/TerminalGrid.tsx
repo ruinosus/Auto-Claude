@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  PanelGroup,
+  Group as PanelGroup,
   Panel,
-  PanelResizeHandle,
+  Separator as PanelResizeHandle,
 } from 'react-resizable-panels';
 import {
   DndContext,
@@ -403,11 +403,11 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
             "flex-1 overflow-hidden p-2 transition-all duration-300 ease-out",
             fileExplorerOpen && "pr-0"
           )}>
-            <PanelGroup direction="vertical" className="h-full">
+            <PanelGroup orientation="vertical" className="h-full">
               {terminalRows.map((row, rowIndex) => (
                 <React.Fragment key={rowIndex}>
                   <Panel id={`row-${rowIndex}`} defaultSize={100 / terminalRows.length} minSize={15}>
-                    <PanelGroup direction="horizontal" className="h-full">
+                    <PanelGroup orientation="horizontal" className="h-full">
                       {row.map((terminal, colIndex) => (
                         <React.Fragment key={terminal.id}>
                           <Panel id={terminal.id} defaultSize={100 / row.length} minSize={20}>
