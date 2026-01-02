@@ -13,6 +13,9 @@ import {
   validateEmbeddingConfiguration,
   getGraphitiDatabaseDetails
 } from './utils';
+import { buildMemoryEnvVars } from '../../memory-env-builder';
+import { readSettingsFile } from '../../settings-utils';
+import type { AppSettings } from '../../../shared/types/settings';
 
 /**
  * Generate a unique group ID for a project's memory namespace.
@@ -66,21 +69,34 @@ export function loadGraphitiStateFromSpecs(
 
 /**
  * Build memory status from environment configuration
+ *
+ * Priority (same as agent-process.ts getCombinedEnv):
+ * 1. App-wide memory settings from settings.json (from onboarding)
+ * 2. Project's .env files
  */
 export function buildMemoryStatus(
   projectPath: string,
   autoBuildPath?: string,
   memoryState?: GraphitiMemoryState | null
 ): GraphitiMemoryStatus {
+  // Load app-wide memory settings from settings.json (set during onboarding)
+  const appSettings = (readSettingsFile() || {}) as Partial<AppSettings>;
+  const memoryEnvVars = buildMemoryEnvVars(appSettings as AppSettings);
+
+  // Load project-specific env vars
   const projectEnvVars = loadProjectEnvVars(projectPath, autoBuildPath);
   const globalSettings = loadGlobalSettings();
 
   // Always calculate groupId for the project
   const groupId = generateProjectGroupId(projectPath);
 
+  // Merge: app-wide memory settings -> project env vars
+  // Project settings can override app-wide settings
+  const effectiveEnvVars = { ...memoryEnvVars, ...projectEnvVars };
+
   // If we have initialized state from specs, use it
   if (memoryState?.initialized) {
-    const dbDetails = getGraphitiDatabaseDetails(projectEnvVars);
+    const dbDetails = getGraphitiDatabaseDetails(effectiveEnvVars);
     return {
       enabled: true,
       available: true,
@@ -90,9 +106,9 @@ export function buildMemoryStatus(
     };
   }
 
-  // Check environment configuration
-  const graphitiEnabled = isGraphitiEnabled(projectEnvVars);
-  const embeddingValidation = validateEmbeddingConfiguration(projectEnvVars, globalSettings);
+  // Check environment configuration using merged env vars
+  const graphitiEnabled = isGraphitiEnabled(effectiveEnvVars);
+  const embeddingValidation = validateEmbeddingConfiguration(effectiveEnvVars, globalSettings);
 
   if (!graphitiEnabled) {
     return {
@@ -117,11 +133,12 @@ export function buildMemoryStatus(
     };
   }
 
+  const finalDbDetails = getGraphitiDatabaseDetails(effectiveEnvVars);
   return {
     enabled: true,
     available: true,
-    dbPath: dbDetails.dbPath,
-    database: dbDetails.database,
+    dbPath: finalDbDetails.dbPath,
+    database: finalDbDetails.database,
     provider: embeddingValidation.provider,
     groupId
   };
