@@ -51,6 +51,38 @@ ROI_TOOLS = [
     TOOL_LIST_ACTIVITY_TYPES,
 ]
 
+# Artifact CRUD tools (for insights and analysis agents)
+# Create
+TOOL_CREATE_ARTIFACT = "mcp__auto-claude__create_artifact"
+TOOL_CREATE_DIAGRAM = "mcp__auto-claude__create_diagram"
+TOOL_REPORT_SECURITY_FINDING = "mcp__auto-claude__report_security_finding"
+TOOL_SUGGEST_RECOMMENDATION = "mcp__auto-claude__suggest_recommendation"
+# Read
+TOOL_GET_ARTIFACT = "mcp__auto-claude__get_artifact"
+TOOL_LIST_ARTIFACT_TYPES = "mcp__auto-claude__list_artifact_types"
+TOOL_LIST_SESSION_ARTIFACTS = "mcp__auto-claude__list_session_artifacts"
+# Update
+TOOL_UPDATE_ARTIFACT = "mcp__auto-claude__update_artifact"
+# Delete
+TOOL_DELETE_ARTIFACT = "mcp__auto-claude__delete_artifact"
+
+# Artifact tools that insights agents should have (full CRUD)
+ARTIFACT_TOOLS = [
+    # Create
+    TOOL_CREATE_ARTIFACT,
+    TOOL_CREATE_DIAGRAM,
+    TOOL_REPORT_SECURITY_FINDING,
+    TOOL_SUGGEST_RECOMMENDATION,
+    # Read
+    TOOL_GET_ARTIFACT,
+    TOOL_LIST_ARTIFACT_TYPES,
+    TOOL_LIST_SESSION_ARTIFACTS,
+    # Update
+    TOOL_UPDATE_ARTIFACT,
+    # Delete
+    TOOL_DELETE_ARTIFACT,
+]
+
 # =============================================================================
 # External MCP Tools
 # =============================================================================
@@ -208,7 +240,7 @@ AGENT_CONFIGS = {
             TOOL_GET_BUILD_PROGRESS,
             TOOL_GET_SESSION_CONTEXT,
             TOOL_RECORD_DISCOVERY,
-        ] + ROI_TOOLS,
+        ] + ROI_TOOLS + ARTIFACT_TOOLS,  # Can create architecture_insight, diagram
         "thinking_default": "high",
     },
     "coder": {
@@ -221,7 +253,7 @@ AGENT_CONFIGS = {
             TOOL_RECORD_DISCOVERY,
             TOOL_RECORD_GOTCHA,
             TOOL_GET_SESSION_CONTEXT,
-        ] + ROI_TOOLS,
+        ] + ROI_TOOLS + ARTIFACT_TOOLS,  # Can create code_example, refactoring, bug_fix
         "thinking_default": "none",  # Coding doesn't use extended thinking
     },
     # ═══════════════════════════════════════════════════════════════════════
@@ -237,7 +269,7 @@ AGENT_CONFIGS = {
             TOOL_GET_BUILD_PROGRESS,
             TOOL_UPDATE_QA_STATUS,
             TOOL_GET_SESSION_CONTEXT,
-        ] + ROI_TOOLS,
+        ] + ROI_TOOLS + ARTIFACT_TOOLS,  # Can create security_finding, bug_fix, test_case
         "thinking_default": "high",
     },
     "qa_fixer": {
@@ -249,7 +281,7 @@ AGENT_CONFIGS = {
             TOOL_GET_BUILD_PROGRESS,
             TOOL_UPDATE_QA_STATUS,
             TOOL_RECORD_GOTCHA,
-        ] + ROI_TOOLS,
+        ] + ROI_TOOLS + ARTIFACT_TOOLS,  # Can create bug_fix artifacts
         "thinking_default": "medium",
     },
     # ═══════════════════════════════════════════════════════════════════════
@@ -257,8 +289,8 @@ AGENT_CONFIGS = {
     # ═══════════════════════════════════════════════════════════════════════
     "insights": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["auto-claude"],  # ROI tracking
-        "auto_claude_tools": ROI_TOOLS,
+        "mcp_servers": ["auto-claude"],  # ROI + Artifact tracking
+        "auto_claude_tools": ROI_TOOLS + ARTIFACT_TOOLS,
         "thinking_default": "medium",
     },
     "merge_resolver": {
@@ -275,8 +307,8 @@ AGENT_CONFIGS = {
     },
     "pr_reviewer": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,  # Read-only
-        "mcp_servers": ["context7", "auto-claude"],  # ROI tracking
-        "auto_claude_tools": ROI_TOOLS,
+        "mcp_servers": ["context7", "auto-claude"],  # ROI + Artifact tracking
+        "auto_claude_tools": ROI_TOOLS + ARTIFACT_TOOLS,  # Can create code review findings
         "thinking_default": "high",
     },
     "pr_orchestrator_parallel": {
@@ -297,14 +329,14 @@ AGENT_CONFIGS = {
     # ═══════════════════════════════════════════════════════════════════════
     "analysis": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["context7", "auto-claude"],  # ROI tracking
-        "auto_claude_tools": ROI_TOOLS,
+        "mcp_servers": ["context7", "auto-claude"],  # ROI + Artifact tracking
+        "auto_claude_tools": ROI_TOOLS + ARTIFACT_TOOLS,  # Can create analysis artifacts
         "thinking_default": "medium",
     },
     "batch_analysis": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["auto-claude"],  # ROI tracking
-        "auto_claude_tools": ROI_TOOLS,
+        "mcp_servers": ["auto-claude"],  # ROI + Artifact tracking
+        "auto_claude_tools": ROI_TOOLS + ARTIFACT_TOOLS,  # Can create triage artifacts
         "thinking_default": "low",
     },
     "batch_validation": {
@@ -330,8 +362,8 @@ AGENT_CONFIGS = {
     },
     "ideation": {
         "tools": BASE_READ_TOOLS + WEB_TOOLS,
-        "mcp_servers": ["auto-claude"],  # ROI tracking
-        "auto_claude_tools": ROI_TOOLS,
+        "mcp_servers": ["auto-claude"],  # ROI + Artifact tracking
+        "auto_claude_tools": ROI_TOOLS + ARTIFACT_TOOLS,  # Can create recommendation artifacts
         "thinking_default": "high",
     },
 }

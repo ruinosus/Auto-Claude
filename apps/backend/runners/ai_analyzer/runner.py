@@ -39,16 +39,45 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
 
-def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
+
+def extract_analyzer_artifacts(
+    insights: dict[str, Any],
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Extract valuable artifacts from AI analyzer results.
 
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - architecture_insight ($200 each) - architecture findings and patterns
+    - tech_debt_item ($100 each) - technical debt items
+    - security_audit ($150-250 each) - security findings by severity
+    - performance_bottleneck ($150 each) - performance issues
+    - code_quality_score ($50) - quality score
+    - recommendation ($75 each) - improvement recommendations
+
     Args:
         insights: Analysis results from all analyzers
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
 
     Returns:
-        List of artifact dictionaries with type, value, content, etc.
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
     """
     artifacts = []
 
@@ -69,7 +98,7 @@ def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
                     artifacts.append({
                         "type": "architecture_insight",
                         "format": "text",
-                        "content": insight[:500],
+                        "content": insight,  # FULL CONTENT - no truncation
                         "value_usd": 200,
                         "description": "Architecture insight",
                         "tab": "techlead",
@@ -88,7 +117,7 @@ def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
                     artifacts.append({
                         "type": "architecture_insight",
                         "format": "text",
-                        "content": pattern_text[:500],
+                        "content": pattern_text,  # FULL CONTENT - no truncation
                         "value_usd": 200,
                         "description": "Architecture pattern",
                         "tab": "techlead",
@@ -108,7 +137,7 @@ def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
                     artifacts.append({
                         "type": "tech_debt_item",
                         "format": "text",
-                        "content": debt_text[:500],
+                        "content": debt_text,  # FULL CONTENT - no truncation
                         "value_usd": 100,
                         "description": "Technical debt item",
                         "tab": "dev",
@@ -132,7 +161,7 @@ def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
                     artifacts.append({
                         "type": "security_audit",
                         "format": "text",
-                        "content": finding_text[:500],
+                        "content": finding_text,  # FULL CONTENT - no truncation
                         "value_usd": value,
                         "description": f"Security finding ({severity})",
                         "tab": "ops",
@@ -153,7 +182,7 @@ def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
                     artifacts.append({
                         "type": "performance_bottleneck",
                         "format": "text",
-                        "content": bottleneck_text[:500],
+                        "content": bottleneck_text,  # FULL CONTENT - no truncation
                         "value_usd": 150,
                         "description": "Performance bottleneck",
                         "tab": "ops",
@@ -186,14 +215,45 @@ def extract_analyzer_artifacts(insights: dict[str, Any]) -> list[dict]:
                 artifacts.append({
                     "type": "recommendation",
                     "format": "text",
-                    "content": rec_text[:500],
+                    "content": rec_text,  # FULL CONTENT - no truncation
                     "value_usd": 75,
                     "description": f"Recommendation from {analyzer_name}",
                     "tab": "techlead",
                     "analyzer": analyzer_name,
                 })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=None,  # AI analyzer is project-wide, not spec-specific
+                trace_id=trace_id,
+                agent_type="ai_analyzer",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 class AIAnalyzerRunner:
@@ -300,9 +360,14 @@ class AIAnalyzerRunner:
                     duration_seconds = time.time() - start_time
 
                     # Extract artifacts from analysis results
-                    artifacts = extract_analyzer_artifacts(insights)
+                    # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                    artifacts, langfuse_refs = extract_analyzer_artifacts(
+                        insights,
+                        project_dir=self.project_dir,
+                        trace_id=langfuse_trace_id,
+                    )
 
-                    # Count artifact types for metrics
+                    # Count artifact types for metrics (use full artifacts for counts)
                     architecture_insights = sum(1 for a in artifacts if a["type"] == "architecture_insight")
                     tech_debt_items = sum(1 for a in artifacts if a["type"] == "tech_debt_item")
                     security_findings = sum(1 for a in artifacts if a["type"] == "security_audit")
@@ -310,13 +375,14 @@ class AIAnalyzerRunner:
                     code_quality_scores = sum(1 for a in artifacts if a["type"] == "code_quality_score")
                     recommendations = sum(1 for a in artifacts if a["type"] == "recommendation")
 
-                    # Calculate total artifact value
+                    # Calculate total artifact value (use full artifacts for value)
                     total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
                     # Estimate tokens and cost (from cost estimate)
                     estimated_tokens = cost_estimate.estimated_tokens if hasattr(cost_estimate, 'estimated_tokens') else 0
                     estimated_cost = cost_estimate.estimated_cost_usd if hasattr(cost_estimate, 'estimated_cost_usd') else 0.0
 
+                    # Publish ROI with Langfuse refs (truncated previews, not full content)
                     await publish_feature_roi(
                         feature_type="ai_analyzer",
                         project_id=project_id,
@@ -324,6 +390,7 @@ class AIAnalyzerRunner:
                         tokens=estimated_tokens,
                         duration_seconds=duration_seconds,
                         trace_id=langfuse_trace_id,
+                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
                         metrics={
                             "analyzers_run": len(analyzers_to_run),
                             "overall_score": insights.get("overall_score", 0),

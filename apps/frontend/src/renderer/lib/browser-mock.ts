@@ -247,6 +247,13 @@ const browserMockAPI: ElectronAPI = {
     data: async () => ({ success: true, filePath: '/mock/export/analytics.csv' })
   },
 
+  // Artifact Storage API (local full content)
+  artifact: {
+    get: async () => ({ success: false, error: 'Browser mock: artifact storage not available' }),
+    list: async () => ({ success: true, data: [] }),
+    getByTrace: async () => ({ success: true, data: [] })
+  },
+
   // Claude Code Operations
   checkClaudeCodeVersion: async () => ({
     success: true,

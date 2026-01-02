@@ -7,8 +7,9 @@ Issue triage logic for detecting duplicates, spam, and feature creep.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # Analytics tracking
 try:
@@ -21,6 +22,24 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
+# ROI publisher (optional - graceful degradation if not available)
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 try:
     from ..models import GitHubRunnerConfig, TriageCategory, TriageResult
     from .prompt_manager import PromptManager
@@ -29,6 +48,170 @@ except (ImportError, ValueError, SystemError):
     from models import GitHubRunnerConfig, TriageCategory, TriageResult
     from services.prompt_manager import PromptManager
     from services.response_parsers import ResponseParser
+
+
+# =============================================================================
+# ARTIFACT EXTRACTION
+# =============================================================================
+
+
+def extract_triage_artifacts(
+    triage_result: TriageResult,
+    issue: dict,
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Extract triage artifacts from triage result.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - triage_classification ($50) - the category classification (bug, feature, etc.)
+    - priority_assignment ($50) - the priority level assignment
+    - label_suggestion ($25 each) - suggested labels to add
+    - duplicate_detected ($75) - if a duplicate was detected
+    - assignee_suggestion ($50) - if an assignee was suggested (future)
+
+    Args:
+        triage_result: The TriageResult from the triage engine
+        issue: The original issue dict
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
+
+    Returns:
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
+    """
+    artifacts = []
+
+    # Extract triage_classification artifact
+    category_name = triage_result.category.value if triage_result.category else "unknown"
+    artifacts.append({
+        "type": "triage_classification",
+        "format": "text",
+        "content": f"Issue #{triage_result.issue_number} classified as: {category_name.upper()}\n"
+                   f"Confidence: {triage_result.confidence:.0%}\n"
+                   f"Issue Title: {issue.get('title', 'N/A')}",
+        "value_usd": 50,
+        "description": f"Triage classification: {category_name}",
+        "tab": "ops",
+        "metadata": {
+            "issue_number": triage_result.issue_number,
+            "category": category_name,
+            "confidence": triage_result.confidence,
+            "repo": triage_result.repo,
+        },
+    })
+
+    # Extract priority_assignment artifact
+    if triage_result.priority:
+        artifacts.append({
+            "type": "priority_assignment",
+            "format": "text",
+            "content": f"Issue #{triage_result.issue_number} priority: {triage_result.priority.upper()}\n"
+                       f"Category: {category_name}\n"
+                       f"Confidence: {triage_result.confidence:.0%}",
+            "value_usd": 50,
+            "description": f"Priority assignment: {triage_result.priority}",
+            "tab": "ops",
+            "metadata": {
+                "issue_number": triage_result.issue_number,
+                "priority": triage_result.priority,
+            },
+        })
+
+    # Extract label_suggestion artifacts
+    for label in triage_result.labels_to_add:
+        artifacts.append({
+            "type": "label_suggestion",
+            "format": "text",
+            "content": f"Suggested label for #{triage_result.issue_number}: {label}",
+            "value_usd": 25,
+            "description": f"Label suggestion: {label}",
+            "tab": "ops",
+            "metadata": {
+                "issue_number": triage_result.issue_number,
+                "label": label,
+                "action": "add",
+            },
+        })
+
+    # Extract duplicate_detected artifact if applicable
+    if triage_result.is_duplicate and triage_result.duplicate_of:
+        artifacts.append({
+            "type": "duplicate_detected",
+            "format": "text",
+            "content": f"Issue #{triage_result.issue_number} detected as duplicate of #{triage_result.duplicate_of}\n"
+                       f"Title: {issue.get('title', 'N/A')}\n"
+                       f"Confidence: {triage_result.confidence:.0%}",
+            "value_usd": 75,
+            "description": f"Duplicate of #{triage_result.duplicate_of}",
+            "tab": "ops",
+            "metadata": {
+                "issue_number": triage_result.issue_number,
+                "duplicate_of": triage_result.duplicate_of,
+                "confidence": triage_result.confidence,
+            },
+        })
+
+    # Extract assignee_suggestion if comment contains assignee recommendation
+    # This is derived from the triage comment if it suggests an assignee
+    if triage_result.comment:
+        # Look for assignee suggestions in comment
+        comment_lower = triage_result.comment.lower()
+        if "assign" in comment_lower or "assignee" in comment_lower:
+            artifacts.append({
+                "type": "assignee_suggestion",
+                "format": "text",
+                "content": f"Assignee suggestion for #{triage_result.issue_number}:\n{triage_result.comment}",
+                "value_usd": 50,
+                "description": "Assignee suggestion from triage",
+                "tab": "ops",
+                "metadata": {
+                    "issue_number": triage_result.issue_number,
+                    "from_comment": True,
+                },
+            })
+
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=f"github-triage-{triage_result.issue_number}",
+                trace_id=trace_id,
+                agent_type="triage_engine",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
+
+
+# =============================================================================
+# TRIAGE ENGINE
+# =============================================================================
 
 
 class TriageEngine:
@@ -110,6 +293,10 @@ class TriageEngine:
             except Exception:
                 pass
 
+        # Track timing for ROI
+        start_time = time.time()
+        project_id = self.project_dir.name
+
         try:
             async with client:
                 await client.query(full_prompt)
@@ -137,9 +324,68 @@ class TriageEngine:
                     except Exception:
                         pass
 
-                return self.parser.parse_triage_result(
+                # Parse triage result
+                triage_result = self.parser.parse_triage_result(
                     issue, response_text, self.config.repo
                 )
+
+                # Calculate duration
+                duration_seconds = time.time() - start_time
+
+                # Publish ROI and store artifacts (wrapped in try/except to not break triage)
+                if ROI_PUBLISHER_AVAILABLE:
+                    try:
+                        # Extract artifacts from the triage result
+                        # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                        artifacts, langfuse_refs = extract_triage_artifacts(
+                            triage_result,
+                            issue,
+                            project_dir=self.project_dir,
+                            trace_id=None,  # No Langfuse trace in this context
+                        )
+
+                        # Count metrics from triage result
+                        labels_count = len(triage_result.labels_to_add)
+                        is_duplicate = 1 if triage_result.is_duplicate else 0
+                        is_spam = 1 if triage_result.is_spam else 0
+
+                        # Estimate cost and tokens (simplified - actual tracking would come from SDK)
+                        # Estimate ~4 chars per token, rough estimate for ROI calculation
+                        estimated_tokens = len(response_text) // 4 + len(full_prompt) // 4
+                        estimated_cost = (estimated_tokens / 1000) * 0.003  # Rough cost estimate
+
+                        # Calculate total artifact value
+                        total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+                        # Publish ROI with Langfuse refs (truncated previews, not full content)
+                        await publish_feature_roi(
+                            feature_type="github_issue_triage",
+                            project_id=project_id,
+                            cost_usd=estimated_cost,
+                            tokens=estimated_tokens,
+                            metrics={
+                                "issues_triaged": 1,
+                                "duplicates_detected": is_duplicate,
+                                "spam_detected": is_spam,
+                                "labels_suggested": labels_count,
+                                "priority": triage_result.priority,
+                                "category": triage_result.category.value if triage_result.category else "unknown",
+                                "confidence": triage_result.confidence,
+                                "artifacts_count": len(artifacts),
+                                "artifact_value_usd": total_artifact_value,
+                            },
+                            duration_seconds=duration_seconds,
+                            model=self.config.model,
+                            spec_id=f"github-triage-{issue['number']}",
+                            trace_id=None,
+                            artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                        )
+
+                    except Exception as e:
+                        # ROI publishing should never break triage
+                        print(f"Failed to publish ROI for triage (non-fatal): {e}")
+
+                return triage_result
 
         except Exception as e:
             # Finalize tracking on error

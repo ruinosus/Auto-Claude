@@ -281,6 +281,40 @@ npx prisma migrate dev --name [name]
 
 ---
 
+## CREATING ARTIFACTS
+
+You have access to artifact tools to create structured, trackable outputs.
+Use these tools when fixing issues:
+
+**Available Tools:**
+- `create_artifact` - Create any type of artifact
+- `report_security_finding` - Report security issues found/fixed
+
+**When to Create Artifacts:**
+
+1. **Bug Fix Documentation** - When fixing a complex bug:
+   ```
+   create_artifact(
+     artifact_type="bug_fix",
+     content="## Bug Fixed: Race Condition\n\n### Root Cause\nThe session manager was not thread-safe...\n\n### Solution\nAdded mutex lock around critical section...",
+     description="Race condition fix in session management"
+   )
+   ```
+
+2. **Security Fix Documentation** - When fixing security issues:
+   ```
+   report_security_finding(
+     content="## Security Fix: SQL Injection\n\n### Vulnerability\nUser input was directly concatenated...\n\n### Fix Applied\nConverted to parameterized queries...",
+     severity="high",
+     description="SQL injection vulnerability fixed"
+   )
+   ```
+
+**CRITICAL**: Always call these tools for significant fixes.
+Artifacts are tracked and visible in the analytics dashboard.
+
+---
+
 ## KEY REMINDERS
 
 ### Fix What Was Asked

@@ -43,6 +43,198 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+    save_artifact_safe = None
+    create_langfuse_reference = None
+    _get_artifacts_dir = None
+
+
+# =============================================================================
+# ARTIFACT EXTRACTION
+# =============================================================================
+
+
+def extract_mr_review_artifacts(
+    result: "MRReviewResult",
+    summary: str,
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Extract MR review artifacts from review result.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - mr_verdict ($75) - READY_TO_MERGE/NEEDS_REVISION/BLOCKED decision
+    - mr_finding ($100 each) - each finding in the review
+    - security_finding ($200) - security-related findings
+    - blocker ($150) - blocking issues that must be resolved
+
+    Args:
+        result: The MRReviewResult object
+        summary: The review summary text
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
+
+    Returns:
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
+    """
+    artifacts = []
+
+    # Extract mr_verdict
+    if result.verdict:
+        verdict_content = f"{result.verdict.value.upper()}"
+        if result.verdict_reasoning:
+            verdict_content += f"\n\nReasoning: {result.verdict_reasoning}"
+
+        artifacts.append({
+            "type": "mr_verdict",
+            "format": "text",
+            "content": verdict_content,
+            "value_usd": 75,
+            "description": f"MR verdict: {result.verdict.value}",
+            "tab": "dev",
+            "metadata": {
+                "verdict": result.verdict.value,
+                "mr_iid": result.mr_iid,
+                "project": result.project,
+                "is_followup": result.is_followup_review,
+            },
+        })
+
+    # Extract blockers as high-value artifacts
+    for i, blocker in enumerate(result.blockers):
+        artifacts.append({
+            "type": "blocker",
+            "format": "text",
+            "content": blocker,
+            "value_usd": 150,
+            "description": f"Blocking issue #{i+1}",
+            "tab": "dev",
+            "metadata": {
+                "mr_iid": result.mr_iid,
+                "blocker_index": i,
+            },
+        })
+
+    # Extract findings as artifacts
+    for finding in result.findings:
+        # Determine value based on severity
+        value_usd = 100  # Default
+        if finding.severity.value == "critical":
+            value_usd = 200
+        elif finding.severity.value == "high":
+            value_usd = 150
+        elif finding.severity.value == "medium":
+            value_usd = 100
+        else:  # low
+            value_usd = 50
+
+        # Build content with full details
+        content = f"[{finding.severity.value.upper()}] {finding.title}"
+        content += f"\n\nCategory: {finding.category.value}"
+        content += f"\n\nFile: {finding.file}:{finding.line}"
+        if finding.end_line:
+            content += f"-{finding.end_line}"
+        content += f"\n\n{finding.description}"
+        if finding.suggested_fix:
+            content += f"\n\nSuggested Fix: {finding.suggested_fix}"
+
+        # Determine artifact type (security findings get special type)
+        artifact_type = "mr_finding"
+        tab = "dev"
+        if finding.category.value == "security":
+            artifact_type = "security_finding"
+            tab = "ops"
+            value_usd = max(value_usd, 200)  # Security findings are high value
+
+        artifacts.append({
+            "type": artifact_type,
+            "format": "text",
+            "content": content,
+            "value_usd": value_usd,
+            "description": f"MR finding: {finding.title}",
+            "severity": finding.severity.value,
+            "tab": tab,
+            "metadata": {
+                "finding_id": finding.id,
+                "severity": finding.severity.value,
+                "category": finding.category.value,
+                "file": finding.file,
+                "line": finding.line,
+                "end_line": finding.end_line,
+                "fixable": finding.fixable,
+                "mr_iid": result.mr_iid,
+            },
+        })
+
+    # Extract review summary as artifact
+    if summary:
+        artifacts.append({
+            "type": "mr_review_summary",
+            "format": "markdown",
+            "content": summary,
+            "value_usd": 100,
+            "description": f"MR !{result.mr_iid} review summary",
+            "tab": "dev",
+            "metadata": {
+                "mr_iid": result.mr_iid,
+                "project": result.project,
+                "findings_count": len(result.findings),
+                "overall_status": result.overall_status,
+            },
+        })
+
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir and save_artifact_safe and create_langfuse_reference:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=None,  # MR reviews don't have spec_id
+                trace_id=trace_id,
+                agent_type="gitlab_mr_reviewer",
+                session_num=None,
+            )
+
+            if artifact_id and _get_artifacts_dir:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
+
+
+# =============================================================================
+# PROGRESS CALLBACK
+# =============================================================================
+
 
 @dataclass
 class ProgressCallback:
@@ -126,18 +318,45 @@ class GitLabOrchestrator:
         if self.progress_callback:
             self.progress_callback(callback)
 
-    async def _publish_roi(self, mrs_reviewed: int = 0) -> None:
-        """Publish ROI metrics for GitLab MR review operations."""
+    async def _publish_roi(
+        self,
+        mrs_reviewed: int = 0,
+        artifacts: list[dict] | None = None,
+        langfuse_refs: list[dict] | None = None,
+        trace_id: str | None = None,
+        findings_count: int = 0,
+        blockers_count: int = 0,
+        security_findings_count: int = 0,
+    ) -> None:
+        """
+        Publish ROI metrics for GitLab MR review operations.
+
+        Args:
+            mrs_reviewed: Number of MRs reviewed
+            artifacts: Full artifacts for local processing
+            langfuse_refs: Truncated references for Langfuse
+            trace_id: Langfuse trace ID for linking
+            findings_count: Number of findings discovered
+            blockers_count: Number of blocking issues
+            security_findings_count: Number of security findings
+        """
         if not ROI_PUBLISHER_AVAILABLE:
             return
 
         try:
             project_id = self.project_dir.name
 
+            # Calculate artifact value
+            artifact_value_usd = 0
+            if artifacts:
+                artifact_value_usd = sum(a.get("value_usd", 0) for a in artifacts)
+
             result = await publish_github_roi(
                 project_id=project_id,
                 prs_reviewed=mrs_reviewed,  # Reusing GitHub function, maps MRs to PRs
                 model=self.config.model,
+                trace_id=trace_id,
+                artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
             )
 
             if result.get("success"):
@@ -147,6 +366,11 @@ class GitLabOrchestrator:
                     f"[ROI] GitLab MR review: {roi_pct:.0f}% ROI (${value:.2f} value)",
                     flush=True,
                 )
+                if artifacts:
+                    print(
+                        f"[ROI] Artifacts: {len(artifacts)} items, ${artifact_value_usd:.2f} value",
+                        flush=True,
+                    )
         except Exception as e:
             print(f"[ROI] Failed to publish: {e}", flush=True)
 
@@ -283,8 +507,30 @@ class GitLabOrchestrator:
 
             self._report_progress("complete", 100, "Review complete!", mr_iid=mr_iid)
 
-            # Publish ROI metrics
-            await self._publish_roi(mrs_reviewed=1)
+            # Extract artifacts and create Langfuse references
+            artifacts, langfuse_refs = extract_mr_review_artifacts(
+                result=result,
+                summary=full_summary,
+                project_dir=self.project_dir,
+                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
+            )
+
+            # Count security findings for metrics
+            security_findings_count = len([
+                f for f in findings
+                if f.category.value == "security"
+            ])
+
+            # Publish ROI metrics with artifacts
+            await self._publish_roi(
+                mrs_reviewed=1,
+                artifacts=artifacts,
+                langfuse_refs=langfuse_refs,
+                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
+                findings_count=len(findings),
+                blockers_count=len(blockers),
+                security_findings_count=security_findings_count,
+            )
 
             return result
 
@@ -481,8 +727,30 @@ class GitLabOrchestrator:
                 "complete", 100, "Follow-up review complete!", mr_iid=mr_iid
             )
 
-            # Publish ROI metrics for follow-up review
-            await self._publish_roi(mrs_reviewed=1)
+            # Extract artifacts and create Langfuse references
+            artifacts, langfuse_refs = extract_mr_review_artifacts(
+                result=result,
+                summary=full_summary,
+                project_dir=self.project_dir,
+                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
+            )
+
+            # Count security findings for metrics
+            security_findings_count = len([
+                f for f in findings
+                if f.category.value == "security"
+            ])
+
+            # Publish ROI metrics for follow-up review with artifacts
+            await self._publish_roi(
+                mrs_reviewed=1,
+                artifacts=artifacts,
+                langfuse_refs=langfuse_refs,
+                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
+                findings_count=len(findings),
+                blockers_count=len(blockers),
+                security_findings_count=security_findings_count,
+            )
 
             return result
 

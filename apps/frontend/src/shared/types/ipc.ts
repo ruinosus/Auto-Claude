@@ -135,6 +135,10 @@ import type {
   ROIAggregateMetrics,
   ProjectROISettings
 } from './roi';
+import type {
+  LocalArtifact,
+  ArtifactFilters
+} from './analytics-v2';
 
 // Electron API exposed via contextBridge
 // Tab state interface (persisted in main process)
@@ -809,6 +813,13 @@ export interface ElectronAPI {
       filePath?: string;
       error?: string;
     }>;
+  };
+
+  // Artifact storage API (for full artifact content retrieval)
+  artifact: {
+    get: (projectId: string, artifactId: string) => Promise<IPCResult<LocalArtifact>>;
+    list: (projectId: string, filters?: ArtifactFilters) => Promise<IPCResult<LocalArtifact[]>>;
+    getByTrace: (projectId: string, traceId: string) => Promise<IPCResult<LocalArtifact[]>>;
   };
 
   // Claude Code CLI operations

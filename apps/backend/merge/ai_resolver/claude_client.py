@@ -213,8 +213,8 @@ def create_claude_resolver(project_dir: Path | None = None) -> AIResolver:
                         try:
                             # Set trace output before exiting
                             if langfuse_ctx_obj:
-                                trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                                langfuse_ctx_obj.set_output({"response": trace_output})
+                                # FULL content - NO truncation (Zero Truncation Policy)
+                                langfuse_ctx_obj.set_output({"response": response_text})
                             trace_ctx.__exit__(None, None, None)
                             flush_langfuse()
                         except Exception:

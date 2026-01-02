@@ -142,6 +142,7 @@ async def publish_feature_roi(
     spec_id: Optional[str] = None,
     trace_id: Optional[str] = None,
     hourly_rate: float = 150.0,
+    artifacts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Calculate and publish ROI for any feature type.
@@ -157,6 +158,7 @@ async def publish_feature_roi(
         spec_id: Optional spec ID
         trace_id: Optional Langfuse trace ID
         hourly_rate: Developer hourly rate for calculations
+        artifacts: Optional list of artifact references (with storage_path for local retrieval)
 
     Returns:
         Dict with ROI calculation results
@@ -293,8 +295,8 @@ async def publish_feature_roi(
             "error": f"Unknown feature type: {feature_type}",
         }
 
-    # Publish to Langfuse if available
-    success = await _publish_to_langfuse(roi, trace_id)
+    # Publish to Langfuse if available (with artifact refs for linking)
+    success = await _publish_to_langfuse(roi, trace_id, artifacts=artifacts)
 
     # Return result
     return {
@@ -307,13 +309,19 @@ async def publish_feature_roi(
         "net_value_usd": roi.total_value_usd - roi.cost.total_cost_usd,
         "confidence_score": roi.confidence_score,
         "value_breakdown": {vt.value: v for vt, v in roi.value_breakdown.items()},
+        "artifacts_stored": len(artifacts) if artifacts else 0,
     }
 
 
-async def _publish_to_langfuse(roi: UnifiedROI, trace_id: Optional[str] = None) -> bool:
+async def _publish_to_langfuse(
+    roi: UnifiedROI,
+    trace_id: Optional[str] = None,
+    artifacts: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
     """Publish ROI scores to Langfuse.
 
     If no trace_id is provided, creates a dedicated ROI trace using trace_context.
+    Artifacts are stored as references in trace output (with storage_path for local retrieval).
     """
     if not LANGFUSE_AVAILABLE or not is_langfuse_ready():
         logger.warning("Langfuse not available, skipping ROI publish")
@@ -379,12 +387,17 @@ async def _publish_to_langfuse(roi: UnifiedROI, trace_id: Optional[str] = None) 
 
         # Close trace context if we created one
         if created_trace and ctx_obj and ctx:
-            ctx_obj.set_output({
+            output_data = {
                 "roi_percentage": roi.roi_percentage,
                 "total_value_usd": roi.total_value_usd,
                 "net_value_usd": roi.total_value_usd - roi.cost.total_cost_usd,
                 "scores_published": len(scores),
-            })
+            }
+            # Include artifact refs in output (with storage_path for local retrieval)
+            if artifacts:
+                output_data["artifacts"] = artifacts
+                output_data["artifacts_count"] = len(artifacts)
+            ctx_obj.set_output(output_data)
             ctx.__exit__(None, None, None)
 
         # Flush to ensure scores are sent
@@ -433,8 +446,24 @@ async def publish_roadmap_roi(
     trace_id: Optional[str] = None,
     duration_seconds: float = 0.0,
     model: str = "",
+    artifacts: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Convenience function for roadmap ROI."""
+    """Convenience function for roadmap ROI.
+
+    Args:
+        project_id: Project identifier
+        features_identified: Number of features identified in roadmap
+        features_rejected: Number of features rejected/deferred
+        cost_usd: Cost of roadmap generation
+        tokens: Tokens used
+        trace_id: Optional Langfuse trace ID
+        duration_seconds: Execution duration
+        model: Model used
+        artifacts: Optional list of artifact references (with storage_path for local retrieval)
+
+    Returns:
+        Dict with ROI calculation results
+    """
     return await publish_feature_roi(
         feature_type="roadmap_features",
         project_id=project_id,
@@ -447,6 +476,7 @@ async def publish_roadmap_roi(
         duration_seconds=duration_seconds,
         model=model,
         trace_id=trace_id,
+        artifacts=artifacts,
     )
 
 

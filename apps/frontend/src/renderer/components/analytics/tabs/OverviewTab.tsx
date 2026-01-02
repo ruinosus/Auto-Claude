@@ -98,6 +98,7 @@ interface OverviewTabProps {
     hourlyData?: HourlyMetric[];
   };
   loading?: boolean;
+  projectPath?: string;
 }
 
 function getFeatureColor(feature: string): string {
@@ -114,7 +115,7 @@ function getFeatureIcon(feature: string): React.ReactNode {
   return FEATURE_ICONS[baseFeature] || FEATURE_ICONS[feature] || <Cpu className="h-4 w-4" />;
 }
 
-export function OverviewTab({ data, loading }: OverviewTabProps) {
+export function OverviewTab({ data, loading, projectPath }: OverviewTabProps) {
   const { t } = useTranslation(['analytics']);
 
   if (loading) {
@@ -295,7 +296,7 @@ export function OverviewTab({ data, loading }: OverviewTabProps) {
       </div>
 
       {/* Generated Artifacts */}
-      <ArtifactsPanel filterByTab="overview" title="All Generated Artifacts" />
+      <ArtifactsPanel filterByTab="overview" title="All Generated Artifacts" projectPath={projectPath} />
     </div>
   );
 }

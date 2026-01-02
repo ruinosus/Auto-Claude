@@ -226,18 +226,23 @@ See [RELEASE.md](RELEASE.md) for detailed release process documentation.
 
 **Analytics (Langfuse):**
 
-> **See:** [docs/LANGFUSE_INTEGRATION.md](docs/LANGFUSE_INTEGRATION.md) for comprehensive documentation.
+> **Documentation:**
+> - [docs/LANGFUSE_INTEGRATION.md](docs/LANGFUSE_INTEGRATION.md) - Langfuse tracing, prompts, scores
+> - [docs/ARTIFACT_AND_ROI_SYSTEM.md](docs/ARTIFACT_AND_ROI_SYSTEM.md) - Artifact storage & ROI tracking
+> - [docs/AGENT_ARTIFACT_COMPLIANCE.md](docs/AGENT_ARTIFACT_COMPLIANCE.md) - Agent implementation guide
 
-- **analytics/langfuse_integration.py** - Core tracing, scores, sampling, metadata propagation
+**Core Modules:**
+- **analytics/artifact_storage.py** - Local artifact storage with full content preservation
+- **analytics/roi_publisher.py** - Unified ROI publishing to Langfuse
+- **analytics/roi_score_publisher.py** - Spec-based ROI calculation
+- **analytics/unified_roi_calculator.py** - ROI calculation for all features
+- **analytics/langfuse_integration.py** - Core tracing, scores, sampling
 - **analytics/prompt_registry.py** - Prompt management (Langfuse + local fallback)
 - **analytics/metrics_client.py** - Daily Metrics & Observations API
-- **analytics/evaluators.py** - LLM-as-a-Judge configuration
-- **analytics/datasets.py** - Experiment datasets for A/B testing
-- **analytics/roi_tracker.py** - ROI calculation and tracking
+- **analytics/feature_tracker.py** - Token/cost tracking for feature sessions
 - **analytics/api/** - FastAPI REST service for frontend
   - `app.py` - FastAPI application
-  - `langfuse_client.py` - Langfuse v3 API wrapper
-  - `routes.py` - REST endpoints (traces, ROI, metrics)
+  - `routes.py` - REST endpoints (traces, ROI, metrics, artifacts)
   - `roi_calculator.py` - Hybrid ROI calculation
   - `models.py` - Pydantic models
 - **scripts/migrate_prompts_to_langfuse.py** - Prompt migration tool
@@ -393,6 +398,113 @@ memory = get_graphiti_memory(spec_dir, project_dir)
 context = memory.get_context_for_session("Implementing feature X")
 memory.add_session_insight("Pattern: use React hooks for state")
 ```
+
+## MCP (Model Context Protocol)
+
+### What is MCP?
+
+The **Model Context Protocol (MCP)** is an open standard created by Anthropic to connect AI assistants with external data sources and tools. It replaces fragmented integrations with a single unified protocol, enabling AI systems to access relevant information seamlessly.
+
+**Key Resources:**
+- [Official Specification](https://modelcontextprotocol.io/specification/2025-11-25)
+- [GitHub Repository](https://github.com/modelcontextprotocol/modelcontextprotocol)
+- [Anthropic Announcement](https://www.anthropic.com/news/model-context-protocol)
+
+### MCP Architecture
+
+MCP follows a **client-server architecture** with three key participants:
+
+| Component | Description |
+|-----------|-------------|
+| **MCP Host** | AI application (Claude Code, VS Code, etc.) that coordinates MCP clients |
+| **MCP Client** | Maintains connection to an MCP server, obtains context for the host |
+| **MCP Server** | Program that provides tools, resources, and prompts to clients |
+
+### Protocol Layers
+
+1. **Data Layer** - JSON-RPC 2.0 based protocol with lifecycle management, capability negotiation
+2. **Transport Layer** - Communication channels:
+   - **STDIO** - Local servers via process communication
+   - **HTTP/SSE** - Remote servers with authentication support
+
+### MCP Primitives
+
+| Primitive | Description |
+|-----------|-------------|
+| **Tools** | Executable functions the AI can invoke (e.g., `render_diagram`, `search_code`) |
+| **Resources** | Data sources providing context (files, database records, API responses) |
+| **Prompts** | Reusable interaction templates and few-shot examples |
+
+### Built-in MCP Servers
+
+Auto Claude includes several pre-configured MCP servers in `apps/frontend/src/main/mcp-servers-config.ts`:
+
+| Server | Type | Description | URL/Command |
+|--------|------|-------------|-------------|
+| **Context7** | HTTP | Real-time documentation lookup | `https://mcp.context7.com/mcp` |
+| **Mermaid Chart** | HTTP | Official diagram creation & rendering | `https://mcp.mermaid.ai/mcp` |
+| **Auto-Claude Tools** | STDIO | Build progress, context, memory, ROI tracking | Internal |
+| **Puppeteer** | STDIO | Web browser automation | `@modelcontextprotocol/server-puppeteer` |
+| **Linear** | HTTP | Project management integration | `https://mcp.linear.app/mcp` |
+| **Graphiti** | HTTP | Knowledge graph memory | Configurable URL |
+| **Electron** | HTTP | Desktop app E2E testing | `localhost:9222` |
+
+### Adding Custom MCP Servers
+
+**Via UI:** Settings → MCP Servers → Add Custom Server
+
+**Via Configuration:** Edit `~/.auto-claude/mcp-servers.json` or project `.auto-claude/mcp-servers.json`
+
+**Example HTTP Server:**
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "url": "https://my-server.com/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+**Example STDIO Server:**
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "npx",
+      "args": ["-y", "@my-org/my-mcp-server"]
+    }
+  }
+}
+```
+
+### MCP Environment Variables
+
+Configure in `apps/backend/.env`:
+
+```bash
+# Enable/disable specific servers
+CONTEXT7_ENABLED=true
+LINEAR_MCP_ENABLED=true
+ELECTRON_MCP_ENABLED=false
+PUPPETEER_MCP_ENABLED=false
+GRAPHITI_ENABLED=false
+
+# Server URLs
+GRAPHITI_MCP_URL=http://localhost:8000
+```
+
+### Creating MCP Servers
+
+Auto Claude supports creating custom MCP servers via:
+
+1. **FastMCP Wizard** - UI-based Python server generation with `uv`
+2. **Manual Creation** - Using `@modelcontextprotocol/sdk` (TypeScript) or `fastmcp` (Python)
+
+**Files:**
+- `apps/frontend/src/main/mcp-servers/auto-claude-tools-stdio.ts` - STDIO transport example
+- `apps/frontend/src/main/mcp-servers/auto-claude-tools-http.ts` - HTTP transport example
 
 ## Development Guidelines
 

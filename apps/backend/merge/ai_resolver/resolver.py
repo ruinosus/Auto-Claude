@@ -57,65 +57,173 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
 
-def extract_merge_artifacts(resolutions: List[MergeResult]) -> List[Dict[str, Any]]:
+
+def extract_merge_artifacts(
+    resolutions: List[MergeResult],
+    project_dir: Optional[Any] = None,
+    spec_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Extract artifacts from merge resolutions for ROI tracking.
 
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - conflict_resolution ($150 each) - full merged code for each conflict
+    - merge_decision ($75 each) - decision with full merged content
+    - code_choice ($50 each) - each code block in merged content
+
     Args:
         resolutions: List of MergeResult objects from conflict resolution
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
 
     Returns:
-        List of artifacts with type, value, and description
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
     """
     artifacts = []
 
     for resolution in resolutions:
-        # Extract conflict_resolution artifacts ($150 each)
+        # Extract conflict_resolution artifacts ($150 each) - FULL merged code
         for conflict in resolution.conflicts_resolved:
+            # Build FULL content with merged code, not just description
+            content_parts = [
+                f"## Conflict Resolution: {conflict.file_path}",
+                f"**Location:** {conflict.location}",
+                f"**Severity:** {conflict.severity.value if conflict.severity else 'unknown'}",
+                f"**Reason:** {conflict.reason or 'conflict'}",
+            ]
+
+            # Include the FULL merged content if available
+            if resolution.merged_content:
+                content_parts.append("\n### Merged Code:")
+                content_parts.append(f"```\n{resolution.merged_content}\n```")
+
             artifacts.append({
                 "type": "conflict_resolution",
                 "format": "merge",
-                "content": f"Resolved conflict at {conflict.location} in {conflict.file_path}",
+                "content": "\n".join(content_parts),  # FULL CONTENT - no truncation!
                 "value_usd": 150,
                 "description": f"AI resolved conflict: {conflict.reason[:100] if conflict.reason else 'conflict'}",
                 "tab": "dev",
-                "file_path": conflict.file_path,
-                "location": conflict.location,
-                "severity": conflict.severity.value if conflict.severity else "unknown",
+                "metadata": {
+                    "file_path": conflict.file_path,
+                    "location": conflict.location,
+                    "severity": conflict.severity.value if conflict.severity else "unknown",
+                    "tasks_involved": list(conflict.tasks_involved) if conflict.tasks_involved else [],
+                },
             })
 
-        # Extract merge_decision artifacts ($75 each)
+        # Extract merge_decision artifacts ($75 each) - include FULL merged content
         if resolution.decision in [MergeDecision.AI_MERGED, MergeDecision.KEEP_OURS,
                                    MergeDecision.KEEP_THEIRS, MergeDecision.COMBINED]:
             decision_name = resolution.decision.value if hasattr(resolution.decision, 'value') else str(resolution.decision)
+
+            # Build FULL content with decision details and merged code
+            content_parts = [
+                f"## Merge Decision: {decision_name}",
+                f"**File:** {resolution.file_path}",
+                f"**Explanation:** {resolution.explanation or 'N/A'}",
+            ]
+
+            if resolution.merged_content:
+                content_parts.append("\n### Result:")
+                content_parts.append(f"```\n{resolution.merged_content}\n```")
+
             artifacts.append({
                 "type": "merge_decision",
                 "format": "decision",
-                "content": f"Merge decision: {decision_name} for {resolution.file_path}",
+                "content": "\n".join(content_parts),  # FULL CONTENT - no truncation!
                 "value_usd": 75,
                 "description": f"Merge strategy: {decision_name}",
                 "tab": "dev",
-                "decision": decision_name,
-                "file_path": resolution.file_path,
+                "metadata": {
+                    "decision": decision_name,
+                    "file_path": resolution.file_path,
+                    "conflicts_resolved_count": len(resolution.conflicts_resolved),
+                    "conflicts_remaining_count": len(resolution.conflicts_remaining),
+                },
             })
 
-        # Extract code_choice artifacts ($50 each) from merged content
+        # Extract code_choice artifacts ($50 each) from merged content - FULL code blocks
         if resolution.merged_content:
-            # Count code blocks in merged content as code choices
+            # Extract full code blocks from merged content
             code_blocks = re.findall(r'```(\w+)?\n(.*?)```', resolution.merged_content, re.DOTALL)
-            for i, (lang, _) in enumerate(code_blocks):
+            for i, (lang, code) in enumerate(code_blocks):
+                # Build FULL content with the actual code
+                content_parts = [
+                    f"## Code Choice #{i+1}",
+                    f"**File:** {resolution.file_path}",
+                    f"**Language:** {lang or 'text'}",
+                    "\n### Code:",
+                    f"```{lang or ''}\n{code}\n```",
+                ]
+
                 artifacts.append({
                     "type": "code_choice",
                     "format": lang or "text",
-                    "content": f"Code choice #{i+1} in {resolution.file_path}",
+                    "content": "\n".join(content_parts),  # FULL CONTENT - no truncation!
                     "value_usd": 50,
                     "description": f"AI selected code ({lang or 'text'})",
                     "tab": "dev",
-                    "file_path": resolution.file_path,
+                    "metadata": {
+                        "file_path": resolution.file_path,
+                        "language": lang or "text",
+                        "choice_index": i + 1,
+                        "code_length": len(code),
+                    },
                 })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        from pathlib import Path
+        project_path = Path(project_dir) if not isinstance(project_dir, Path) else project_dir
+
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_path,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="merge_resolver",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_path)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_path)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 # Type for the AI call function
 AICallFunction = Callable[[str, str], str]
@@ -143,6 +251,8 @@ class AIResolver:
         self,
         ai_call_fn: AICallFunction | None = None,
         max_context_tokens: int = MAX_CONTEXT_TOKENS,
+        project_dir: Optional[Any] = None,
+        spec_id: Optional[str] = None,
     ):
         """
         Initialize the AI resolver.
@@ -151,11 +261,15 @@ class AIResolver:
             ai_call_fn: Function that calls AI. Signature: (system_prompt, user_prompt) -> response
                         If None, uses a stub that requires explicit calls.
             max_context_tokens: Maximum tokens to include in context
+            project_dir: Project root directory for artifact storage
+            spec_id: Spec identifier for artifact grouping
         """
         self.ai_call_fn = ai_call_fn
         self.max_context_tokens = max_context_tokens
         self._call_count = 0
         self._total_tokens = 0
+        self._project_dir = project_dir
+        self._spec_id = spec_id
 
     def set_ai_function(self, ai_call_fn: AICallFunction) -> None:
         """Set the AI call function after initialization."""
@@ -407,11 +521,13 @@ class AIResolver:
                         self.resolve_conflict(conflict, baseline, task_snapshots)
                     )
 
-            # Publish ROI metrics
+            # Publish ROI metrics with artifact storage
             self._publish_roi_sync(
                 results=results,
                 project_id=project_id,
                 trace_id=langfuse_trace_id,
+                project_dir=self._project_dir,  # Use cached project_dir for artifact storage
+                spec_id=self._spec_id,
             )
 
         finally:
@@ -441,6 +557,8 @@ class AIResolver:
         results: list[MergeResult],
         project_id: Optional[str],
         trace_id: Optional[str],
+        project_dir: Optional[Any] = None,
+        spec_id: Optional[str] = None,
     ) -> None:
         """
         Publish ROI metrics synchronously (wraps async call).
@@ -449,6 +567,8 @@ class AIResolver:
             results: List of merge results
             project_id: Project identifier
             trace_id: Langfuse trace ID
+            project_dir: Project root directory for artifact storage
+            spec_id: Spec identifier for artifact grouping
         """
         if not ROI_PUBLISHER_AVAILABLE:
             return
@@ -482,10 +602,19 @@ class AIResolver:
             # Estimate cost (rough estimate based on tokens)
             estimated_cost = (total_tokens / 1000) * 0.003  # ~$0.003 per 1K tokens
 
-            # Extract artifacts for traceability
-            artifacts = extract_merge_artifacts(results)
+            # Extract artifacts for traceability with local storage
+            # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+            artifacts, langfuse_refs = extract_merge_artifacts(
+                results,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+            )
 
-            # Publish ROI
+            # Calculate total artifact value (use full artifacts for value)
+            total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+            # Publish ROI with Langfuse refs (truncated previews, not full content)
             async def _publish():
                 try:
                     roi_result = await publish_feature_roi(
@@ -500,12 +629,17 @@ class AIResolver:
                             "manual_intervention_avoided": manual_intervention_avoided,
                             "merge_decisions": merge_decisions,
                             "code_choices": code_choices,
+                            "artifacts_count": len(artifacts),
+                            "artifact_value_usd": total_artifact_value,
                         },
+                        spec_id=spec_id,
+                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
                     )
                     logger.info(
                         f"ROI published for merge resolver: "
                         f"resolved={conflicts_resolved}, files={files_merged}, "
-                        f"decisions={merge_decisions}, choices={code_choices}"
+                        f"decisions={merge_decisions}, choices={code_choices}, "
+                        f"artifacts={len(artifacts)}, value=${total_artifact_value}"
                     )
                     return roi_result
                 except Exception as e:

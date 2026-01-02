@@ -50,6 +50,17 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 # Prompt registry (optional - graceful degradation if not available)
 try:
     from analytics.prompt_registry import get_agent_prompt
@@ -90,9 +101,15 @@ def extract_qa_fix_artifacts(
     response_text: str,
     tool_count: int,
     status: dict[str, Any] | None,
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    project_dir: Path | None = None,
+    spec_id: str | None = None,
+    trace_id: str | None = None,
+    session_num: int | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, int], list[dict[str, Any]]]:
     """
     Extract artifacts and metrics from QA fixer response.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Artifact types and values (as specified in ROI_IMPLEMENTATION_TRACKER.md):
     - fix_applied: $150 each - each fix applied
@@ -103,9 +120,13 @@ def extract_qa_fix_artifacts(
         response_text: The response text from the QA fixer agent
         tool_count: Number of tools used during the session
         status: QA signoff status dict (from get_qa_signoff_status)
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
+        session_num: Fixer session number
 
     Returns:
-        Tuple of (artifacts list, metrics dict)
+        Tuple of (artifacts list, metrics dict, langfuse_refs list)
     """
     artifacts = []
     metrics = {
@@ -129,15 +150,16 @@ def extract_qa_fix_artifacts(
     for pattern in fix_patterns:
         matches = re.findall(pattern, response_lower, re.IGNORECASE)
         for match in matches:
-            desc = match.strip()[:150]
+            # FULL content - no truncation!
+            desc = match.strip()
             if desc and desc not in fix_descriptions:
                 fix_descriptions.append(desc)
                 artifacts.append({
                     "type": "fix_applied",
                     "format": "text",
-                    "content": desc,
+                    "content": desc,  # FULL CONTENT - no [:150] truncation
                     "value_usd": 150,
-                    "description": f"Fix applied: {desc[:50]}...",
+                    "description": f"Fix applied: {desc[:50]}..." if len(desc) > 50 else f"Fix applied: {desc}",
                     "tab": "dev",
                 })
                 metrics["fixes_applied"] += 1
@@ -204,7 +226,7 @@ def extract_qa_fix_artifacts(
             artifacts.append({
                 "type": "test_fix",
                 "format": "text",
-                "content": match.group(0).strip()[:150],
+                "content": match.group(0).strip(),  # FULL CONTENT - no [:150] truncation
                 "value_usd": 75,
                 "description": "Test fix/addition",
                 "tab": "dev",
@@ -222,7 +244,7 @@ def extract_qa_fix_artifacts(
         matches = re.findall(pattern, response_text, re.IGNORECASE)
         for match in matches:
             if isinstance(match, str):
-                files_modified.add(match.strip()[:100])
+                files_modified.add(match.strip())  # FULL CONTENT - no [:100] truncation
 
     metrics["files_modified"] = len(files_modified)
 
@@ -234,13 +256,44 @@ def extract_qa_fix_artifacts(
             artifacts.append({
                 "type": "code_fix",
                 "format": lang or "text",
-                "content": code.strip()[:500],
+                "content": code.strip(),  # FULL CONTENT - no [:500] truncation
                 "value_usd": 50,
                 "description": f"Code fix ({lang or 'text'})",
                 "tab": "dev",
             })
 
-    return artifacts, metrics
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="qa_fixer",
+                session_num=session_num,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, metrics, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, metrics, artifacts
 
 
 # =============================================================================
@@ -536,13 +589,20 @@ async def run_qa_fixer_session(
         )
 
         # Extract artifacts and publish ROI metrics
+        # Use effective_project_dir for analytics (original project, not worktree)
+        effective_project_dir = analytics_project_dir or project_dir
         if ROI_PUBLISHER_AVAILABLE and response_text:
             try:
                 # Extract artifacts from the response
-                artifacts, roi_metrics = extract_qa_fix_artifacts(
+                # Returns (full_artifacts, metrics, langfuse_refs)
+                artifacts, roi_metrics, langfuse_refs = extract_qa_fix_artifacts(
                     response_text=response_text,
                     tool_count=tool_count,
                     status=status,
+                    project_dir=effective_project_dir,
+                    spec_id=spec_id,
+                    trace_id=langfuse_trace_id,
+                    session_num=fix_session,
                 )
 
                 debug(
@@ -558,7 +618,7 @@ async def run_qa_fixer_session(
                 # ~4 characters per token is a common approximation
                 estimated_tokens = (len(prompt) + len(response_text)) // 4
 
-                # Publish ROI to Langfuse
+                # Publish ROI to Langfuse with refs (truncated previews, not full content)
                 import asyncio
                 asyncio.create_task(
                     publish_feature_roi(
@@ -575,6 +635,7 @@ async def run_qa_fixer_session(
                             "qa_attempts": fix_session,
                             "qa_passed": bool(status and status.get("ready_for_qa_revalidation")),
                         },
+                        artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
                     )
                 )
                 debug("qa_fixer", "ROI publish task created")
@@ -637,16 +698,18 @@ async def run_qa_fixer_session(
             try:
                 # Set trace output before exiting - include artifacts if available
                 if ctx:
-                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                    output_data = {"response": trace_output, "tool_count": tool_count}
+                    # FULL content - NO truncation (Zero Truncation Policy)
+                    output_data = {"response": response_text, "tool_count": tool_count}
 
                     # Include ROI metrics if they were extracted
                     if ROI_PUBLISHER_AVAILABLE and response_text:
                         try:
-                            _, roi_metrics = extract_qa_fix_artifacts(
+                            # Don't save artifacts again - just get metrics for output
+                            _, roi_metrics, _ = extract_qa_fix_artifacts(
                                 response_text=response_text,
                                 tool_count=tool_count,
                                 status=status if 'status' in dir() else None,
+                                # Don't pass project_dir - artifacts already saved in main path
                             )
                             output_data["roi_metrics"] = roi_metrics
                         except Exception:

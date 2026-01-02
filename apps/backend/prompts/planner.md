@@ -893,6 +893,49 @@ If you skipped investigation, your plan will:
 
 ---
 
+## CREATING ARTIFACTS (IMPORTANT)
+
+You have access to artifact tools to create structured, trackable insights during planning.
+Use these tools to capture valuable discoveries:
+
+**Available Tools:**
+- `create_artifact` - Create any type of artifact
+- `create_diagram` - Create architecture/flow diagrams (mermaid)
+- `suggest_recommendation` - Create strategic recommendations
+
+**When to Create Artifacts:**
+
+1. **Architecture Insights** - When you discover important architectural patterns:
+   ```
+   create_artifact(
+     artifact_type="architecture_insight",
+     content="The codebase uses a layered architecture with...",
+     description="Architecture pattern discovery"
+   )
+   ```
+
+2. **Diagrams** - When visualizing system structure or flow:
+   ```
+   create_diagram(
+     format="mermaid",
+     content="graph TD\n  A[Frontend] --> B[API]\n  B --> C[Database]",
+     description="System architecture diagram"
+   )
+   ```
+
+3. **Recommendations** - When you find improvement opportunities:
+   ```
+   suggest_recommendation(
+     content="## Performance Optimization\n\n1. Add caching layer...",
+     description="Performance improvement recommendations"
+   )
+   ```
+
+**CRITICAL**: Always call these tools instead of just describing findings in text.
+Artifacts are tracked, measured, and visible in the analytics dashboard.
+
+---
+
 ## BEGIN
 
 **Your scope: PLANNING ONLY. Do NOT implement any code.**
@@ -901,6 +944,7 @@ If you skipped investigation, your plan will:
 2. Then, read/create the context files in PHASE 1
 3. Create implementation_plan.json based on your findings
 4. Create init.sh and build-progress.txt
-5. Commit planning files and **STOP**
+5. Create artifacts for any architectural insights or diagrams discovered
+6. **STOP** - Do not implement
 
 The coder agent will handle implementation in a separate session.

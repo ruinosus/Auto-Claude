@@ -10,8 +10,140 @@
 import express from 'express';
 import type { Request as ExpressRequest, Response as ExpressResponse } from 'express-serve-static-core';
 import { ipcMain } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const API_PORT = process.env.ELECTRON_API_PORT || 9824;
+
+// ============================================================================
+// ARTIFACT STORAGE HELPERS
+// ============================================================================
+
+interface LocalArtifact {
+  id: string;
+  type: string;
+  format?: string;
+  content: string;
+  value_usd?: number;
+  description?: string;
+  created_at?: string;
+  trace_id?: string;
+  spec_id?: string;
+  project_id?: string;
+  agent_type?: string;
+  session_num?: number;
+}
+
+interface ArtifactFilters {
+  spec_id?: string;
+  trace_id?: string;
+  type?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+}
+
+function getArtifactsDir(projectPath: string): string {
+  return path.join(projectPath, '.auto-claude', 'artifacts');
+}
+
+function loadArtifactIndex(projectPath: string): Record<string, any> {
+  const indexPath = path.join(getArtifactsDir(projectPath), 'index.json');
+  if (fs.existsSync(indexPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function loadArtifact(projectPath: string, artifactId: string): LocalArtifact | null {
+  const artifactsDir = getArtifactsDir(projectPath);
+
+  // Try to find via index first
+  const index = loadArtifactIndex(projectPath);
+  if (index[artifactId]?.path) {
+    const fullPath = path.join(projectPath, index[artifactId].path);
+    if (fs.existsSync(fullPath)) {
+      try {
+        return JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  // Fallback: search in date folders
+  if (fs.existsSync(artifactsDir)) {
+    const folders = fs.readdirSync(artifactsDir).filter(f =>
+      fs.statSync(path.join(artifactsDir, f)).isDirectory()
+    );
+
+    for (const folder of folders) {
+      const artifactPath = path.join(artifactsDir, folder, `${artifactId}.json`);
+      if (fs.existsSync(artifactPath)) {
+        try {
+          return JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function listArtifacts(projectPath: string, filters?: ArtifactFilters): LocalArtifact[] {
+  const artifactsDir = getArtifactsDir(projectPath);
+  const artifacts: LocalArtifact[] = [];
+
+  if (!fs.existsSync(artifactsDir)) {
+    return artifacts;
+  }
+
+  const folders = fs.readdirSync(artifactsDir).filter(f => {
+    const fullPath = path.join(artifactsDir, f);
+    return fs.statSync(fullPath).isDirectory();
+  });
+
+  // Filter by date range
+  const filteredFolders = folders.filter(folder => {
+    if (filters?.date_from && folder < filters.date_from) return false;
+    if (filters?.date_to && folder > filters.date_to) return false;
+    return true;
+  });
+
+  for (const folder of filteredFolders) {
+    const folderPath = path.join(artifactsDir, folder);
+    const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.json'));
+
+    for (const file of files) {
+      try {
+        const artifact = JSON.parse(
+          fs.readFileSync(path.join(folderPath, file), 'utf-8')
+        );
+
+        // Apply filters
+        if (filters?.spec_id && artifact.spec_id !== filters.spec_id) continue;
+        if (filters?.trace_id && artifact.trace_id !== filters.trace_id) continue;
+        if (filters?.type && artifact.type !== filters.type) continue;
+
+        artifacts.push(artifact);
+
+        if (filters?.limit && artifacts.length >= filters.limit) {
+          return artifacts;
+        }
+      } catch {
+        // Skip invalid files
+      }
+    }
+  }
+
+  return artifacts;
+}
 
 interface BuildProgressResponse {
   specId: string;
@@ -382,6 +514,130 @@ export function startElectronApiBridge(): ReturnType<typeof express> {
     } catch (error) {
       console.error('[API Bridge] Error in /api/activity-types:', error);
       res.status(500).json({ error: error instanceof Error ? error.message : 'Internal server error' });
+    }
+  });
+
+  // ============================================================================
+  // ARTIFACT ENDPOINTS
+  // ============================================================================
+
+  // Endpoint: Get single artifact by ID
+  app.get('/api/artifact/:id', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { id } = req.params;
+      const { projectPath } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      const artifact = loadArtifact(projectPath, id);
+      if (!artifact) {
+        res.status(404).json({ error: 'Artifact not found' });
+        return;
+      }
+
+      res.json(artifact);
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifact/:id:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
+  // Endpoint: List artifacts with filters
+  app.get('/api/artifacts', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { projectPath, spec_id, trace_id, type, date_from, date_to, limit } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      const filters: ArtifactFilters = {};
+      if (spec_id) filters.spec_id = spec_id as string;
+      if (trace_id) filters.trace_id = trace_id as string;
+      if (type) filters.type = type as string;
+      if (date_from) filters.date_from = date_from as string;
+      if (date_to) filters.date_to = date_to as string;
+      if (limit) filters.limit = parseInt(limit as string, 10);
+
+      const artifacts = listArtifacts(projectPath, filters);
+      res.json({
+        count: artifacts.length,
+        artifacts: artifacts.map(a => ({
+          id: a.id,
+          type: a.type,
+          format: a.format,
+          value_usd: a.value_usd,
+          description: a.description,
+          created_at: a.created_at,
+          spec_id: a.spec_id,
+          trace_id: a.trace_id,
+          agent_type: a.agent_type,
+          content_preview: a.content?.substring(0, 200) + (a.content?.length > 200 ? '...' : '')
+        }))
+      });
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifacts:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
+  // Endpoint: Get artifacts by trace ID
+  app.get('/api/artifacts/trace/:traceId', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { traceId } = req.params;
+      const { projectPath } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      const artifacts = listArtifacts(projectPath, { trace_id: traceId });
+      res.json({
+        trace_id: traceId,
+        count: artifacts.length,
+        artifacts
+      });
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifacts/trace/:traceId:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
+  // Endpoint: Get artifact content only (for large artifacts)
+  app.get('/api/artifact/:id/content', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { id } = req.params;
+      const { projectPath } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      const artifact = loadArtifact(projectPath, id);
+      if (!artifact) {
+        res.status(404).json({ error: 'Artifact not found' });
+        return;
+      }
+
+      res.type(artifact.format === 'json' ? 'application/json' : 'text/plain');
+      res.send(artifact.content);
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifact/:id/content:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
     }
   });
 

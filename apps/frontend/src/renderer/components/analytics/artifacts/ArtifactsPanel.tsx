@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { getArtifacts, ArtifactTrace, Artifact } from '../../../services/analytics-api';
 import { formatCurrency } from '../utils/formatters';
 import { MermaidPreview } from './MermaidPreview';
+import { ArtifactDetailModal } from './ArtifactDetailModal';
 import {
   GitBranch,
   Code,
@@ -36,7 +37,8 @@ import {
   Users,
   Zap,
   Eye,
-  ClipboardList
+  ClipboardList,
+  Maximize2
 } from 'lucide-react';
 import { ArtifactTab, ArtifactType } from '../../../services/analytics-api';
 
@@ -142,24 +144,38 @@ const TAB_ARTIFACT_TYPES: Record<ArtifactTab, ArtifactType[]> = {
 
 interface ArtifactsPanelProps {
   projectId?: string;
+  projectPath?: string;  // Project directory path for loading full artifact content
   className?: string;
   filterByTab?: ArtifactTab;
   title?: string;
 }
 
-export function ArtifactsPanel({ projectId, className = '', filterByTab, title }: ArtifactsPanelProps) {
+// Selected artifact state for modal
+interface SelectedArtifact {
+  id: string;
+  traceId: string;
+  artifact: Artifact;
+}
+
+export function ArtifactsPanel({ projectId, projectPath, className = '', filterByTab, title }: ArtifactsPanelProps) {
   const { t } = useTranslation(['analytics']);
   const [traces, setTraces] = useState<ArtifactTrace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selectedArtifact, setSelectedArtifact] = useState<SelectedArtifact | null>(null);
 
   useEffect(() => {
     async function fetchArtifacts() {
       try {
         setLoading(true);
-        const response = await getArtifacts({ project_id: projectId, limit: 20 });
+        // Pass project_path to load full artifact content from local storage
+        const response = await getArtifacts({
+          project_id: projectId,
+          project_path: projectPath,
+          limit: 20
+        });
         setTraces(response.artifacts);
         setError(null);
       } catch (err) {
@@ -170,7 +186,7 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
     }
 
     fetchArtifacts();
-  }, [projectId]);
+  }, [projectId, projectPath]);
 
   // Filter artifacts by tab if specified
   const allowedTypes = filterByTab ? TAB_ARTIFACT_TYPES[filterByTab] : [];
@@ -315,28 +331,40 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
                 </div>
 
                 <div className="flex items-center gap-4">
-                  {/* Value breakdown pills */}
-                  <div className="flex gap-2">
-                    {trace.value_breakdown.diagrams > 0 && (
-                      <span className="px-2 py-1 text-xs rounded-full bg-purple-500/10 text-purple-400">
-                        Diagrams: {formatCurrency(trace.value_breakdown.diagrams)}
-                      </span>
-                    )}
-                    {trace.value_breakdown.security > 0 && (
-                      <span className="px-2 py-1 text-xs rounded-full bg-red-500/10 text-red-400">
-                        Security: {formatCurrency(trace.value_breakdown.security)}
-                      </span>
-                    )}
-                    {trace.value_breakdown.recommendations > 0 && (
-                      <span className="px-2 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">
-                        Recs: {formatCurrency(trace.value_breakdown.recommendations)}
-                      </span>
-                    )}
-                    {trace.value_breakdown.code_explanations > 0 && (
-                      <span className="px-2 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">
-                        Code: {formatCurrency(trace.value_breakdown.code_explanations)}
-                      </span>
-                    )}
+                  {/* Value breakdown pills - dynamically generated for all artifact types */}
+                  <div className="flex gap-2 flex-wrap">
+                    {Object.entries(trace.value_breakdown)
+                      .filter(([_, value]) => value > 0)
+                      .slice(0, 4) // Limit to 4 pills to avoid overflow
+                      .map(([type, value]) => {
+                        // Map type to display label and colors
+                        const typeConfig: Record<string, { label: string; bgColor: string; textColor: string }> = {
+                          diagrams: { label: 'Diagrams', bgColor: 'bg-purple-500/10', textColor: 'text-purple-400' },
+                          diagram: { label: 'Diagram', bgColor: 'bg-purple-500/10', textColor: 'text-purple-400' },
+                          security: { label: 'Security', bgColor: 'bg-red-500/10', textColor: 'text-red-400' },
+                          security_finding: { label: 'Security', bgColor: 'bg-red-500/10', textColor: 'text-red-400' },
+                          recommendations: { label: 'Recs', bgColor: 'bg-yellow-500/10', textColor: 'text-yellow-400' },
+                          recommendation: { label: 'Rec', bgColor: 'bg-yellow-500/10', textColor: 'text-yellow-400' },
+                          code_explanations: { label: 'Code', bgColor: 'bg-blue-500/10', textColor: 'text-blue-400' },
+                          code_example: { label: 'Code', bgColor: 'bg-blue-500/10', textColor: 'text-blue-400' },
+                          architecture_insight: { label: 'Arch', bgColor: 'bg-indigo-500/10', textColor: 'text-indigo-400' },
+                          documentation: { label: 'Docs', bgColor: 'bg-cyan-500/10', textColor: 'text-cyan-400' },
+                          api_design: { label: 'API', bgColor: 'bg-indigo-500/10', textColor: 'text-indigo-400' },
+                          performance_insight: { label: 'Perf', bgColor: 'bg-pink-500/10', textColor: 'text-pink-400' },
+                          bug_fix: { label: 'Fix', bgColor: 'bg-orange-500/10', textColor: 'text-orange-400' },
+                          test_case: { label: 'Test', bgColor: 'bg-green-500/10', textColor: 'text-green-400' },
+                        };
+                        const config = typeConfig[type] || {
+                          label: type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+                          bgColor: 'bg-gray-500/10',
+                          textColor: 'text-gray-400'
+                        };
+                        return (
+                          <span key={type} className={`px-2 py-1 text-xs rounded-full ${config.bgColor} ${config.textColor}`}>
+                            {config.label}: {formatCurrency(value as number)}
+                          </span>
+                        );
+                      })}
                   </div>
 
                   <span className="text-emerald-400 font-semibold">
@@ -348,6 +376,25 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
               {/* Expanded content */}
               {isExpanded && trace.artifacts.length > 0 && (
                 <div className="border-t border-gray-700 p-4 bg-gray-900/30">
+                  {/* Full query display */}
+                  <div className="mb-4 p-3 bg-gray-800/50 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-gray-500 uppercase tracking-wide">Request</span>
+                      <button
+                        onClick={() => copyToClipboard(trace.query, `query-${trace.trace_id}`)}
+                        className="p-1 hover:bg-gray-700 rounded transition-colors"
+                        title="Copy query"
+                      >
+                        {copiedId === `query-${trace.trace_id}` ? (
+                          <Check className="h-3 w-3 text-green-400" />
+                        ) : (
+                          <Copy className="h-3 w-3 text-gray-400" />
+                        )}
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-300 whitespace-pre-wrap">{trace.query}</p>
+                  </div>
+
                   <div className="space-y-3">
                     {trace.artifacts.map((artifact, idx) => {
                       const config = ARTIFACT_CONFIG[artifact.type] || ARTIFACT_CONFIG.code_example;
@@ -369,7 +416,18 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
                                 {formatCurrency(artifact.value_usd)}
                               </span>
                               <button
-                                onClick={() => copyToClipboard(artifact.content, artifactId)}
+                                onClick={() => setSelectedArtifact({
+                                  id: artifact.id || artifactId,
+                                  traceId: trace.trace_id,
+                                  artifact
+                                })}
+                                className="p-1 hover:bg-gray-700 rounded transition-colors"
+                                title="View full content"
+                              >
+                                <Maximize2 className="h-4 w-4 text-gray-400" />
+                              </button>
+                              <button
+                                onClick={() => copyToClipboard(artifact.content || '', artifactId)}
                                 className="p-1 hover:bg-gray-700 rounded transition-colors"
                                 title="Copy content"
                               >
@@ -384,11 +442,11 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
 
                           {/* Content preview - render based on type */}
                           {artifact.type === 'diagram' && artifact.format === 'mermaid' ? (
-                            <MermaidPreview content={artifact.content} />
+                            <MermaidPreview content={artifact.content || ''} />
                           ) : artifact.type === 'recommendation' ? (
                             <div className="bg-black/30 rounded p-4 text-sm text-gray-200 leading-relaxed">
                               <Lightbulb className="h-4 w-4 text-yellow-400 inline mr-2" />
-                              {artifact.content}
+                              {artifact.content || '(No content)'}
                             </div>
                           ) : artifact.type === 'security_finding' ? (
                             <div className="bg-black/30 rounded p-4 text-sm text-gray-200 leading-relaxed">
@@ -400,15 +458,15 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
                                       {artifact.keyword}
                                     </span>
                                   )}
-                                  <p>{artifact.content}</p>
+                                  <p>{artifact.content || '(No content)'}</p>
                                 </div>
                               </div>
                             </div>
                           ) : (
                             <pre className="text-xs text-gray-300 bg-black/30 rounded p-3 overflow-x-auto max-h-48">
-                              {artifact.content.length > 500
-                                ? artifact.content.slice(0, 500) + '...'
-                                : artifact.content}
+                              {(artifact.content?.length || 0) > 500
+                                ? artifact.content?.slice(0, 500) + '...'
+                                : artifact.content || '(No content)'}
                             </pre>
                           )}
                         </div>
@@ -436,6 +494,24 @@ export function ArtifactsPanel({ projectId, className = '', filterByTab, title }
           );
         })}
       </div>
+
+      {/* Artifact Detail Modal */}
+      {selectedArtifact && (
+        <ArtifactDetailModal
+          isOpen={!!selectedArtifact}
+          onClose={() => setSelectedArtifact(null)}
+          projectId={projectId || ''}
+          artifactId={selectedArtifact.id}
+          initialArtifact={{
+            type: selectedArtifact.artifact.type,
+            content: selectedArtifact.artifact.content,
+            value_usd: selectedArtifact.artifact.value_usd,
+            description: selectedArtifact.artifact.description,
+            format: selectedArtifact.artifact.format,
+            trace_id: selectedArtifact.traceId,
+          }}
+        />
+      )}
     </div>
   );
 }

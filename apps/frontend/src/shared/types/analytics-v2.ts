@@ -69,3 +69,29 @@ export interface Benchmark {
   hourlyRate: number;
   minutesPerLine: number;
 }
+
+// Local artifact storage types (full content stored locally)
+export interface LocalArtifact {
+  id: string;
+  type: string;
+  format?: string;
+  content: string;
+  value_usd: number;
+  description?: string;
+  tab?: string;
+  created_at: string;
+  trace_id?: string;
+  spec_id?: string;
+  project_id?: string;
+  agent_type?: string;
+  session_num?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ArtifactFilters {
+  spec_id?: string;
+  trace_id?: string;
+  type?: string;
+  date?: string;
+  limit?: number;
+}

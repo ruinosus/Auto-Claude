@@ -7,6 +7,7 @@ Coordinates all phases of the roadmap generation process.
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 from client import create_client
 from debug import debug, debug_error, debug_section, debug_success, debug_warning
@@ -21,10 +22,332 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 from .competitor_analyzer import CompetitorAnalyzer
 from .executor import AgentExecutor, ScriptExecutor
 from .graph_integration import GraphHintsProvider
 from .phases import DiscoveryPhase, FeaturesPhase, ProjectIndexPhase
+
+
+# =============================================================================
+# ARTIFACT EXTRACTION
+# =============================================================================
+
+
+def extract_roadmap_artifacts(
+    roadmap: dict[str, Any],
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Extract roadmap artifacts from the generated roadmap.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - roadmap_vision ($100) - strategic vision statement
+    - roadmap_phase ($75 each) - each phase/milestone
+    - roadmap_feature ($50 each) - each feature identified
+    - priority_decision ($25) - prioritization rationale
+
+    Args:
+        roadmap: The roadmap dict from roadmap.json
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
+
+    Returns:
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full if storage unavailable)
+    """
+    artifacts = []
+
+    # Extract vision artifact
+    vision = roadmap.get("vision", "")
+    if vision:
+        artifacts.append({
+            "type": "roadmap_vision",
+            "format": "text",
+            "content": vision,  # FULL CONTENT - no truncation
+            "value_usd": 100,
+            "description": "Strategic product vision",
+            "tab": "ops",
+        })
+
+    # Extract target audience insight
+    target_audience = roadmap.get("target_audience", {})
+    if isinstance(target_audience, dict) and target_audience:
+        primary = target_audience.get("primary", "")
+        secondary = target_audience.get("secondary", [])
+        audience_content = f"Primary: {primary}"
+        if secondary:
+            if isinstance(secondary, list):
+                audience_content += f"\nSecondary: {', '.join(secondary)}"
+            else:
+                audience_content += f"\nSecondary: {secondary}"
+
+        artifacts.append({
+            "type": "target_audience",
+            "format": "text",
+            "content": audience_content,
+            "value_usd": 50,
+            "description": "Target audience analysis",
+            "tab": "ops",
+        })
+
+    # Extract phase artifacts
+    phases = roadmap.get("phases", [])
+    for i, phase in enumerate(phases):
+        if isinstance(phase, dict):
+            phase_name = phase.get("name", f"Phase {i+1}")
+            phase_description = phase.get("description", "")
+            phase_goals = phase.get("goals", [])
+            phase_duration = phase.get("duration", "")
+
+            content = f"**{phase_name}**"
+            if phase_description:
+                content += f"\n\n{phase_description}"
+            if phase_goals:
+                goals_list = phase_goals if isinstance(phase_goals, list) else [phase_goals]
+                content += f"\n\nGoals:\n" + "\n".join(f"- {g}" for g in goals_list)
+            if phase_duration:
+                content += f"\n\nDuration: {phase_duration}"
+
+            artifacts.append({
+                "type": "roadmap_phase",
+                "format": "text",
+                "content": content,  # FULL CONTENT
+                "value_usd": 75,
+                "description": f"Phase: {phase_name}",
+                "tab": "ops",
+                "metadata": {
+                    "phase_index": i,
+                    "phase_name": phase_name,
+                    "duration": phase_duration,
+                },
+            })
+
+    # Extract feature artifacts
+    features = roadmap.get("features", [])
+    for i, feature in enumerate(features):
+        if isinstance(feature, dict):
+            feature_name = feature.get("name", feature.get("title", f"Feature {i+1}"))
+            feature_desc = feature.get("description", "")
+            feature_priority = feature.get("priority", "unknown")
+            feature_status = feature.get("status", "")
+            feature_phase = feature.get("phase", "")
+            feature_effort = feature.get("effort", "")
+            feature_impact = feature.get("impact", "")
+
+            content = f"**{feature_name}** [{feature_priority.upper()}]"
+            if feature_desc:
+                content += f"\n\n{feature_desc}"
+            if feature_phase:
+                content += f"\n\nPhase: {feature_phase}"
+            if feature_effort:
+                content += f"\nEffort: {feature_effort}"
+            if feature_impact:
+                content += f"\nImpact: {feature_impact}"
+            if feature_status:
+                content += f"\nStatus: {feature_status}"
+
+            artifacts.append({
+                "type": "roadmap_feature",
+                "format": "text",
+                "content": content,  # FULL CONTENT
+                "value_usd": 50,
+                "description": f"Feature: {feature_name}",
+                "tab": "ops",
+                "metadata": {
+                    "feature_index": i,
+                    "feature_name": feature_name,
+                    "priority": feature_priority,
+                    "status": feature_status,
+                    "phase": feature_phase,
+                },
+            })
+
+    # Extract priority decisions (from features with rationale)
+    for feature in features:
+        if isinstance(feature, dict):
+            rationale = feature.get("priority_rationale", feature.get("rationale", ""))
+            if rationale:
+                feature_name = feature.get("name", feature.get("title", "Unknown"))
+                priority = feature.get("priority", "unknown")
+
+                artifacts.append({
+                    "type": "priority_decision",
+                    "format": "text",
+                    "content": f"{feature_name} ({priority.upper()}): {rationale}",
+                    "value_usd": 25,
+                    "description": f"Priority rationale: {feature_name}",
+                    "tab": "ops",
+                })
+
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=None,  # Roadmap is project-level, not spec-specific
+                trace_id=trace_id,
+                agent_type="roadmap_generator",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
+
+
+def extract_competitor_artifacts(
+    competitor_data: dict[str, Any],
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Extract competitor analysis artifacts.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - competitor_insight ($75) - each competitor analyzed
+    - market_gap ($100) - identified market opportunities
+
+    Args:
+        competitor_data: The competitor analysis data
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
+
+    Returns:
+        Tuple of (local_artifacts, langfuse_refs)
+    """
+    artifacts = []
+
+    # Extract competitor insights
+    competitors = competitor_data.get("competitors", [])
+    for i, competitor in enumerate(competitors):
+        if isinstance(competitor, dict):
+            name = competitor.get("name", f"Competitor {i+1}")
+            strengths = competitor.get("strengths", [])
+            weaknesses = competitor.get("weaknesses", [])
+            differentiation = competitor.get("differentiation", "")
+
+            content = f"**{name}**"
+            if strengths:
+                strengths_list = strengths if isinstance(strengths, list) else [strengths]
+                content += f"\n\nStrengths:\n" + "\n".join(f"- {s}" for s in strengths_list)
+            if weaknesses:
+                weaknesses_list = weaknesses if isinstance(weaknesses, list) else [weaknesses]
+                content += f"\n\nWeaknesses:\n" + "\n".join(f"- {w}" for w in weaknesses_list)
+            if differentiation:
+                content += f"\n\nDifferentiation: {differentiation}"
+
+            artifacts.append({
+                "type": "competitor_insight",
+                "format": "text",
+                "content": content,  # FULL CONTENT
+                "value_usd": 75,
+                "description": f"Competitor: {name}",
+                "tab": "ops",
+                "metadata": {
+                    "competitor_name": name,
+                },
+            })
+
+    # Extract market gaps
+    gaps = competitor_data.get("market_gaps", competitor_data.get("gaps", []))
+    for gap in gaps:
+        if isinstance(gap, dict):
+            gap_title = gap.get("title", gap.get("name", "Market Opportunity"))
+            gap_desc = gap.get("description", "")
+            gap_opportunity = gap.get("opportunity", "")
+
+            content = f"**{gap_title}**"
+            if gap_desc:
+                content += f"\n\n{gap_desc}"
+            if gap_opportunity:
+                content += f"\n\nOpportunity: {gap_opportunity}"
+
+            artifacts.append({
+                "type": "market_gap",
+                "format": "text",
+                "content": content,
+                "value_usd": 100,
+                "description": f"Market gap: {gap_title}",
+                "tab": "ops",
+            })
+        elif isinstance(gap, str) and gap:
+            artifacts.append({
+                "type": "market_gap",
+                "format": "text",
+                "content": gap,
+                "value_usd": 100,
+                "description": "Market gap identified",
+                "tab": "ops",
+            })
+
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=None,
+                trace_id=trace_id,
+                agent_type="competitor_analyzer",
+                session_num=None,
+            )
+
+            if artifact_id:
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        return artifacts, artifacts
+
+
+# =============================================================================
+# ORCHESTRATOR
+# =============================================================================
 
 
 class RoadmapOrchestrator:
@@ -209,6 +532,7 @@ class RoadmapOrchestrator:
         """Publish ROI metrics for roadmap generation.
 
         Calculates the value of strategic planning and prioritization.
+        Extracts artifacts and stores them locally, passes refs to Langfuse.
         """
         if not ROI_PUBLISHER_AVAILABLE:
             debug_warning("roadmap_orchestrator", "ROI publisher not available")
@@ -226,6 +550,7 @@ class RoadmapOrchestrator:
                 roadmap = json.load(f)
 
             features = roadmap.get("features", [])
+            phases = roadmap.get("phases", [])
 
             # Count features by status
             features_identified = len(features)
@@ -240,6 +565,43 @@ class RoadmapOrchestrator:
 
             project_id = self.project_dir.name
 
+            # Extract roadmap artifacts - stores full content locally
+            # Returns (full_artifacts, langfuse_refs)
+            all_artifacts = []
+            all_refs = []
+
+            # Extract roadmap artifacts (vision, phases, features)
+            roadmap_artifacts, roadmap_refs = extract_roadmap_artifacts(
+                roadmap=roadmap,
+                project_dir=self.project_dir,
+                trace_id=None,  # No trace context in orchestrator
+            )
+            all_artifacts.extend(roadmap_artifacts)
+            all_refs.extend(roadmap_refs)
+
+            # Extract competitor artifacts if available
+            competitor_file = self.output_dir / "competitor_analysis.json"
+            if competitor_file.exists():
+                try:
+                    with open(competitor_file) as f:
+                        competitor_data = json.load(f)
+                    competitor_artifacts, competitor_refs = extract_competitor_artifacts(
+                        competitor_data=competitor_data,
+                        project_dir=self.project_dir,
+                        trace_id=None,
+                    )
+                    all_artifacts.extend(competitor_artifacts)
+                    all_refs.extend(competitor_refs)
+                except Exception as e:
+                    debug_warning(
+                        "roadmap_orchestrator",
+                        f"Failed to extract competitor artifacts: {e}",
+                    )
+
+            # Calculate total artifact value (use full artifacts for value)
+            total_artifact_value = sum(a.get("value_usd", 0) for a in all_artifacts)
+
+            # Publish ROI with Langfuse refs (truncated previews, not full content)
             result = await publish_roadmap_roi(
                 project_id=project_id,
                 features_identified=features_identified,
@@ -247,6 +609,7 @@ class RoadmapOrchestrator:
                 cost_usd=estimated_cost,
                 tokens=estimated_tokens,
                 model=self.model,
+                artifacts=all_refs,  # Pass refs for Langfuse
             )
 
             if result.get("success"):
@@ -263,7 +626,20 @@ class RoadmapOrchestrator:
                     value=value,
                     features=features_identified,
                     rejected=features_rejected,
+                    artifacts_count=len(all_artifacts),
+                    artifact_value=total_artifact_value,
+                    phases_count=len(phases),
                 )
+
+                # Log artifact storage info if available
+                if ARTIFACT_STORAGE_AVAILABLE and all_artifacts:
+                    debug(
+                        "roadmap_roi",
+                        "Artifacts stored locally",
+                        roadmap_artifacts=len(roadmap_artifacts),
+                        competitor_artifacts=len(all_artifacts) - len(roadmap_artifacts),
+                        storage_dir=str(self.project_dir / ".auto-claude" / "artifacts"),
+                    )
             else:
                 debug_warning(
                     "roadmap_roi",

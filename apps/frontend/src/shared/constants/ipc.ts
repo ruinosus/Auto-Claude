@@ -492,6 +492,11 @@ export const IPC_CHANNELS = {
   ROI_GET_AGGREGATE: 'roi:getAggregate',
   ROI_DELETE_SPEC: 'roi:deleteSpec',
 
+  // Artifact storage operations (local full content storage)
+  ARTIFACT_GET: 'artifact:get',               // Get single artifact by ID
+  ARTIFACT_LIST: 'artifact:list',             // List artifacts with filters
+  ARTIFACT_GET_BY_TRACE: 'artifact:getByTrace', // Get artifacts by trace ID
+
   // Skills IPC Channels
   SKILLS_LIST: 'skills:list',
   SKILLS_INSTALL: 'skills:install',

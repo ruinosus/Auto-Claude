@@ -287,9 +287,9 @@ class IdeationGenerator:
                     try:
                         # Set trace output before closing
                         if langfuse_ctx_obj:
-                            trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                            # FULL content - NO truncation (Zero Truncation Policy)
                             langfuse_ctx_obj.set_output({
-                                "response": trace_output,
+                                "response": response_text,
                                 "total_input_tokens": total_input_tokens,
                                 "total_output_tokens": total_output_tokens,
                             })

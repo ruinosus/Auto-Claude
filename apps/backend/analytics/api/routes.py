@@ -49,6 +49,23 @@ from .models import (
     UnifiedROIResponse,
 )
 from .langfuse_client import TraceFilter
+from pathlib import Path
+
+# Import artifact storage for loading full content
+try:
+    from analytics.artifact_storage import (
+        load_artifact,
+        list_artifacts as list_local_artifacts,
+        ARTIFACT_STORAGE_AVAILABLE,
+    )
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
+    def load_artifact(*args, **kwargs):
+        return None
+
+    def list_local_artifacts(*args, **kwargs):
+        return []
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -1305,10 +1322,40 @@ async def get_health_status() -> HealthStatusResponse:
 # Artifacts Endpoints (Value Attribution Traceability)
 # =============================================================================
 
+def _enrich_artifact_with_full_content(artifact: dict, project_path: Optional[str]) -> dict:
+    """
+    Enrich an artifact with full content from local storage if available.
+
+    If the artifact has an 'id' and local storage is available, load the full content
+    from the local file system instead of using the truncated Langfuse preview.
+    """
+    if not project_path or not ARTIFACT_STORAGE_AVAILABLE:
+        return artifact
+
+    artifact_id = artifact.get("id")
+    if not artifact_id:
+        return artifact
+
+    try:
+        full_artifact = load_artifact(artifact_id, Path(project_path))
+        if full_artifact:
+            # Replace truncated content with full content
+            return {
+                **artifact,
+                "content": full_artifact.get("content", artifact.get("content", "")),
+                "full_content_loaded": True,
+            }
+    except Exception as e:
+        logger.debug(f"Failed to load full artifact {artifact_id}: {e}")
+
+    return artifact
+
+
 @router.get("/artifacts")
 async def get_artifacts(
     project_id: Optional[str] = Query(None, description="Filter by project ID"),
     trace_id: Optional[str] = Query(None, description="Get artifacts for specific trace"),
+    project_path: Optional[str] = Query(None, description="Project path to load full artifact content from local storage"),
     limit: int = Query(20, ge=1, le=100, description="Max results"),
 ):
     """
@@ -1321,6 +1368,9 @@ async def get_artifacts(
     - Security findings
 
     Each artifact includes its value contribution to ROI.
+
+    If project_path is provided and local artifact storage is available,
+    artifacts will include FULL content instead of truncated previews.
     """
     client = get_client()
 
@@ -1335,6 +1385,12 @@ async def get_artifacts(
                 value_attr = output.get("value_attribution", {})
                 artifacts = value_attr.get("artifacts", [])
 
+                # Enrich artifacts with full content from local storage
+                enriched_artifacts = [
+                    _enrich_artifact_with_full_content(a, project_path)
+                    for a in artifacts
+                ]
+
                 artifacts_response.append({
                     "trace_id": trace_id,
                     "trace_name": trace.name,
@@ -1342,13 +1398,20 @@ async def get_artifacts(
                     "query": trace.input[:200] if isinstance(trace.input, str) else str(trace.input)[:200],
                     "total_value_usd": output.get("total_calculated_value", 0),
                     "value_breakdown": {
+                        # Standard categories (from insights value_attribution)
                         "diagrams": value_attr.get("diagrams", {}).get("total_value", 0),
                         "security": value_attr.get("security_insights", {}).get("total_value", 0),
                         "recommendations": value_attr.get("recommendations", {}).get("total_value", 0),
                         "code_explanations": value_attr.get("code_explanations", {}).get("total_value", 0),
+                        # Additional categories from artifact_values_by_type (for all MCP-created artifacts)
+                        **{
+                            art_type: info.get("total_value", 0)
+                            for art_type, info in value_attr.get("artifact_values_by_type", {}).items()
+                            if info.get("total_value", 0) > 0
+                        },
                     },
-                    "artifacts": artifacts,
-                    "artifact_count": len(artifacts),
+                    "artifacts": enriched_artifacts,
+                    "artifact_count": len(enriched_artifacts),
                 })
         else:
             # Get recent traces with artifacts
@@ -1370,6 +1433,12 @@ async def get_artifacts(
 
                 # Only include traces that have artifacts
                 if artifacts or output.get("total_calculated_value", 0) > 0:
+                    # Enrich artifacts with full content from local storage
+                    enriched_artifacts = [
+                        _enrich_artifact_with_full_content(a, project_path)
+                        for a in artifacts
+                    ]
+
                     artifacts_response.append({
                         "trace_id": trace.id,
                         "trace_name": trace.name,
@@ -1377,13 +1446,20 @@ async def get_artifacts(
                         "query": full_trace.input[:200] if isinstance(full_trace.input, str) else str(full_trace.input)[:200] if full_trace.input else "",
                         "total_value_usd": output.get("total_calculated_value", 0),
                         "value_breakdown": {
+                            # Standard categories (from insights value_attribution)
                             "diagrams": value_attr.get("diagrams", {}).get("total_value", 0),
                             "security": value_attr.get("security_insights", {}).get("total_value", 0),
                             "recommendations": value_attr.get("recommendations", {}).get("total_value", 0),
                             "code_explanations": value_attr.get("code_explanations", {}).get("total_value", 0),
+                            # Additional categories from artifact_values_by_type (for all MCP-created artifacts)
+                            **{
+                                art_type: info.get("total_value", 0)
+                                for art_type, info in value_attr.get("artifact_values_by_type", {}).items()
+                                if info.get("total_value", 0) > 0
+                            },
                         },
-                        "artifacts": artifacts,
-                        "artifact_count": len(artifacts),
+                        "artifacts": enriched_artifacts,
+                        "artifact_count": len(enriched_artifacts),
                     })
 
         return {
@@ -1394,6 +1470,91 @@ async def get_artifacts(
     except Exception as e:
         logger.error(f"Failed to get artifacts: {e}")
         return {"artifacts": [], "total": 0, "error": str(e)}
+
+
+@router.get("/artifacts/local")
+async def get_local_artifacts(
+    project_path: str = Query(..., description="Project path to load artifacts from"),
+    spec_id: Optional[str] = Query(None, description="Filter by spec ID"),
+    trace_id: Optional[str] = Query(None, description="Filter by trace ID"),
+    artifact_type: Optional[str] = Query(None, description="Filter by artifact type"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+):
+    """
+    Get artifacts directly from local storage with FULL content.
+
+    This endpoint bypasses Langfuse and reads artifacts directly from the
+    .auto-claude/artifacts/ directory, returning complete untruncated content.
+    """
+    if not ARTIFACT_STORAGE_AVAILABLE:
+        return {
+            "artifacts": [],
+            "total": 0,
+            "error": "Artifact storage module not available",
+        }
+
+    try:
+        filters = {}
+        if spec_id:
+            filters["spec_id"] = spec_id
+        if trace_id:
+            filters["trace_id"] = trace_id
+        if artifact_type:
+            filters["type"] = artifact_type
+        if limit:
+            filters["limit"] = limit
+
+        artifacts = list_local_artifacts(Path(project_path), filters)
+
+        return {
+            "artifacts": artifacts,
+            "total": len(artifacts),
+            "source": "local_storage",
+            "full_content": True,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get local artifacts: {e}")
+        return {"artifacts": [], "total": 0, "error": str(e)}
+
+
+@router.get("/artifacts/local/{artifact_id}")
+async def get_local_artifact(
+    artifact_id: str,
+    project_path: str = Query(..., description="Project path to load artifact from"),
+):
+    """
+    Get a single artifact by ID with FULL content from local storage.
+
+    This endpoint reads the artifact directly from the .auto-claude/artifacts/
+    directory, returning the complete untruncated content.
+    """
+    if not ARTIFACT_STORAGE_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Artifact storage module not available",
+        )
+
+    try:
+        artifact = load_artifact(artifact_id, Path(project_path))
+        if not artifact:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact not found: {artifact_id}",
+            )
+
+        return {
+            "artifact": artifact,
+            "source": "local_storage",
+            "full_content": True,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get local artifact {artifact_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load artifact: {str(e)}",
+        )
 
 
 @router.get("/specs/recent-activity", response_model=RecentActivityResponse)

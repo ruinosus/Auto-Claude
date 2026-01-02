@@ -15,3 +15,4 @@ export * from './autobuild-api';
 export * from './shell-api';
 export * from './notification-api';
 export * from './debug-api';
+export * from './artifact-api';

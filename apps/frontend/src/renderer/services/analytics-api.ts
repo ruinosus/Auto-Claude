@@ -641,6 +641,7 @@ export type ArtifactType =
 export type ArtifactTab = 'overview' | 'dev' | 'techlead' | 'ops' | 'business';
 
 export interface Artifact {
+  id?: string;  // Artifact ID from local storage (art_xxx)
   type: ArtifactType;
   format: string;
   content: string;
@@ -648,6 +649,12 @@ export interface Artifact {
   description: string;
   keyword?: string;
   tab?: ArtifactTab;
+  storage_path?: string;  // Path to full content in local storage
+  full_content_loaded?: boolean;  // True if content was loaded from local storage
+  spec_id?: string;
+  trace_id?: string;
+  agent_type?: string;
+  created_at?: string;
 }
 
 export interface ArtifactValueBreakdown {
@@ -677,7 +684,30 @@ export interface ArtifactsResponse {
 export interface ArtifactsParams {
   project_id?: string;
   trace_id?: string;
+  project_path?: string;  // Project path to load full artifact content from local storage
   limit?: number;
+}
+
+export interface LocalArtifactsParams {
+  project_path: string;
+  spec_id?: string;
+  trace_id?: string;
+  artifact_type?: string;
+  limit?: number;
+}
+
+export interface LocalArtifactsResponse {
+  artifacts: Artifact[];
+  total: number;
+  source: 'local_storage';
+  full_content: boolean;
+  error?: string;
+}
+
+export interface LocalArtifactResponse {
+  artifact: Artifact;
+  source: 'local_storage';
+  full_content: boolean;
 }
 
 /**
@@ -690,13 +720,47 @@ export interface ArtifactsParams {
  * - Security findings
  *
  * Each artifact includes its value contribution to ROI.
+ *
+ * If project_path is provided, artifacts will include FULL content
+ * loaded from local storage instead of truncated previews.
  */
 export async function getArtifacts(params?: ArtifactsParams): Promise<ArtifactsResponse> {
   const searchParams = new URLSearchParams();
   if (params?.project_id) searchParams.set('project_id', params.project_id);
   if (params?.trace_id) searchParams.set('trace_id', params.trace_id);
+  if (params?.project_path) searchParams.set('project_path', params.project_path);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
 
   const query = searchParams.toString();
   return fetchApi(`/api/analytics/artifacts${query ? `?${query}` : ''}`);
+}
+
+/**
+ * Get artifacts directly from local storage with FULL content.
+ *
+ * This bypasses Langfuse and reads artifacts directly from the
+ * .auto-claude/artifacts/ directory.
+ */
+export async function getLocalArtifacts(params: LocalArtifactsParams): Promise<LocalArtifactsResponse> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('project_path', params.project_path);
+  if (params.spec_id) searchParams.set('spec_id', params.spec_id);
+  if (params.trace_id) searchParams.set('trace_id', params.trace_id);
+  if (params.artifact_type) searchParams.set('artifact_type', params.artifact_type);
+  if (params.limit) searchParams.set('limit', params.limit.toString());
+
+  return fetchApi(`/api/analytics/artifacts/local?${searchParams.toString()}`);
+}
+
+/**
+ * Get a single artifact by ID with FULL content from local storage.
+ */
+export async function getLocalArtifact(
+  artifactId: string,
+  projectPath: string
+): Promise<LocalArtifactResponse> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('project_path', projectPath);
+
+  return fetchApi(`/api/analytics/artifacts/local/${artifactId}?${searchParams.toString()}`);
 }

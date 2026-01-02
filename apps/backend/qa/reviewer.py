@@ -53,6 +53,17 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 # =============================================================================
 # ARTIFACT EXTRACTION
 # =============================================================================
@@ -61,9 +72,15 @@ except ImportError:
 def extract_qa_review_artifacts(
     response_text: str,
     qa_signoff: dict | None,
-) -> list[dict[str, Any]]:
+    project_dir: Path | None = None,
+    spec_id: str | None = None,
+    trace_id: str | None = None,
+    session_num: int | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Extract QA review artifacts from response and signoff status.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Artifacts extracted:
     - qa_finding ($100 each) - each finding in the report
@@ -74,9 +91,15 @@ def extract_qa_review_artifacts(
     Args:
         response_text: The full response from the QA agent
         qa_signoff: The qa_signoff object from implementation_plan.json
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
+        session_num: QA session number
 
     Returns:
-        List of artifact dictionaries with type, content, value_usd, etc.
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
     """
     artifacts = []
 
@@ -92,7 +115,7 @@ def extract_qa_review_artifacts(
             "tab": "dev",
         })
 
-        # Extract qa_findings from rejected issues
+        # Extract qa_findings from rejected issues - FULL CONTENT, no truncation
         issues_found = qa_signoff.get("issues_found", [])
         for i, issue in enumerate(issues_found):
             issue_title = issue.get("title", "Unknown issue")
@@ -100,20 +123,28 @@ def extract_qa_review_artifacts(
             issue_location = issue.get("location", "")
             fix_required = issue.get("fix_required", "")
 
+            # Build FULL content - no truncation!
             content = f"[{issue_type.upper()}] {issue_title}"
             if issue_location:
-                content += f" at {issue_location}"
+                content += f"\n\nLocation: {issue_location}"
             if fix_required:
-                content += f" - Fix: {fix_required}"
+                content += f"\n\nFix Required: {fix_required}"
 
+            # Include full issue data as metadata
             artifacts.append({
                 "type": "qa_finding",
                 "format": "text",
-                "content": content[:500],
+                "content": content,  # FULL CONTENT - no [:500] truncation
                 "value_usd": 100,
                 "description": f"QA finding #{i+1}: {issue_type}",
                 "severity": issue_type,
                 "tab": "dev",
+                "metadata": {
+                    "issue_title": issue_title,
+                    "issue_type": issue_type,
+                    "location": issue_location,
+                    "fix_required": fix_required,
+                },
             })
 
         # Extract acceptance_check from tests_passed (approved case)
@@ -147,14 +178,14 @@ def extract_qa_review_artifacts(
 
         for pattern in test_patterns:
             if re.search(pattern, sentence_lower, re.IGNORECASE):
-                # Clean up the sentence
-                clean_sentence = sentence.strip()[:300]
+                # FULL sentence - no truncation
+                clean_sentence = sentence.strip()
                 if clean_sentence and clean_sentence not in test_suggestions_found:
                     test_suggestions_found.add(clean_sentence)
                     artifacts.append({
                         "type": "test_suggestion",
                         "format": "text",
-                        "content": clean_sentence,
+                        "content": clean_sentence,  # FULL CONTENT - no [:300] truncation
                         "value_usd": 75,
                         "description": "Test improvement suggestion",
                         "tab": "dev",
@@ -174,19 +205,50 @@ def extract_qa_review_artifacts(
             match = re.search(pattern, sentence, re.IGNORECASE)
             if match:
                 content = match.group(1) if match.lastindex else sentence
-                content = content.strip()[:200]
+                content = content.strip()  # FULL CONTENT - no [:200] truncation
                 if content and len(content) > 10:
                     artifacts.append({
                         "type": "acceptance_check",
                         "format": "text",
-                        "content": content,
+                        "content": content,  # FULL CONTENT
                         "value_usd": 25,
                         "description": "Acceptance criteria check",
                         "tab": "dev",
                     })
                     break  # Only match once per sentence
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="qa_reviewer",
+                session_num=session_num,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 # =============================================================================
@@ -553,9 +615,17 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
         if ROI_PUBLISHER_AVAILABLE and project_id:
             try:
                 # Extract artifacts from the QA review
-                artifacts = extract_qa_review_artifacts(response_text, status)
+                # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                artifacts, langfuse_refs = extract_qa_review_artifacts(
+                    response_text,
+                    status,
+                    project_dir=effective_project_dir,
+                    spec_id=spec_id,
+                    trace_id=langfuse_trace_id,
+                    session_num=qa_session,
+                )
 
-                # Count metrics from status and artifacts
+                # Count metrics from status and artifacts (use full artifacts for counts)
                 findings_count = len(status.get("issues_found", [])) if status else 0
                 criteria_checked = len([a for a in artifacts if a["type"] == "acceptance_check"])
                 suggestions_count = len([a for a in artifacts if a["type"] == "test_suggestion"])
@@ -567,10 +637,10 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
                 estimated_tokens = len(response_text) // 4 + len(prompt) // 4
                 estimated_cost = (estimated_tokens / 1000) * 0.003  # Rough cost estimate
 
-                # Calculate total artifact value
+                # Calculate total artifact value (use full artifacts for value)
                 total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
-                # Publish ROI
+                # Publish ROI with Langfuse refs (truncated previews, not full content)
                 roi_result = await publish_feature_roi(
                     feature_type="qa_reviewer",
                     project_id=project_id,
@@ -591,6 +661,7 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
                     model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
                     spec_id=spec_id,
                     trace_id=langfuse_trace_id,
+                    artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
                 )
 
                 debug(
@@ -690,8 +761,8 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
             try:
                 # Set trace output before exiting
                 if ctx:
-                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                    ctx.set_output({"response": trace_output, "tool_count": tool_count})
+                    # FULL content - NO truncation (Zero Truncation Policy)
+                    ctx.set_output({"response": response_text, "tool_count": tool_count})
                 langfuse_ctx.__exit__(None, None, None)
             except Exception as e:
                 debug("qa_reviewer", f"Failed to close Langfuse trace: {e}")

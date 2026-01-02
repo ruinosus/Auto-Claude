@@ -48,6 +48,17 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 try:
     from ..context_gatherer import PRContext
     from ..models import (
@@ -89,9 +100,14 @@ def extract_pr_review_artifacts(
     structural_issues: List["StructuralIssue"],
     ai_triages: List["AICommentTriage"],
     quick_scan: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    project_dir: Optional[Path] = None,
+    spec_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Extract valuable artifacts from PR review results.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Artifact values based on ROI_IMPLEMENTATION_TRACKER.md section 1.1:
     - review_comment: $50 each (general review findings)
@@ -105,9 +121,14 @@ def extract_pr_review_artifacts(
         structural_issues: List of StructuralIssue objects
         ai_triages: List of AICommentTriage objects
         quick_scan: Quick scan summary dict with verdict
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts (e.g., "pr-123")
+        trace_id: Langfuse trace ID for linking
 
     Returns:
-        List of artifact dicts with type, value_usd, content, and description
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
     """
     artifacts = []
 
@@ -137,7 +158,7 @@ def extract_pr_review_artifacts(
             artifacts.append({
                 "type": "security_issue",
                 "format": "finding",
-                "content": f"{finding.title}: {finding.description[:200]}",
+                "content": f"{finding.title}: {finding.description}",  # FULL CONTENT - no truncation
                 "value_usd": 300,
                 "description": f"Security finding: {finding.title}",
                 "tab": "ops",
@@ -153,7 +174,7 @@ def extract_pr_review_artifacts(
             artifacts.append({
                 "type": "bug_detected",
                 "format": "finding",
-                "content": f"{finding.title}: {finding.description[:200]}",
+                "content": f"{finding.title}: {finding.description}",  # FULL CONTENT - no truncation
                 "value_usd": 200,
                 "description": f"Bug detected: {finding.title}",
                 "tab": "dev",
@@ -168,7 +189,7 @@ def extract_pr_review_artifacts(
             artifacts.append({
                 "type": "code_suggestion",
                 "format": "suggestion",
-                "content": f"{finding.title}: {finding.suggested_fix[:300]}",
+                "content": f"{finding.title}: {finding.suggested_fix}",  # FULL CONTENT - no truncation
                 "value_usd": 100,
                 "description": f"Code suggestion: {finding.title}",
                 "tab": "dev",
@@ -181,7 +202,7 @@ def extract_pr_review_artifacts(
             artifacts.append({
                 "type": "review_comment",
                 "format": "comment",
-                "content": f"{finding.title}: {finding.description[:200]}",
+                "content": f"{finding.title}: {finding.description}",  # FULL CONTENT - no truncation
                 "value_usd": 50,
                 "description": f"Review comment: {finding.title}",
                 "tab": "dev",
@@ -195,7 +216,7 @@ def extract_pr_review_artifacts(
         artifacts.append({
             "type": "review_comment",
             "format": "structural",
-            "content": f"{issue.title}: {issue.description[:200]}",
+            "content": f"{issue.title}: {issue.description}",  # FULL CONTENT - no truncation
             "value_usd": 50,
             "description": f"Structural issue: {issue.title}",
             "tab": "techlead",
@@ -230,7 +251,37 @@ def extract_pr_review_artifacts(
             "verdict": verdict,
         })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="pr_review_engine",
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 class PRReviewEngine:
@@ -746,9 +797,20 @@ class PRReviewEngine:
         # Publish ROI metrics (in try/except to not fail the review if ROI fails)
         if ROI_PUBLISHER_AVAILABLE:
             try:
+                # Get project_id for ROI tracking
+                project_id = self.project_dir.name if self.project_dir else "unknown"
+                spec_id = f"pr-{context.pr_number}"
+
                 # Extract artifacts from review results
-                artifacts = extract_pr_review_artifacts(
-                    unique_findings, structural_issues, ai_triages, scan_result
+                # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                artifacts, langfuse_refs = extract_pr_review_artifacts(
+                    unique_findings,
+                    structural_issues,
+                    ai_triages,
+                    scan_result,
+                    project_dir=self.project_dir,
+                    spec_id=spec_id,
+                    trace_id=None,  # No trace_id available here
                 )
 
                 # Count specific issue types for metrics
@@ -771,10 +833,10 @@ class PRReviewEngine:
                 verdict = scan_result.get("verdict", "unknown")
                 approval = verdict in ["approved", "approve", "ready_to_merge", "ready"]
 
-                # Get project_id for ROI tracking
-                project_id = self.project_dir.name if self.project_dir else "unknown"
+                # Calculate total artifact value from full artifacts
+                total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
-                # Publish ROI
+                # Publish ROI with Langfuse refs (truncated previews, not full content)
                 roi_result = await publish_feature_roi(
                     feature_type="github_pr_review",
                     project_id=project_id,
@@ -791,10 +853,12 @@ class PRReviewEngine:
                         "ai_triages": len(ai_triages),
                         "approval": approval,
                         "verdict": verdict,
-                        "artifacts": artifacts,
+                        "artifacts_count": len(artifacts),
+                        "artifact_value_usd": total_artifact_value,
                     },
-                    spec_id=f"pr-{context.pr_number}",
+                    spec_id=spec_id,
                     trace_id=None,  # Will create its own trace
+                    artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
                 )
 
                 print(

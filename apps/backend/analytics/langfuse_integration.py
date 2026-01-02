@@ -101,6 +101,66 @@ def propagate_attributes(
 
 
 # =============================================================================
+# Thread-Safe Trace ID Propagation (for MCP tools)
+# =============================================================================
+
+def set_current_trace_id(trace_id: str) -> None:
+    """
+    Set the current trace_id in thread-local storage.
+
+    This is used to pass the trace_id to MCP tools that run in the same
+    thread/process as the caller. Thread-safe for concurrent execution.
+
+    Args:
+        trace_id: Langfuse trace ID to set
+    """
+    _propagated_context.trace_id = trace_id
+
+
+def get_current_trace_id() -> Optional[str]:
+    """
+    Get the current trace_id from thread-local storage.
+
+    Returns:
+        Current trace_id or None if not set
+    """
+    return getattr(_propagated_context, 'trace_id', None)
+
+
+def clear_current_trace_id() -> None:
+    """Clear the current trace_id from thread-local storage."""
+    if hasattr(_propagated_context, 'trace_id'):
+        delattr(_propagated_context, 'trace_id')
+
+
+@contextmanager
+def scoped_trace_id(trace_id: str):
+    """
+    Context manager for scoped trace_id setting.
+
+    Automatically clears the trace_id when the context exits.
+    Thread-safe for concurrent execution.
+
+    Usage:
+        with scoped_trace_id(my_trace_id):
+            # MCP tools called here will get this trace_id
+            await run_mcp_tools()
+
+    Args:
+        trace_id: Langfuse trace ID to set for this scope
+    """
+    previous_trace_id = get_current_trace_id()
+    try:
+        set_current_trace_id(trace_id)
+        yield trace_id
+    finally:
+        if previous_trace_id:
+            set_current_trace_id(previous_trace_id)
+        else:
+            clear_current_trace_id()
+
+
+# =============================================================================
 # Trace Sampling
 # =============================================================================
 
@@ -476,6 +536,9 @@ def trace_context(
             if trace_id:
                 _current_trace_id = trace_id
                 _trace_context_stack.append(span)
+                # CRITICAL: Set trace_id in thread-local storage for MCP tools
+                # This ensures artifacts created via MCP tools are linked to this trace
+                set_current_trace_id(trace_id)
                 logger.info(f"trace_context: Created Langfuse trace: {trace_id} ({name})")
             else:
                 logger.warning(f"trace_context: No trace_id obtained for '{name}', observations may not be tracked")
@@ -541,6 +604,13 @@ def trace_context(
         if _trace_context_stack:
             _trace_context_stack.pop()
         _current_trace_id = previous_trace_id
+
+        # Restore previous trace_id in thread-local storage or clear if none
+        # This maintains proper nesting for nested traces
+        if previous_trace_id:
+            set_current_trace_id(previous_trace_id)
+        else:
+            clear_current_trace_id()
 
         # Flush to ensure data is sent
         flush_langfuse()

@@ -162,6 +162,16 @@ export function getTransportConfigs(): MCPTransportConfig[] {
       requiredEnvVars: ['ELECTRON_MCP_ENABLED'],
       category: 'Browser Automation',
       icon: 'Monitor'
+    },
+    {
+      id: 'mermaid',
+      name: 'Mermaid Chart (Official)',
+      description: 'Official Mermaid MCP - create, validate, and render diagrams with playground links',
+      transport: 'http',
+      url: 'https://mcp.mermaid.ai/mcp',
+      enabled: true,
+      category: 'Diagrams',
+      icon: 'GitBranch'
     }
   ];
 }
@@ -215,7 +225,8 @@ function getToolCount(serverId: string): number {
     'puppeteer': 8,
     'linear': 12,
     'graphiti': 5,
-    'electron': 4
+    'electron': 4,
+    'mermaid': 3  // validate, render PNG, playground link (official mcp.mermaid.ai)
   };
   return counts[serverId] || 0;
 }
@@ -230,7 +241,8 @@ function getPromptCount(serverId: string): number {
     'puppeteer': 0,
     'linear': 0,
     'graphiti': 0,
-    'electron': 0
+    'electron': 0,
+    'mermaid': 0
   };
   return counts[serverId] || 0;
 }
@@ -245,7 +257,8 @@ function getResourceCount(serverId: string): number {
     'puppeteer': 0,
     'linear': 0,
     'graphiti': 0,
-    'electron': 0
+    'electron': 0,
+    'mermaid': 0
   };
   return counts[serverId] || 0;
 }
@@ -260,7 +273,8 @@ function getServerColor(serverId: string): string {
     'puppeteer': 'blue',
     'linear': 'blue',
     'graphiti': 'purple',
-    'electron': 'blue'
+    'electron': 'blue',
+    'mermaid': 'pink'
   };
   return colors[serverId] || 'gray';
 }

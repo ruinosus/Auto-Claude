@@ -928,6 +928,60 @@ Prepare → Test (small batch) → Execute (full) → Cleanup
 
 ---
 
+## CREATING ARTIFACTS
+
+You have access to artifact tools to create structured, trackable outputs.
+Use these tools to capture valuable code patterns and insights:
+
+**Available Tools:**
+- `create_artifact` - Create any type of artifact
+- `create_diagram` - Create architecture/flow diagrams (mermaid)
+- `report_security_finding` - Report security vulnerabilities found
+
+**When to Create Artifacts:**
+
+1. **Code Examples** - When implementing a reusable pattern:
+   ```
+   create_artifact(
+     artifact_type="code_example",
+     format="typescript",
+     content="// Full implementation code...",
+     description="Authentication middleware implementation"
+   )
+   ```
+
+2. **Refactoring** - When improving existing code:
+   ```
+   create_artifact(
+     artifact_type="refactoring",
+     content="## Before\n```ts\n...\n```\n\n## After\n```ts\n...\n```",
+     description="Refactored authentication to use dependency injection"
+   )
+   ```
+
+3. **Security Findings** - When discovering vulnerabilities:
+   ```
+   report_security_finding(
+     content="SQL injection vulnerability in user login query...",
+     severity="high",
+     description="SQL Injection in login endpoint"
+   )
+   ```
+
+4. **Architecture Diagrams** - When visualizing component relationships:
+   ```
+   create_diagram(
+     format="mermaid",
+     content="sequenceDiagram\n  User->>API: Login\n  API->>DB: Query",
+     description="Login flow sequence diagram"
+   )
+   ```
+
+**CRITICAL**: Always call these tools instead of just describing in text.
+Artifacts are tracked, measured, and visible in the analytics dashboard.
+
+---
+
 ## CRITICAL REMINDERS
 
 ### One Subtask at a Time

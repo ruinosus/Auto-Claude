@@ -433,6 +433,184 @@ async function main() {
   );
 
   // ============================================================================
+  // ARTIFACT TOOLS - Access full artifact content from local storage
+  // ============================================================================
+
+  // Tool 12: Get Artifact
+  server.registerTool(
+    'get_artifact',
+    {
+      title: 'Get Artifact',
+      description: 'Get a single artifact by ID with FULL content from local storage',
+      inputSchema: {
+        artifact_id: z.string().describe('The artifact ID (e.g., "art_abc123def456")'),
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ artifact_id, project_path }) => {
+      try {
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifact/${artifact_id}?projectPath=${encodeURIComponent(project_path)}`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const artifact = await response.json();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(artifact, null, 2)
+          }],
+          structuredContent: artifact
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error getting artifact: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 13: List Artifacts
+  server.registerTool(
+    'list_artifacts',
+    {
+      title: 'List Artifacts',
+      description: 'List artifacts from local storage with optional filters',
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        spec_id: z.string().describe('Filter by spec ID').optional(),
+        trace_id: z.string().describe('Filter by Langfuse trace ID').optional(),
+        type: z.string().describe('Filter by artifact type (e.g., "qa_finding", "code_implementation")').optional(),
+        limit: z.number().describe('Maximum number of artifacts to return').default(50).optional()
+      }
+    },
+    async ({ project_path, spec_id, trace_id, type, limit }) => {
+      try {
+        const params: Record<string, string> = { projectPath: project_path };
+        if (spec_id) params.spec_id = spec_id;
+        if (trace_id) params.trace_id = trace_id;
+        if (type) params.type = type;
+        if (limit) params.limit = String(limit);
+
+        const url = new URL(`${ELECTRON_API_URL}/artifacts`);
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+
+        const response = await fetch(url.toString());
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(data, null, 2)
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error listing artifacts: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 14: Get Artifacts by Trace
+  server.registerTool(
+    'get_artifacts_by_trace',
+    {
+      title: 'Get Artifacts by Trace',
+      description: 'Get all artifacts associated with a specific Langfuse trace ID',
+      inputSchema: {
+        trace_id: z.string().describe('The Langfuse trace ID'),
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ trace_id, project_path }) => {
+      try {
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/trace/${trace_id}?projectPath=${encodeURIComponent(project_path)}`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(data, null, 2)
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error getting artifacts by trace: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 15: Get Artifact Content
+  server.registerTool(
+    'get_artifact_content',
+    {
+      title: 'Get Artifact Content',
+      description: 'Get only the content of an artifact (useful for large artifacts)',
+      inputSchema: {
+        artifact_id: z.string().describe('The artifact ID'),
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ artifact_id, project_path }) => {
+      try {
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifact/${artifact_id}/content?projectPath=${encodeURIComponent(project_path)}`
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const content = await response.text();
+
+        return {
+          content: [{
+            type: 'text',
+            text: content
+          }]
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error getting artifact content: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // ============================================================================
   // PROMPTS - Pre-configured prompt templates for common auto-claude workflows
   // ============================================================================
 
@@ -1006,6 +1184,12 @@ Auto-Claude is a multi-agent autonomous coding framework that builds software th
 - \`get_activity_summary\` - Get activity summary
 - \`list_activity_types\` - List activity types
 
+### Artifact Storage
+- \`get_artifact\` - Get full artifact by ID
+- \`list_artifacts\` - List artifacts with filters
+- \`get_artifacts_by_trace\` - Get artifacts by trace ID
+- \`get_artifact_content\` - Get artifact content only
+
 ## Available Prompts
 
 - \`spec-creation\` - Template for creating specs
@@ -1033,7 +1217,7 @@ Auto-Claude is a multi-agent autonomous coding framework that builds software th
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error('[Auto-Claude Tools STDIO] Server started with 11 tools, 6 prompts, 6 resources');
+  console.error('[Auto-Claude Tools STDIO] Server started with 15 tools, 6 prompts, 6 resources');
 }
 
 // Run server

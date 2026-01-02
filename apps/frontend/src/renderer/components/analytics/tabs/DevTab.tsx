@@ -22,10 +22,11 @@ interface DevTabProps {
     successRate: number;
   };
   loading?: boolean;
+  projectPath?: string;
   onSpecClick?: (spec: Spec) => void;
 }
 
-export function DevTab({ data, loading, onSpecClick }: DevTabProps) {
+export function DevTab({ data, loading, projectPath, onSpecClick }: DevTabProps) {
   const { t } = useTranslation(['analytics']);
 
   // Calculate derived metrics
@@ -195,7 +196,7 @@ export function DevTab({ data, loading, onSpecClick }: DevTabProps) {
       </div>
 
       {/* Developer Artifacts - Code, Bug Fixes, Tests */}
-      <ArtifactsPanel filterByTab="dev" title="Code Artifacts" />
+      <ArtifactsPanel filterByTab="dev" title="Code Artifacts" projectPath={projectPath} />
     </div>
   );
 }

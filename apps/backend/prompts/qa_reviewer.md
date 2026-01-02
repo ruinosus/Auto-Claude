@@ -560,6 +560,59 @@ If max iterations reached without approval:
 
 ---
 
+## CREATING ARTIFACTS
+
+You have access to artifact tools to create structured, trackable QA findings.
+Use these tools to capture valuable discoveries during validation:
+
+**Available Tools:**
+- `create_artifact` - Create any type of artifact
+- `report_security_finding` - Report security vulnerabilities
+- `create_diagram` - Create flow/architecture diagrams
+
+**When to Create Artifacts:**
+
+1. **Security Findings** - When discovering vulnerabilities:
+   ```
+   report_security_finding(
+     content="SQL injection vulnerability found in login query. The query uses string concatenation instead of parameterized queries...",
+     severity="high",
+     description="SQL Injection in user authentication"
+   )
+   ```
+
+2. **Bug Fixes Needed** - When finding bugs that need fixing:
+   ```
+   create_artifact(
+     artifact_type="bug_fix",
+     content="## Bug: Race condition in session handling\n\n### Root Cause\n...\n\n### Fix Required\n...",
+     description="Race condition bug in session management"
+   )
+   ```
+
+3. **Test Case Suggestions** - When identifying missing tests:
+   ```
+   create_artifact(
+     artifact_type="test_case",
+     content="## Missing Test Cases\n\n1. Test concurrent session access\n2. Test token expiration...",
+     description="Suggested test cases for authentication"
+   )
+   ```
+
+4. **Architecture Issues** - When finding design problems:
+   ```
+   create_artifact(
+     artifact_type="architecture_insight",
+     content="## Coupling Issue\n\nThe authentication module directly depends on...",
+     description="Architecture coupling issue discovered"
+   )
+   ```
+
+**CRITICAL**: Always call these tools instead of just describing in the QA report.
+Artifacts are tracked, measured, and visible in the analytics dashboard.
+
+---
+
 ## KEY REMINDERS
 
 ### Be Thorough

@@ -71,24 +71,49 @@ except ImportError:
     trace_context = None
     _langfuse_init_result = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
 
-def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
+
+def extract_spec_artifacts(
+    spec_dir: Path,
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
     Extract artifacts from spec directory with value attribution.
 
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
     Artifacts are concrete outputs that have measurable value:
     - spec_document ($500) - Complete spec.md document
+    - diagram ($150 each) - Mermaid diagrams extracted from spec
     - requirement_captured ($50 each) - Each requirement from requirements.json
+    - acceptance_criterion ($25 each) - Each acceptance criterion
     - context_discovered ($75) - Context from context.json
     - complexity_assessment ($100) - Complexity evaluation
+    - implementation_plan ($200) - Plan summary
 
     Args:
         spec_dir: Path to the spec directory
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
 
     Returns:
-        List of artifact dictionaries with type, content, value, and metadata
+        Tuple of (artifacts list, langfuse_refs list)
     """
+    from datetime import datetime
+
     artifacts = []
+    spec_id = spec_dir.name if spec_dir else None
 
     # Extract spec.md as artifact ($500 value)
     spec_file = spec_dir / "spec.md"
@@ -96,29 +121,20 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
         try:
             spec_content = spec_file.read_text()
 
-            # Extract summary from spec (first 500 chars)
+            # FULL CONTENT - no truncation
             artifacts.append({
                 "type": "spec_document",
                 "format": "markdown",
-                "content": spec_content[:1000] + "..." if len(spec_content) > 1000 else spec_content,
+                "content": spec_content,  # FULL CONTENT - no truncation!
                 "value_usd": 500,
                 "description": "Complete specification document",
                 "tab": "techlead",
                 "file": str(spec_file),
             })
 
-            # Extract mermaid diagrams from spec
-            mermaid_pattern = r'```mermaid\n(.*?)```'
-            mermaid_matches = re.findall(mermaid_pattern, spec_content, re.DOTALL)
-            for i, diagram in enumerate(mermaid_matches):
-                artifacts.append({
-                    "type": "diagram",
-                    "format": "mermaid",
-                    "content": diagram.strip(),
-                    "value_usd": 150,
-                    "description": f"Architecture diagram #{i+1} from spec",
-                    "tab": "techlead",
-                })
+            # NOTE: Diagrams should be created via MCP tools by spec agents
+            # NO regex extraction here - diagrams come from artifact storage
+            # The spec.md contains diagrams for human readability only
 
         except Exception:
             pass
@@ -136,7 +152,7 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
                 artifacts.append({
                     "type": "requirement_captured",
                     "format": "text",
-                    "content": req[:250] if len(req) > 250 else req,
+                    "content": req,  # FULL CONTENT - no truncation!
                     "value_usd": 50,
                     "description": f"User requirement #{i+1}",
                     "tab": "business",
@@ -148,7 +164,7 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
                 artifacts.append({
                     "type": "acceptance_criterion",
                     "format": "text",
-                    "content": criterion[:250] if len(criterion) > 250 else criterion,
+                    "content": criterion,  # FULL CONTENT - no truncation!
                     "value_usd": 25,
                     "description": f"Acceptance criterion #{i+1}",
                     "tab": "dev",
@@ -164,7 +180,7 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
             with open(context_file) as f:
                 context_data = json.load(f)
 
-            # Context discovery is valuable
+            # Context discovery is valuable - store FULL context
             files_discovered = context_data.get("relevant_files", [])
             patterns_found = context_data.get("patterns", [])
 
@@ -174,7 +190,8 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
                 "content": json.dumps({
                     "files_count": len(files_discovered),
                     "patterns_count": len(patterns_found),
-                    "sample_files": files_discovered[:5] if files_discovered else [],
+                    "files": files_discovered,  # FULL LIST - no truncation!
+                    "patterns": patterns_found,  # FULL LIST - no truncation!
                 }, indent=2),
                 "value_usd": 75,
                 "description": f"Discovered {len(files_discovered)} relevant files and {len(patterns_found)} patterns",
@@ -202,7 +219,7 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
                 "content": json.dumps({
                     "complexity": complexity_level,
                     "confidence": confidence,
-                    "reasoning": reasoning[:300] if len(reasoning) > 300 else reasoning,
+                    "reasoning": reasoning,  # FULL CONTENT - no truncation!
                 }, indent=2),
                 "value_usd": 100,
                 "description": f"Complexity: {complexity_level.upper()} (confidence: {confidence:.0%})",
@@ -213,7 +230,7 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
         except Exception:
             pass
 
-    # Extract implementation plan summary as artifact (if exists)
+    # Extract implementation plan as artifact (if exists)
     plan_file = spec_dir / "implementation_plan.json"
     if plan_file.exists():
         try:
@@ -225,10 +242,7 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
                 artifacts.append({
                     "type": "implementation_plan",
                     "format": "json",
-                    "content": json.dumps({
-                        "subtasks_count": len(subtasks),
-                        "subtask_titles": [s.get("title", "Untitled")[:50] for s in subtasks[:5]],
-                    }, indent=2),
+                    "content": json.dumps(plan_data, indent=2),  # FULL PLAN - no truncation!
                     "value_usd": 200,
                     "description": f"Implementation plan with {len(subtasks)} subtasks",
                     "tab": "dev",
@@ -238,7 +252,38 @@ def extract_spec_artifacts(spec_dir: Path) -> list[dict[str, Any]]:
         except Exception:
             pass
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    langfuse_refs = []
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="spec_creation",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                storage_path = str(
+                    _get_artifacts_dir(project_dir)
+                    / datetime.now().strftime("%Y-%m-%d")
+                    / f"{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: use artifact as-is with FULL content
+                langfuse_refs.append(artifact)
+    else:
+        # No storage available, use FULL content
+        for artifact in artifacts:
+            langfuse_refs.append(artifact)
+
+    return artifacts, langfuse_refs
 
 
 class SpecOrchestrator:
@@ -843,7 +888,13 @@ class SpecOrchestrator:
             trace_id = self._trace_ids[-1] if self._trace_ids else None
 
             # Extract artifacts from spec directory
-            artifacts = extract_spec_artifacts(self.spec_dir)
+            # Now returns (artifacts, langfuse_refs) - artifacts have full content,
+            # langfuse_refs have truncated previews
+            artifacts, langfuse_refs = extract_spec_artifacts(
+                self.spec_dir,
+                project_dir=self.project_dir,
+                trace_id=trace_id,
+            )
 
             # Count metrics from artifacts
             requirements_count = sum(

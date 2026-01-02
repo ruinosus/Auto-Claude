@@ -78,6 +78,17 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,30 +97,46 @@ def extract_coder_artifacts(
     commit_message: str | None,
     diff_stats: dict,
     success: bool,
-) -> list[dict]:
+    project_dir: Path | None = None,
+    spec_id: str | None = None,
+    trace_id: str | None = None,
+    session_num: int | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Extract artifacts from coder session for ROI tracking.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Args:
         subtask: The subtask that was worked on
         commit_message: Git commit message (if any)
         diff_stats: Git diff stats with lines_added, lines_removed, files_changed
         success: Whether the subtask was completed successfully
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
+        session_num: Session number
 
     Returns:
-        List of artifact dicts with type, content, value_usd, description, tab
+        Tuple of (artifacts list, langfuse_refs list)
     """
     artifacts = []
+    subtask_desc = subtask.get("description", "subtask")
 
     # Code implementation artifact ($200)
     if success and diff_stats.get("lines_added", 0) > 0:
         artifacts.append({
             "type": "code_implementation",
             "format": "code",
-            "content": f"Implemented: {subtask.get('description', 'subtask')[:200]}",
+            "content": f"Implemented: {subtask_desc}",  # FULL CONTENT - no [:200] truncation
             "value_usd": 200,
             "description": f"Code implementation (+{diff_stats.get('lines_added', 0)} lines)",
             "tab": "dev",
+            "metadata": {
+                "lines_added": diff_stats.get("lines_added", 0),
+                "lines_removed": diff_stats.get("lines_removed", 0),
+                "files_changed": diff_stats.get("files_changed", 0),
+            },
         })
 
     # Commit summary artifact ($25 each)
@@ -117,7 +144,7 @@ def extract_coder_artifacts(
         artifacts.append({
             "type": "commit_summary",
             "format": "text",
-            "content": commit_message[:500],
+            "content": commit_message,  # FULL CONTENT - no [:500] truncation
             "value_usd": 25,
             "description": "Git commit",
             "tab": "dev",
@@ -130,27 +157,58 @@ def extract_coder_artifacts(
             artifacts.append({
                 "type": "refactoring",
                 "format": "text",
-                "content": f"Refactoring: {commit_message[:200]}",
+                "content": f"Refactoring: {commit_message}",  # FULL CONTENT - no [:200] truncation
                 "value_usd": 150,
                 "description": "Code refactoring",
                 "tab": "techlead",
             })
 
     # Test written artifact ($100) - detect from commit message or subtask
-    subtask_desc = subtask.get("description", "").lower()
+    subtask_desc_lower = subtask_desc.lower()
     if commit_message:
         test_keywords = ["test", "spec", "unittest", "pytest", "jest", "mocha"]
-        if any(kw in commit_message.lower() for kw in test_keywords) or any(kw in subtask_desc for kw in test_keywords):
+        if any(kw in commit_message.lower() for kw in test_keywords) or any(kw in subtask_desc_lower for kw in test_keywords):
             artifacts.append({
                 "type": "test_written",
                 "format": "text",
-                "content": f"Tests: {commit_message[:200]}",
+                "content": f"Tests: {commit_message}",  # FULL CONTENT - no [:200] truncation
                 "value_usd": 100,
                 "description": "Test code added",
                 "tab": "dev",
             })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="coder",
+                session_num=session_num,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 async def publish_coder_roi(
@@ -200,8 +258,18 @@ async def publish_coder_roi(
             except Exception:
                 pass
 
-        # Extract artifacts
-        artifacts = extract_coder_artifacts(subtask, commit_message, diff_stats, success)
+        # Extract artifacts - returns (full_artifacts, langfuse_refs)
+        spec_id = spec_dir.name
+        artifacts, langfuse_refs = extract_coder_artifacts(
+            subtask=subtask,
+            commit_message=commit_message,
+            diff_stats=diff_stats,
+            success=success,
+            project_dir=project_dir,
+            spec_id=spec_id,
+            trace_id=trace_id,
+            session_num=1,  # session_num not available here, use 1 as default
+        )
 
         # Count commits made
         commits_made = 1 if commit_after and commit_after != commit_before else 0
@@ -212,7 +280,7 @@ async def publish_coder_roi(
         # Get project_id from spec_dir parent or project_dir
         project_id = project_dir.name
 
-        # Publish ROI
+        # Publish ROI with Langfuse refs (truncated previews, not full content)
         await publish_feature_roi(
             feature_type="coder",
             project_id=project_id,
@@ -227,8 +295,9 @@ async def publish_coder_roi(
                 "subtasks_completed": 1 if success else 0,
                 "subtasks_total": 1,
             },
-            spec_id=spec_dir.name,
+            spec_id=spec_id,
             trace_id=trace_id,
+            artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
         )
 
         logger.info(
@@ -942,10 +1011,9 @@ async def run_agent_session(
             try:
                 # Set trace output before closing
                 if langfuse_ctx_obj:
-                    # Truncate response for trace output
-                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                    # FULL content - NO truncation (Zero Truncation Policy)
                     langfuse_ctx_obj.set_output({
-                        "response": trace_output,
+                        "response": response_text,
                         "message_count": message_count,
                         "tool_count": tool_count,
                     })

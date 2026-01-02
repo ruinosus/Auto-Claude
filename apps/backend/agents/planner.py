@@ -54,6 +54,17 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,26 +72,36 @@ def extract_planner_artifacts(
     plan_data: dict | None,
     subtasks: list[dict],
     response_text: str = "",
-) -> list[dict]:
+    project_dir: Path | None = None,
+    spec_id: str | None = None,
+    trace_id: str | None = None,
+    session_num: int | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Extract artifacts from a planning session.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Args:
         plan_data: The implementation plan dictionary (if available)
         subtasks: List of subtask dictionaries from the plan
         response_text: Raw response text from the planner agent
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
+        session_num: Session number
 
     Returns:
-        List of artifact dictionaries with type, value_usd, content, etc.
+        Tuple of (artifacts list, langfuse_refs list)
     """
     artifacts = []
 
-    # 1. Implementation plan artifact ($300) - the complete plan
+    # 1. Implementation plan artifact ($300) - the COMPLETE plan (no truncation!)
     if plan_data:
         artifacts.append({
             "type": "implementation_plan",
             "format": "json",
-            "content": json.dumps(plan_data, indent=2)[:1000],  # Limit size
+            "content": json.dumps(plan_data, indent=2),  # FULL CONTENT - no [:1000] truncation
             "value_usd": 300,
             "description": f"Implementation plan: {plan_data.get('feature', 'Unknown feature')}",
             "tab": "techlead",
@@ -88,7 +109,7 @@ def extract_planner_artifacts(
 
     # 2. Subtask definition artifacts ($50 each)
     for subtask in subtasks:
-        subtask_desc = subtask.get("description", "")[:200]
+        subtask_desc = subtask.get("description", "")  # FULL CONTENT - no [:200] truncation
         artifacts.append({
             "type": "subtask_definition",
             "format": "text",
@@ -96,6 +117,10 @@ def extract_planner_artifacts(
             "value_usd": 50,
             "description": f"Subtask: {subtask.get('id', 'unknown')}",
             "tab": "dev",
+            "metadata": {
+                "subtask_id": subtask.get("id"),
+                "subtask_type": subtask.get("type"),
+            },
         })
 
     # 3. Architecture decision artifacts ($200 each) - extract from response text
@@ -113,7 +138,7 @@ def extract_planner_artifacts(
                         artifacts.append({
                             "type": "architecture_decision",
                             "format": "text",
-                            "content": sentence.strip()[:250],
+                            "content": sentence.strip(),  # FULL CONTENT - no [:250] truncation
                             "value_usd": 200,
                             "description": "Architecture decision",
                             "tab": "techlead",
@@ -134,14 +159,45 @@ def extract_planner_artifacts(
                     artifacts.append({
                         "type": "risk_assessment",
                         "format": "text",
-                        "content": sentence.strip()[:250],
+                        "content": sentence.strip(),  # FULL CONTENT - no [:250] truncation
                         "value_usd": 100,
                         "description": "Risk assessment",
                         "tab": "ops",
                     })
                     break  # Only extract one per session
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="planner",
+                session_num=session_num,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 async def publish_planner_roi(
@@ -178,8 +234,16 @@ async def publish_planner_roi(
         project_id = project_dir.name
         spec_id = spec_dir.name
 
-        # Extract artifacts
-        artifacts = extract_planner_artifacts(plan_data, subtasks, response_text)
+        # Extract artifacts - returns (full_artifacts, langfuse_refs)
+        artifacts, langfuse_refs = extract_planner_artifacts(
+            plan_data=plan_data,
+            subtasks=subtasks,
+            response_text=response_text,
+            project_dir=project_dir,
+            spec_id=spec_id,
+            trace_id=trace_id,
+            session_num=1,  # Planner is typically session 1
+        )
 
         # Count risks identified from response text
         risks_identified = 0
@@ -204,7 +268,7 @@ async def publish_planner_roi(
             "lines_removed": 0,
         }
 
-        # Publish ROI
+        # Publish ROI with Langfuse refs (truncated previews, not full content)
         result = await publish_feature_roi(
             feature_type="planner",  # Will map to BUILD_PLANNER
             project_id=project_id,
@@ -213,6 +277,7 @@ async def publish_planner_roi(
             metrics=metrics,
             spec_id=spec_id,
             trace_id=trace_id,
+            artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
         )
 
         # Save artifacts to file for traceability

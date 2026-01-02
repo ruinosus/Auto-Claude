@@ -3,10 +3,13 @@ Execution layer for agents and scripts in the roadmap generation process.
 """
 
 import asyncio
+import json
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from debug import debug, debug_detailed, debug_error, debug_success
 
@@ -37,6 +40,206 @@ try:
     TRACKING_AVAILABLE = True
 except ImportError:
     TRACKING_AVAILABLE = False
+
+# ROI publisher (optional - graceful degradation if not available)
+try:
+    from analytics.roi_publisher import publish_feature_roi
+    ROI_PUBLISHER_AVAILABLE = True
+except ImportError:
+    ROI_PUBLISHER_AVAILABLE = False
+
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
+
+# =============================================================================
+# ARTIFACT EXTRACTION
+# =============================================================================
+
+
+def extract_roadmap_artifacts(
+    response_text: str,
+    roadmap_data: dict | None,
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+    agent_type: str = "roadmap",
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Extract roadmap artifacts from response and roadmap data.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+    Artifacts extracted:
+    - roadmap_item ($100 each) - each feature/item in the roadmap
+    - milestone ($50) - timeline milestones
+    - priority_recommendation ($75) - priority recommendations
+
+    Args:
+        response_text: The full response from the roadmap agent
+        roadmap_data: Parsed roadmap data (from roadmap.json or response)
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
+        agent_type: Agent type for categorization (e.g., "roadmap_discovery", "roadmap_features")
+
+    Returns:
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
+    """
+    artifacts = []
+
+    # Extract roadmap_items from roadmap data
+    if roadmap_data:
+        features = roadmap_data.get("features", [])
+        for i, feature in enumerate(features):
+            title = feature.get("title", "Unknown feature")
+            description = feature.get("description", "")
+            priority = feature.get("priority", "medium")
+            status = feature.get("status", "proposed")
+            phase = feature.get("phase", "")
+            effort = feature.get("effort", "")
+            impact = feature.get("impact", "")
+
+            # Build FULL content - no truncation!
+            content = f"## {title}\n\n"
+            if description:
+                content += f"{description}\n\n"
+            content += f"**Priority:** {priority}\n"
+            content += f"**Status:** {status}\n"
+            if phase:
+                content += f"**Phase:** {phase}\n"
+            if effort:
+                content += f"**Effort:** {effort}\n"
+            if impact:
+                content += f"**Impact:** {impact}\n"
+
+            # Include full feature data as metadata
+            artifacts.append({
+                "type": "roadmap_item",
+                "format": "markdown",
+                "content": content,  # FULL CONTENT - no truncation
+                "value_usd": 100,
+                "description": f"Roadmap item #{i+1}: {title}",
+                "priority": priority,
+                "tab": "business",
+                "metadata": {
+                    "feature_title": title,
+                    "feature_priority": priority,
+                    "feature_status": status,
+                    "feature_phase": phase,
+                    "feature_effort": effort,
+                    "feature_impact": impact,
+                },
+            })
+
+        # Extract milestones from phases
+        phases = roadmap_data.get("phases", [])
+        for i, phase in enumerate(phases):
+            phase_name = phase.get("name", f"Phase {i+1}")
+            phase_description = phase.get("description", "")
+            phase_timeline = phase.get("timeline", "")
+            phase_features = phase.get("features", [])
+
+            # Build FULL content - no truncation!
+            content = f"## {phase_name}\n\n"
+            if phase_description:
+                content += f"{phase_description}\n\n"
+            if phase_timeline:
+                content += f"**Timeline:** {phase_timeline}\n"
+            if phase_features:
+                content += "\n**Features:**\n"
+                for feat in phase_features:
+                    if isinstance(feat, str):
+                        content += f"- {feat}\n"
+                    elif isinstance(feat, dict):
+                        content += f"- {feat.get('title', feat.get('name', str(feat)))}\n"
+
+            artifacts.append({
+                "type": "milestone",
+                "format": "markdown",
+                "content": content,  # FULL CONTENT - no truncation
+                "value_usd": 50,
+                "description": f"Milestone: {phase_name}",
+                "tab": "business",
+                "metadata": {
+                    "phase_name": phase_name,
+                    "phase_timeline": phase_timeline,
+                    "features_count": len(phase_features),
+                },
+            })
+
+    # Extract priority_recommendations from response text using patterns
+    priority_patterns = [
+        r"(?:should prioritize|recommend prioritizing|priority should be|high priority).*?[.!?\n]",
+        r"(?:critical|urgent|important|essential).*?(?:feature|item|task).*?[.!?\n]",
+        r"(?:focus on|start with|begin with).*?[.!?\n]",
+    ]
+
+    # Split response into sentences/paragraphs for extraction
+    sentences = re.split(r'(?<=[.!?])\s+', response_text)
+    priority_recommendations_found = set()  # Use set to avoid duplicates
+
+    for sentence in sentences:
+        sentence_lower = sentence.lower().strip()
+        if len(sentence_lower) < 30:
+            continue
+
+        for pattern in priority_patterns:
+            if re.search(pattern, sentence_lower, re.IGNORECASE):
+                # FULL sentence - no truncation
+                clean_sentence = sentence.strip()
+                if clean_sentence and clean_sentence not in priority_recommendations_found:
+                    priority_recommendations_found.add(clean_sentence)
+                    artifacts.append({
+                        "type": "priority_recommendation",
+                        "format": "text",
+                        "content": clean_sentence,  # FULL CONTENT - no truncation
+                        "value_usd": 75,
+                        "description": "Priority recommendation",
+                        "tab": "business",
+                    })
+                break  # Only match once per sentence
+
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=None,  # Roadmap doesn't have spec_id
+                trace_id=trace_id,
+                agent_type=agent_type,
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 class ScriptExecutor:
@@ -81,7 +284,7 @@ class ScriptExecutor:
                     "roadmap_executor",
                     f"Script failed: {script}",
                     returncode=result.returncode,
-                    stderr=result.stderr[:500] if result.stderr else None,
+                    stderr=result.stderr if result.stderr else None,
                 )
                 return False, result.stderr or result.stdout
 
@@ -290,8 +493,8 @@ class AgentExecutor:
                             log_generation_in_current_trace(
                                 name=f"roadmap-{agent_type}",
                                 model=self.model,
-                                input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
-                                output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
+                                input_data=prompt,  # FULL CONTENT - no truncation
+                                output_data=response_text,  # FULL CONTENT - no truncation
                                 usage={
                                     "input": total_input_tokens,
                                     "output": total_output_tokens,
@@ -342,10 +545,9 @@ class AgentExecutor:
                 return False, str(e)
 
         # Execute with Langfuse trace context if available
+        start_time = time.time()
         if self.langfuse_enabled and trace_context:
             trace_name = f"roadmap-{self.project_id}-{agent_type}"
-            # Truncate prompt for trace input
-            trace_input = prompt[:2000] + "..." if len(prompt) > 2000 else prompt
             with trace_context(
                 name=trace_name,
                 project_id=self.project_id,  # Required for data isolation filtering
@@ -357,17 +559,88 @@ class AgentExecutor:
                     "feature_type": self.feature_type,
                 },
                 tags=["roadmap", f"agent:{agent_type}"],
-                input_data={"prompt": trace_input, "agent_type": agent_type},
+                input_data={"prompt": prompt, "agent_type": agent_type},  # FULL CONTENT - no truncation
             ) as ctx:
                 langfuse_trace_id = ctx.trace_id if ctx else None
                 if ctx:
                     debug("roadmap_executor", f"Created Langfuse trace: {langfuse_trace_id}")
                 result = await _execute_agent()
+                duration_seconds = time.time() - start_time
+
                 # Set trace output before exiting context
                 if ctx and result:
                     success, response_text = result
-                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                    ctx.set_output({"success": success, "response": trace_output})
+                    ctx.set_output({"success": success, "response": response_text})  # FULL CONTENT - no truncation
+
+                    # Publish ROI metrics (wrapped in try/except to not break roadmap)
+                    if ROI_PUBLISHER_AVAILABLE and success:
+                        try:
+                            # Try to load roadmap data for artifact extraction
+                            roadmap_data = None
+                            roadmap_file = self.output_dir / "roadmap.json"
+                            if roadmap_file.exists():
+                                try:
+                                    with open(roadmap_file) as f:
+                                        roadmap_data = json.load(f)
+                                except Exception as e:
+                                    debug_error("roadmap_executor", f"Failed to load roadmap.json: {e}")
+
+                            # Extract artifacts from the roadmap
+                            artifacts, langfuse_refs = extract_roadmap_artifacts(
+                                response_text,
+                                roadmap_data,
+                                project_dir=self.project_dir,
+                                trace_id=langfuse_trace_id,
+                                agent_type=f"roadmap_{agent_type}",
+                            )
+
+                            # Count metrics from roadmap data and artifacts
+                            features_count = len(roadmap_data.get("features", [])) if roadmap_data else 0
+                            phases_count = len(roadmap_data.get("phases", [])) if roadmap_data else 0
+                            priority_recs = len([a for a in artifacts if a["type"] == "priority_recommendation"])
+
+                            # Estimate cost and tokens
+                            estimated_tokens = len(response_text) // 4 + len(prompt) // 4
+                            estimated_cost = (estimated_tokens / 1000) * 0.003
+
+                            # Calculate total artifact value
+                            total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+                            # Publish ROI with Langfuse refs (truncated previews, not full content)
+                            roi_result = await publish_feature_roi(
+                                feature_type="roadmap_features",
+                                project_id=self.project_id,
+                                cost_usd=estimated_cost,
+                                tokens=estimated_tokens,
+                                metrics={
+                                    "features_identified": features_count,
+                                    "features_prioritized": features_count,
+                                    "features_rejected": 0,
+                                    "competitor_insights": 0,
+                                    "phases_count": phases_count,
+                                    "priority_recommendations": priority_recs,
+                                    "artifacts_count": len(artifacts),
+                                    "artifact_value_usd": total_artifact_value,
+                                },
+                                duration_seconds=duration_seconds,
+                                model=self.model,
+                                trace_id=langfuse_trace_id,
+                                artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                            )
+
+                            debug(
+                                "roadmap_executor",
+                                "ROI published",
+                                trace_id=langfuse_trace_id,
+                                artifacts_count=len(artifacts),
+                                artifact_value=total_artifact_value,
+                                roi_percentage=roi_result.get("roi_percentage", 0),
+                            )
+
+                        except Exception as e:
+                            # ROI publishing should never break roadmap
+                            debug_error("roadmap_executor", f"Failed to publish ROI (non-fatal): {e}")
+
                 # Flush to ensure trace is sent
                 if LANGFUSE_AVAILABLE:
                     flush_langfuse()
@@ -378,6 +651,75 @@ class AgentExecutor:
         else:
             # Run without Langfuse tracing
             result = await _execute_agent()
+            duration_seconds = time.time() - start_time
+
+            # Still publish ROI even without Langfuse tracing
+            if ROI_PUBLISHER_AVAILABLE and result and result[0]:
+                try:
+                    success, response_text = result
+
+                    # Try to load roadmap data for artifact extraction
+                    roadmap_data = None
+                    roadmap_file = self.output_dir / "roadmap.json"
+                    if roadmap_file.exists():
+                        try:
+                            with open(roadmap_file) as f:
+                                roadmap_data = json.load(f)
+                        except Exception as e:
+                            debug_error("roadmap_executor", f"Failed to load roadmap.json: {e}")
+
+                    # Extract artifacts from the roadmap
+                    artifacts, langfuse_refs = extract_roadmap_artifacts(
+                        response_text,
+                        roadmap_data,
+                        project_dir=self.project_dir,
+                        trace_id=None,
+                        agent_type=f"roadmap_{agent_type}",
+                    )
+
+                    # Count metrics
+                    features_count = len(roadmap_data.get("features", [])) if roadmap_data else 0
+                    phases_count = len(roadmap_data.get("phases", [])) if roadmap_data else 0
+                    priority_recs = len([a for a in artifacts if a["type"] == "priority_recommendation"])
+
+                    # Estimate cost and tokens
+                    estimated_tokens = len(response_text) // 4 + len(prompt) // 4
+                    estimated_cost = (estimated_tokens / 1000) * 0.003
+
+                    # Calculate total artifact value
+                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+                    # Publish ROI
+                    await publish_feature_roi(
+                        feature_type="roadmap_features",
+                        project_id=self.project_id,
+                        cost_usd=estimated_cost,
+                        tokens=estimated_tokens,
+                        metrics={
+                            "features_identified": features_count,
+                            "features_prioritized": features_count,
+                            "features_rejected": 0,
+                            "competitor_insights": 0,
+                            "phases_count": phases_count,
+                            "priority_recommendations": priority_recs,
+                            "artifacts_count": len(artifacts),
+                            "artifact_value_usd": total_artifact_value,
+                        },
+                        duration_seconds=duration_seconds,
+                        model=self.model,
+                        artifacts=langfuse_refs,
+                    )
+
+                    debug(
+                        "roadmap_executor",
+                        "ROI published (no Langfuse trace)",
+                        artifacts_count=len(artifacts),
+                        artifact_value=total_artifact_value,
+                    )
+
+                except Exception as e:
+                    debug_error("roadmap_executor", f"Failed to publish ROI (non-fatal): {e}")
+
             if result:
                 return result[0], result[1], None
             return False, "", None

@@ -63,9 +63,10 @@ interface TechLeadTabProps {
   };
   loading?: boolean;
   projectId?: string;
+  projectPath?: string;
 }
 
-export function TechLeadTab({ data, loading, projectId }: TechLeadTabProps) {
+export function TechLeadTab({ data, loading, projectId, projectPath }: TechLeadTabProps) {
   const { t } = useTranslation(['analytics']);
 
   const budgetPercent = (data.budget.used / data.budget.total) * 100;
@@ -208,7 +209,7 @@ export function TechLeadTab({ data, loading, projectId }: TechLeadTabProps) {
       </div>
 
       {/* Generated Artifacts - What was actually produced? */}
-      <ArtifactsPanel projectId={projectId} />
+      <ArtifactsPanel projectId={projectId} projectPath={projectPath} />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Add auto-claude to path
@@ -37,7 +38,7 @@ except ImportError:
 
 from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 from phase_config import resolve_model_id
-from agents.tools_pkg.models import ROI_TOOLS
+from agents.tools_pkg.models import ROI_TOOLS, ARTIFACT_TOOLS
 from agents.tools_pkg import create_auto_claude_mcp_server, is_tools_available
 from debug import (
     debug,
@@ -81,6 +82,20 @@ try:
     ROI_PUBLISHER_AVAILABLE = True
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
+
+# Import artifact storage for local full content storage
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+    save_artifact_safe = None
+    create_langfuse_reference = None
+    _get_artifacts_dir = None
 
 
 def load_project_context(project_dir: str) -> str:
@@ -158,6 +173,89 @@ Your capabilities:
 2. Suggest improvements, features, or bug fixes based on the code
 3. Help plan implementation of new features
 4. Provide code examples and explanations
+
+## ⚠️ MANDATORY: USE MCP TOOLS FOR ALL VALUABLE CONTENT ⚠️
+
+**THIS IS NON-NEGOTIABLE:**
+- Text output is NOT tracked, NOT billed, and NOT visible in the dashboard
+- ONLY content created via MCP tool calls appears in analytics
+- If you don't call a tool, the insight is LOST
+
+**FOR EVERY valuable finding, you MUST call one of these tools:**
+
+| Content Type | Tool to Use |
+|--------------|-------------|
+| Diagrams (mermaid, flowchart, sequence, etc.) | `create_diagram` |
+| Documentation, explanations, summaries | `create_artifact` with type="documentation" |
+| Code examples, snippets | `create_artifact` with type="code_example" |
+| Recommendations, suggestions | `suggest_recommendation` |
+| Security issues, vulnerabilities | `report_security_finding` |
+| Architecture insights | `create_artifact` with type="architecture_insight" |
+| API designs | `create_artifact` with type="api_design" |
+| Performance insights | `create_artifact` with type="performance_insight" |
+
+## Creating Artifacts (CRITICAL RULES)
+
+1. **ALWAYS CALL THE TOOL** - Never just write text. Call the appropriate MCP tool.
+2. **FULL CONTENT ONLY** - Each artifact must contain COMPLETE, SELF-CONTAINED content.
+3. **ONE ARTIFACT = ONE COMPLETE FINDING** - If you have 5 points, create ONE artifact with all 5 points.
+4. **NO FRAGMENTS** - An artifact with just "Implement logging" is useless. Include FULL explanation.
+5. **QUALITY OVER QUANTITY** - 3 comprehensive artifacts > 10 tiny fragments.
+
+## Tool Usage Examples
+
+**DIAGRAM (MANDATORY for any visual):**
+```
+create_diagram(
+  content="graph TB\\n    A[Client] --> B[Server]\\n    B --> C[Database]",
+  format="mermaid",
+  description="High-level architecture diagram"
+)
+```
+
+**DOCUMENTATION:**
+```
+create_artifact(
+  artifact_type="documentation",
+  content="## Project Overview\\n\\nThis project implements...\\n\\n### Key Components\\n1. **Server** - Handles...\\n2. **Database** - Stores...",
+  description="Comprehensive project documentation"
+)
+```
+
+**RECOMMENDATION:**
+```
+suggest_recommendation(
+  content="## Authentication Improvements\\n\\n1. **JWT refresh tokens** - Current tokens...\\n2. **Rate limiting** - Prevent brute force...\\n\\n### Implementation Steps:\\n1. Install package...\\n2. Create endpoint...",
+  description="Security recommendations for authentication"
+)
+```
+
+## Artifact Types by Dashboard Tab
+
+- **DEV**: code_example, refactoring, bug_fix, test_case
+- **TECHLEAD**: diagram, architecture_insight, api_design, documentation
+- **OPS**: security_finding, performance_insight
+- **BUSINESS**: recommendation, cost_analysis, priority_assessment
+
+## ❌ WRONG (Do NOT do this):
+
+```
+Here is the architecture:
+- Component A handles requests
+- Component B stores data
+```
+↑ This is just TEXT - not tracked, not visible!
+
+## ✅ CORRECT (Always do this):
+
+```
+create_artifact(
+  artifact_type="documentation",
+  content="## Architecture Overview\\n\\n- **Component A** - Handles requests...\\n- **Component B** - Stores data...",
+  description="Architecture documentation"
+)
+```
+↑ This calls the tool - tracked, visible, billed!
 
 ## Task Suggestions
 
@@ -254,6 +352,37 @@ Current question: {message}"""
         # Pass Azure Foundry env vars to SDK subprocess
         sdk_env = get_sdk_env_vars()
 
+        # Create Langfuse trace context FIRST to get trace_id for SDK subprocess
+        # This is critical for artifact tracking - MCP tools need the trace_id
+        trace_ctx = None
+        langfuse_ctx_obj = None
+        langfuse_trace_id = None
+        if use_langfuse and trace_context:
+            # Truncate prompt for trace input
+            trace_input = full_prompt[:2000] + "..." if len(full_prompt) > 2000 else full_prompt
+            trace_ctx = trace_context(
+                name=trace_name,
+                project_id=project_id,  # Required for data isolation filtering
+                agent_type="insights",
+                metadata={
+                    "model": model,
+                    "thinking_level": thinking_level,
+                    "history_length": len(history),
+                },
+                tags=["insights", f"project:{project_id}"],
+                input_data={"prompt": trace_input, "history_length": len(history)},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            debug("insights_runner", "Langfuse trace created", trace_name=trace_name)
+
+            # Get trace_id for SDK subprocess and artifact storage loading
+            # NOTE: trace_context now automatically sets trace_id in thread-local storage
+            # for MCP tools, so we only need to pass it to SDK subprocess and capture it
+            if langfuse_ctx_obj and hasattr(langfuse_ctx_obj, 'trace_id'):
+                langfuse_trace_id = langfuse_ctx_obj.trace_id
+                sdk_env["LANGFUSE_TRACE_ID"] = langfuse_trace_id  # For SDK subprocess
+                debug("insights_runner", "Captured trace_id for SDK and storage", trace_id=langfuse_trace_id)
+
         # Setup MCP servers for ROI tracking (if tools are available)
         mcp_servers = {}
         roi_tools_enabled = False
@@ -278,6 +407,7 @@ Current question: {message}"""
         allowed_tools = ["Read", "Glob", "Grep"]
         if roi_tools_enabled:
             allowed_tools.extend(ROI_TOOLS)
+            allowed_tools.extend(ARTIFACT_TOOLS)
 
         client = ClaudeSDKClient(
             options=ClaudeAgentOptions(
@@ -289,30 +419,9 @@ Current question: {message}"""
                 # that can cause initialization timeouts
                 max_turns=30,  # Allow sufficient turns for codebase exploration
                 cwd=str(project_path),
-                env=sdk_env,  # Pass ANTHROPIC_BASE_URL, Azure Foundry vars, etc.
+                env=sdk_env,  # Pass ANTHROPIC_BASE_URL, Azure Foundry vars, LANGFUSE_TRACE_ID
             )
         )
-
-        # Create Langfuse trace context if available
-        trace_ctx = None
-        langfuse_ctx_obj = None
-        if use_langfuse and trace_context:
-            # Truncate prompt for trace input
-            trace_input = full_prompt[:2000] + "..." if len(full_prompt) > 2000 else full_prompt
-            trace_ctx = trace_context(
-                name=trace_name,
-                project_id=project_id,  # Required for data isolation filtering
-                agent_type="insights",
-                metadata={
-                    "model": model,
-                    "thinking_level": thinking_level,
-                    "history_length": len(history),
-                },
-                tags=["insights", f"project:{project_id}"],
-                input_data={"prompt": trace_input, "history_length": len(history)},
-            )
-            langfuse_ctx_obj = trace_ctx.__enter__()
-            debug("insights_runner", "Langfuse trace created", trace_name=trace_name)
 
         # Use async context manager pattern
         async with client:
@@ -445,11 +554,9 @@ Current question: {message}"""
                 except Exception as e:
                     debug_error("insights_runner", f"Failed to finalize tracking: {e}")
 
-            # Capture trace_id BEFORE closing the trace context
-            langfuse_trace_id = None
-            if langfuse_ctx_obj and hasattr(langfuse_ctx_obj, 'trace_id'):
-                langfuse_trace_id = langfuse_ctx_obj.trace_id
-                debug("insights_runner", "Captured Langfuse trace_id", trace_id=langfuse_trace_id)
+            # NOTE: langfuse_trace_id was captured earlier when creating the trace context
+            # and passed to the SDK subprocess via LANGFUSE_TRACE_ID env var
+            # This ensures MCP tools can link artifacts to the correct trace
 
             # Publish ROI metrics BEFORE closing the trace (so scores attach to trace)
             if ROI_PUBLISHER_AVAILABLE:
@@ -476,15 +583,17 @@ Current question: {message}"""
                     response_lower = response_text.lower()
                     import re
 
-                    # Detect diagrams (mermaid, ascii art, etc.)
-                    diagrams_generated = (
-                        response_text.count("```mermaid") +
-                        response_text.count("```ascii") +
-                        response_text.count("```diagram")
-                    )
+                    # Detect diagrams (mermaid, ascii art, etc.) - comprehensive detection
+                    mermaid_types = ["mermaid", "flowchart", "sequenceDiagram", "graph", "classDiagram", "stateDiagram", "erDiagram", "gantt", "pie", "journey"]
+                    diagrams_generated = sum(
+                        response_text.lower().count(f"```{dtype.lower()}") for dtype in mermaid_types
+                    ) + response_text.count("```ascii") + response_text.count("```diagram")
+
                     diagram_types = []
-                    if "```mermaid" in response_text:
-                        diagram_types.append("mermaid")
+                    for dtype in mermaid_types:
+                        if f"```{dtype.lower()}" in response_text.lower() or f"```{dtype}" in response_text:
+                            diagram_types.append("mermaid")
+                            break
                     if "```ascii" in response_text:
                         diagram_types.append("ascii")
                     if "```diagram" in response_text:
@@ -495,212 +604,137 @@ Current question: {message}"""
                     security_matches = [kw for kw in security_keywords if kw in response_lower]
                     security_insights = len(security_matches)
 
-                    # Detect recommendations WITH CONTEXT - extract sentences containing recommendations
+                    # Detect recommendations WITH CONTEXT - extract FULL PARAGRAPHS
                     recommendation_patterns = ["recommend", "suggestion", "should consider", "best practice", "improvement"]
                     recommendations_found = []
-                    sentences = re.split(r'[.!?\n]', response_text)
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
+
+                    # Split by paragraphs (double newlines or markdown sections)
+                    paragraphs = re.split(r'\n\n+|\n(?=#+\s)', response_text)
+                    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+
+                    # Also keep sentences for fine-grained extraction
+                    sentences = re.split(r'(?<=[.!?])\s+', response_text)
+                    sentences = [s.strip() for s in sentences if s.strip()]
+
+                    for para in paragraphs:
+                        para_lower = para.lower()
                         for pattern in recommendation_patterns:
-                            if pattern in sentence_lower and len(sentence.strip()) > 20:
-                                recommendations_found.append(sentence.strip()[:150])  # Limit length
+                            if pattern in para_lower and len(para) > 50:
+                                recommendations_found.append(para)
                                 break
                     recommendations_count = len(recommendations_found)
 
                     # Detect code explanations (code blocks in response)
                     code_explanations = response_text.count("```")
 
-                    # Extract ARTIFACTS (concrete outputs that have value)
+                    # Load ARTIFACTS from local storage (created by MCP tools during session)
+                    # This avoids duplicating artifacts that were already created via tools
                     artifacts = []
+                    langfuse_refs = []
 
-                    # Extract mermaid diagrams as artifacts
-                    mermaid_pattern = r'```mermaid\n(.*?)```'
-                    mermaid_matches = re.findall(mermaid_pattern, response_text, re.DOTALL)
-                    for i, diagram in enumerate(mermaid_matches):
-                        artifacts.append({
-                            "type": "diagram",
-                            "format": "mermaid",
-                            "content": diagram.strip(),
-                            "value_usd": 150,
-                            "description": f"Mermaid diagram #{i+1}",
-                        })
+                    if ARTIFACT_STORAGE_AVAILABLE and project_path and langfuse_trace_id:
+                        try:
+                            from analytics.artifact_storage import list_artifacts
+                            # Load artifacts created during this trace
+                            stored_artifacts = list_artifacts(
+                                project_dir=project_path,
+                                trace_id=langfuse_trace_id,
+                            )
+                            if stored_artifacts:
+                                artifacts = stored_artifacts
+                                debug("insights_runner", f"Loaded {len(artifacts)} artifacts from storage for trace {langfuse_trace_id[:8]}...")
 
-                    # Extract code blocks as artifacts (exclude mermaid)
-                    code_pattern = r'```(\w+)?\n(.*?)```'
-                    code_matches = re.findall(code_pattern, response_text, re.DOTALL)
-                    for lang, code in code_matches:
-                        if lang and lang.lower() not in ['mermaid', 'ascii', 'diagram']:
-                            artifacts.append({
-                                "type": "code_example",
-                                "format": lang or "text",
-                                "content": code.strip()[:500],  # Limit size
-                                "value_usd": 25,
-                                "description": f"Code example ({lang or 'text'})",
-                            })
+                                # Create Langfuse refs for stored artifacts
+                                for artifact in artifacts:
+                                    artifact_id = artifact.get("id", "")
+                                    storage_path = str(_get_artifacts_dir(project_path) / datetime.now().strftime("%Y-%m-%d") / f"{artifact_id}.json")
+                                    ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                                    langfuse_refs.append(ref)
+                        except Exception as e:
+                            debug_error("insights_runner", f"Failed to load artifacts from storage: {e}")
 
-                    # Extract structured recommendations as artifacts
-                    for i, rec in enumerate(recommendations_found[:5]):
-                        artifacts.append({
-                            "type": "recommendation",
-                            "format": "text",
-                            "content": rec,
-                            "value_usd": 50,
-                            "description": f"Recommendation #{i+1}",
-                        })
+                    # NO REGEX FALLBACK - Artifacts MUST come from MCP tools
+                    # The agent is instructed to use create_artifact, create_diagram, etc.
+                    # If no artifacts were created via tools, we simply have no artifacts
+                    if not artifacts:
+                        debug("insights_runner", "No artifacts created via MCP tools - agent should use create_artifact/create_diagram tools")
+                    else:
+                        # Artifacts already loaded from storage, create Langfuse refs if not done
+                        if not langfuse_refs and ARTIFACT_STORAGE_AVAILABLE:
+                            for artifact in artifacts:
+                                langfuse_refs.append(artifact)  # Full content already stored
 
-                    # Extract security findings as artifacts
-                    for kw in security_matches:
-                        # Find the sentence containing this security keyword
-                        for sentence in sentences:
-                            if kw in sentence.lower() and len(sentence.strip()) > 30:
-                                artifacts.append({
-                                    "type": "security_finding",
-                                    "format": "text",
-                                    "content": sentence.strip()[:200],
-                                    "keyword": kw,
-                                    "value_usd": 200,
-                                    "description": f"Security insight: {kw}",
-                                    "tab": "ops",
-                                })
-                                break
-
-                    # Extract bug fix suggestions as artifacts
-                    bug_keywords = ["fix", "bug", "error", "issue", "problem", "solve", "resolve"]
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(kw in sentence_lower for kw in bug_keywords) and "should" in sentence_lower:
-                            if len(sentence.strip()) > 40:
-                                artifacts.append({
-                                    "type": "bug_fix",
-                                    "format": "text",
-                                    "content": sentence.strip()[:250],
-                                    "value_usd": 100,
-                                    "description": "Bug fix suggestion",
-                                    "tab": "dev",
-                                })
-                                break
-
-                    # Extract test suggestions as artifacts
-                    test_keywords = ["test", "testing", "unit test", "integration test", "spec", "assertion"]
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(kw in sentence_lower for kw in test_keywords):
-                            if len(sentence.strip()) > 30 and "should" in sentence_lower:
-                                artifacts.append({
-                                    "type": "test_case",
-                                    "format": "text",
-                                    "content": sentence.strip()[:250],
-                                    "value_usd": 75,
-                                    "description": "Test suggestion",
-                                    "tab": "dev",
-                                })
-                                break
-
-                    # Extract documentation artifacts
-                    doc_keywords = ["documentation", "document", "readme", "guide", "tutorial", "explanation"]
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(kw in sentence_lower for kw in doc_keywords):
-                            if len(sentence.strip()) > 40:
-                                artifacts.append({
-                                    "type": "documentation",
-                                    "format": "text",
-                                    "content": sentence.strip()[:250],
-                                    "value_usd": 50,
-                                    "description": "Documentation insight",
-                                    "tab": "techlead",
-                                })
-                                break
-
-                    # Extract API design suggestions
-                    api_keywords = ["api", "endpoint", "route", "rest", "graphql", "request", "response"]
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(kw in sentence_lower for kw in api_keywords):
-                            if len(sentence.strip()) > 40 and ("design" in sentence_lower or "structure" in sentence_lower or "pattern" in sentence_lower):
-                                artifacts.append({
-                                    "type": "api_design",
-                                    "format": "text",
-                                    "content": sentence.strip()[:250],
-                                    "value_usd": 100,
-                                    "description": "API design insight",
-                                    "tab": "techlead",
-                                })
-                                break
-
-                    # Extract performance insights
-                    perf_keywords = ["performance", "optimize", "optimization", "slow", "fast", "latency", "cache", "memory"]
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(kw in sentence_lower for kw in perf_keywords):
-                            if len(sentence.strip()) > 40:
-                                artifacts.append({
-                                    "type": "performance_insight",
-                                    "format": "text",
-                                    "content": sentence.strip()[:250],
-                                    "value_usd": 150,
-                                    "description": "Performance insight",
-                                    "tab": "ops",
-                                })
-                                break
-
-                    # Extract cost/business insights
-                    cost_keywords = ["cost", "price", "budget", "expense", "roi", "value", "revenue", "savings"]
-                    for sentence in sentences:
-                        sentence_lower = sentence.lower()
-                        if any(kw in sentence_lower for kw in cost_keywords):
-                            if len(sentence.strip()) > 40:
-                                artifacts.append({
-                                    "type": "cost_analysis",
-                                    "format": "text",
-                                    "content": sentence.strip()[:250],
-                                    "value_usd": 75,
-                                    "description": "Cost/Business insight",
-                                    "tab": "business",
-                                })
-                                break
-
-                    # Add tab to existing artifact types
+                    # Calculate value attribution from REAL artifact values (not regex estimates)
+                    # Group artifacts by type and sum their actual values
+                    artifact_values_by_type = {}
                     for artifact in artifacts:
-                        if "tab" not in artifact:
-                            if artifact["type"] == "diagram":
-                                artifact["tab"] = "techlead"
-                            elif artifact["type"] == "code_example":
-                                artifact["tab"] = "dev"
-                            elif artifact["type"] == "recommendation":
-                                artifact["tab"] = "business"
+                        art_type = artifact.get("type", "unknown")
+                        art_value = artifact.get("value_usd", 0)
+                        if art_type not in artifact_values_by_type:
+                            artifact_values_by_type[art_type] = {"count": 0, "total_value": 0, "items": []}
+                        artifact_values_by_type[art_type]["count"] += 1
+                        artifact_values_by_type[art_type]["total_value"] += art_value
+                        artifact_values_by_type[art_type]["items"].append({
+                            "id": artifact.get("id"),
+                            "value": art_value,
+                            "description": artifact.get("description", "")[:100],
+                        })
 
-                    # Build value attribution details for traceability
+                    # Calculate diagram values from stored artifacts (overrides regex count)
+                    diagram_info = artifact_values_by_type.get("diagram", {"count": 0, "total_value": 0})
+
+                    # Calculate security values from stored artifacts
+                    security_info = artifact_values_by_type.get("security_finding", {"count": 0, "total_value": 0})
+
+                    # Calculate recommendation values from stored artifacts
+                    recommendation_info = artifact_values_by_type.get("recommendation", {"count": 0, "total_value": 0})
+
+                    # Calculate code example values from stored artifacts
+                    code_info = artifact_values_by_type.get("code_example", {"count": 0, "total_value": 0})
+
+                    # Build value attribution details for traceability using REAL artifact values
+                    # IMPORTANT: Only count values from REAL artifacts (MCP tools)
+                    # Regex estimates are kept for debugging but don't contribute to total_value
+                    # This ensures value_breakdown in UI aligns with actual artifacts list
                     value_attribution = {
                         "diagrams": {
-                            "count": diagrams_generated,
+                            "count": diagram_info["count"],  # Only count real artifacts
+                            "regex_detected": diagrams_generated,  # Keep for debugging
                             "types": diagram_types,
-                            "value_per_item": 150,
-                            "total_value": diagrams_generated * 150,
+                            "value_per_item": 150,  # Base value, actual may vary
+                            "total_value": diagram_info["total_value"],  # Only real artifact values
+                            "from_artifacts": diagram_info["count"] > 0,
                         },
                         "security_insights": {
-                            "count": security_insights,
+                            "count": security_info["count"],  # Only count real artifacts
+                            "regex_detected": security_insights,  # Keep for debugging
                             "keywords_found": security_matches,
                             "value_per_item": 200,
-                            "total_value": security_insights * 200,
+                            "total_value": security_info["total_value"],  # Only real artifact values
+                            "from_artifacts": security_info["count"] > 0,
                         },
                         "recommendations": {
-                            "count": recommendations_count,
-                            "samples": recommendations_found[:5],  # First 5 recommendations
+                            "count": recommendation_info["count"],  # Only count real artifacts
+                            "regex_detected": recommendations_count,  # Keep for debugging
+                            "samples": recommendations_found[:5],
                             "value_per_item": 50,
-                            "total_value": recommendations_count * 50,
+                            "total_value": recommendation_info["total_value"],  # Only real artifact values
+                            "from_artifacts": recommendation_info["count"] > 0,
                         },
                         "code_explanations": {
-                            "count": code_explanations,
+                            "count": code_info["count"],  # Only count real artifacts
+                            "regex_detected": code_explanations,  # Keep for debugging
                             "value_per_item": 25,
-                            "total_value": code_explanations * 25,
+                            "total_value": code_info["total_value"],  # Only real artifact values
+                            "from_artifacts": code_info["count"] > 0,
                         },
                         "files_explored": {
                             "count": files_explored,
                             "value_contribution": "knowledge base calculation",
                         },
-                        "artifacts": artifacts,  # Link to concrete outputs
-                        "total_artifacts": len(artifacts),
+                        "artifacts": langfuse_refs,  # FULL content - no truncation
+                        "total_artifacts": len(langfuse_refs),
+                        "artifact_values_by_type": artifact_values_by_type,  # Full breakdown for debugging
                     }
 
                     # Save value attribution to physical file for traceability
@@ -805,21 +839,27 @@ Current question: {message}"""
                 try:
                     # Set trace output before exiting - include value attribution for traceability
                     if langfuse_ctx_obj:
-                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                        # FULL response - NO truncation
                         # Include value attribution if ROI was published
-                        output_data = {"response": trace_output}
-                        if ROI_PUBLISHER_AVAILABLE and 'value_attribution' in dir():
-                            output_data["value_attribution"] = value_attribution
-                            output_data["total_calculated_value"] = sum(
-                                v.get("total_value", 0) for v in value_attribution.values()
-                                if isinstance(v, dict) and "total_value" in v
-                            )
+                        output_data = {"response": response_text}
+                        # Check if value_attribution exists (defined in ROI_PUBLISHER_AVAILABLE block)
+                        try:
+                            if value_attribution:
+                                output_data["value_attribution"] = value_attribution
+                                output_data["total_calculated_value"] = sum(
+                                    v.get("total_value", 0) for v in value_attribution.values()
+                                    if isinstance(v, dict) and "total_value" in v
+                                )
+                        except NameError:
+                            # value_attribution not defined if ROI publishing was skipped
+                            pass
                         langfuse_ctx_obj.set_output(output_data)
                     trace_ctx.__exit__(None, None, None)
                     flush_langfuse()
                     debug("insights_runner", "Langfuse trace finalized")
                 except Exception as e:
                     debug_error("insights_runner", f"Failed to finalize Langfuse trace: {e}")
+                # NOTE: trace_context now handles cleanup of trace_id in thread-local storage
 
     except Exception as e:
         print(f"Error using Claude SDK: {e}", file=sys.stderr)

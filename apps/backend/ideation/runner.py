@@ -28,6 +28,20 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact Storage
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+    save_artifact_safe = None
+    create_langfuse_reference = None
+    _get_artifacts_dir = None
+
 from .config import IdeationConfigManager
 from .generator import IDEATION_TYPE_LABELS
 from .output_streamer import OutputStreamer
@@ -272,10 +286,148 @@ class IdeationOrchestrator:
                 )
             )
 
+    def _extract_ideation_artifacts(
+        self,
+        ideas: list[dict],
+        trace_id: str | None = None,
+    ) -> tuple[list[dict], list[dict]]:
+        """
+        Extract artifacts from generated ideation ideas.
+
+        Stores FULL artifact content locally, returns lightweight references for Langfuse.
+
+        Artifacts extracted:
+        - idea ($50 each) - each generated idea
+        - recommendation ($75 each) - ideas with actionable recommendations
+        - analysis_insight ($100 each) - ideas with deep analysis/strategic value
+
+        Args:
+            ideas: List of idea dictionaries from ideation.json
+            trace_id: Langfuse trace ID for linking
+
+        Returns:
+            Tuple of (local_artifacts, langfuse_refs):
+            - local_artifacts: Full artifacts for local processing
+            - langfuse_refs: Truncated references for Langfuse
+        """
+        artifacts = []
+
+        for idea in ideas:
+            idea_type = idea.get("ideation_type", idea.get("type", "unknown"))
+            title = idea.get("title", "Untitled")
+            description = idea.get("description", "")
+            priority = idea.get("priority", "medium").lower()
+            complexity = idea.get("complexity", "medium")
+            rationale = idea.get("rationale", "")
+
+            # Build FULL content - no truncation
+            content = f"# {title}\n\n"
+            content += f"**Type**: {IDEATION_TYPE_LABELS.get(idea_type, idea_type)}\n"
+            content += f"**Priority**: {priority.upper()}\n"
+            content += f"**Complexity**: {complexity}\n\n"
+            content += f"## Description\n{description}\n"
+
+            if rationale:
+                content += f"\n## Rationale\n{rationale}\n"
+
+            # Include implementation hints if present
+            implementation = idea.get("implementation_hints", idea.get("implementation", ""))
+            if implementation:
+                content += f"\n## Implementation\n{implementation}\n"
+
+            # Include dependencies if present
+            dependencies = idea.get("dependencies", [])
+            if dependencies:
+                content += "\n## Dependencies\n"
+                for dep in dependencies:
+                    content += f"- {dep}\n"
+
+            # Determine artifact type and value based on idea characteristics
+            if priority == "high" and len(description) > 200:
+                # High priority with substantial description = analysis insight
+                artifact_type = "analysis_insight"
+                value_usd = 100
+                tab = "business"
+            elif any(kw in description.lower() for kw in ["recommend", "should", "consider", "improve", "enhance"]):
+                # Contains recommendation language
+                artifact_type = "recommendation"
+                value_usd = 75
+                tab = "business"
+            else:
+                # Standard idea
+                artifact_type = "idea"
+                value_usd = 50
+                # Tab based on ideation type
+                if idea_type in ["security_hardening"]:
+                    tab = "ops"
+                elif idea_type in ["ui_ux_improvements"]:
+                    tab = "techlead"
+                elif idea_type in ["code_improvements", "code_quality", "performance_optimizations"]:
+                    tab = "dev"
+                else:
+                    tab = "business"
+
+            artifacts.append({
+                "type": artifact_type,
+                "format": "markdown",
+                "content": content,
+                "value_usd": value_usd,
+                "description": f"{IDEATION_TYPE_LABELS.get(idea_type, idea_type)}: {title}",
+                "tab": tab,
+                "metadata": {
+                    "ideation_type": idea_type,
+                    "title": title,
+                    "priority": priority,
+                    "complexity": complexity,
+                },
+            })
+
+        # Save artifacts locally and create Langfuse references
+        if ARTIFACT_STORAGE_AVAILABLE and save_artifact_safe and create_langfuse_reference and _get_artifacts_dir:
+            langfuse_refs = []
+            for artifact in artifacts:
+                # Save full artifact locally
+                artifact_id = save_artifact_safe(
+                    artifact=artifact,
+                    project_dir=self.project_dir,
+                    spec_id=None,  # Ideation doesn't have spec_id
+                    trace_id=trace_id,
+                    agent_type="ideation",
+                    session_num=None,
+                )
+
+                if artifact_id:
+                    # Create lightweight reference for Langfuse
+                    artifacts_dir = _get_artifacts_dir(self.project_dir)
+                    storage_path = str(
+                        (artifacts_dir / datetime.now().strftime("%Y-%m-%d") / f"{artifact_id}.json")
+                    )
+                    ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                    langfuse_refs.append(ref)
+                else:
+                    # Fallback: if storage fails, include full artifact as ref
+                    langfuse_refs.append(artifact)
+
+            debug(
+                "ideation_artifacts",
+                f"Extracted {len(artifacts)} artifacts, stored {len(langfuse_refs)} refs",
+                artifacts_count=len(artifacts),
+            )
+            return artifacts, langfuse_refs
+        else:
+            # No local storage available - return artifacts as both
+            debug(
+                "ideation_artifacts",
+                "Artifact storage not available, returning full artifacts",
+                artifacts_count=len(artifacts),
+            )
+            return artifacts, artifacts
+
     async def _publish_roi(self, results: list) -> None:
         """Publish ROI metrics for ideation session.
 
         Calculates and publishes ROI to Langfuse for each ideation type.
+        Includes artifact extraction and storage for traceability.
 
         Args:
             results: List of IdeationPhaseResult objects
@@ -306,12 +458,15 @@ class IdeationOrchestrator:
             # Estimate cost from results (sum up all successful phases)
             total_tokens = 0
             total_cost = 0.0
+            total_duration = 0.0
 
             for result in results:
                 if hasattr(result, "tokens") and result.tokens:
                     total_tokens += result.tokens
                 if hasattr(result, "cost") and result.cost:
                     total_cost += result.cost
+                if hasattr(result, "duration") and result.duration:
+                    total_duration += result.duration
 
             # If we don't have cost data from results, estimate from token count
             # Typical pricing: ~$0.003 per 1K tokens for Claude Sonnet
@@ -326,6 +481,14 @@ class IdeationOrchestrator:
             # Publish ROI for the session
             project_id = self.project_dir.name
 
+            # Extract artifacts from ALL ideas (pass None for trace_id, will be set per-type)
+            all_artifacts, all_langfuse_refs = self._extract_ideation_artifacts(ideas, trace_id=None)
+
+            # Track totals for summary
+            total_roi_pct = 0
+            total_value = 0
+            successful_publishes = 0
+
             for ideation_type, count in by_type.items():
                 # Count high impact ideas for this type
                 type_high_impact = sum(
@@ -333,9 +496,23 @@ class IdeationOrchestrator:
                     if idea.get("type") == ideation_type and idea.get("priority", "").lower() == "high"
                 )
 
+                # Filter artifacts for this type
+                type_artifacts = [
+                    a for a in all_artifacts
+                    if a.get("metadata", {}).get("ideation_type") == ideation_type
+                ]
+                type_refs = [
+                    r for r in all_langfuse_refs
+                    if r.get("metadata", {}).get("ideation_type") == ideation_type
+                ]
+
+                # Calculate artifact value for this type
+                type_artifact_value = sum(a.get("value_usd", 0) for a in type_artifacts)
+
                 # Estimate cost per type (distribute evenly)
                 type_cost = total_cost / len(by_type) if by_type else total_cost
                 type_tokens = total_tokens // len(by_type) if by_type else total_tokens
+                type_duration = total_duration / len(by_type) if by_type else 0.0
 
                 try:
                     result = await publish_ideation_roi(
@@ -346,14 +523,18 @@ class IdeationOrchestrator:
                         cost_usd=type_cost,
                         tokens=type_tokens,
                         model=self.model,
+                        duration_seconds=type_duration,
                     )
 
                     if result.get("success"):
                         roi_pct = result.get("roi_percentage", 0)
                         value = result.get("total_value_usd", 0)
+                        total_roi_pct += roi_pct
+                        total_value += value
+                        successful_publishes += 1
                         print_status(
                             f"{IDEATION_TYPE_LABELS.get(ideation_type, ideation_type)}: "
-                            f"ROI {roi_pct:.0f}% (${value:.2f} value)",
+                            f"ROI {roi_pct:.0f}% (${value:.2f} value, {len(type_artifacts)} artifacts)",
                             "success",
                         )
                         debug(
@@ -362,6 +543,8 @@ class IdeationOrchestrator:
                             roi=roi_pct,
                             value=value,
                             cost=type_cost,
+                            artifacts=len(type_artifacts),
+                            artifact_value=type_artifact_value,
                         )
                     else:
                         debug_warning(
@@ -373,9 +556,24 @@ class IdeationOrchestrator:
 
             # Summary
             total_ideas = len(ideas)
+            avg_roi = total_roi_pct / successful_publishes if successful_publishes > 0 else 0
+            total_artifact_value = sum(a.get("value_usd", 0) for a in all_artifacts)
+
             print_status(
-                f"ROI published for {len(by_type)} ideation types ({total_ideas} total ideas)",
+                f"ROI published for {len(by_type)} ideation types ({total_ideas} ideas, "
+                f"{len(all_artifacts)} artifacts, ${total_artifact_value:.2f} artifact value)",
                 "success",
+            )
+
+            debug(
+                "ideation_roi_summary",
+                "Ideation ROI summary",
+                total_ideas=total_ideas,
+                total_artifacts=len(all_artifacts),
+                total_artifact_value=total_artifact_value,
+                avg_roi=avg_roi,
+                total_value=total_value,
+                total_cost=total_cost,
             )
 
         except Exception as e:

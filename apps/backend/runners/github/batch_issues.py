@@ -58,15 +58,30 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
 def extract_triage_artifacts(
     triage_results: list[dict],
     issues: list[dict],
-) -> list[dict]:
+    project_dir: Path | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Extract artifacts from triage results for ROI calculation.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Artifact values (as defined in ROI_IMPLEMENTATION_TRACKER.md section 4.2):
     - triage_classification: $30 - classification of the issue
@@ -78,9 +93,13 @@ def extract_triage_artifacts(
     Args:
         triage_results: List of batch/triage results from analyze_and_batch_issues
         issues: Original list of issues that were triaged
+        project_dir: Project root directory for local storage
+        trace_id: Langfuse trace ID for linking
 
     Returns:
-        List of artifact dicts with type, value_usd, content, description, tab
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
     """
     artifacts = []
 
@@ -90,16 +109,27 @@ def extract_triage_artifacts(
         reasoning = batch.get("reasoning", "")
         confidence = batch.get("confidence", 0.0)
 
-        # Each batch represents a triage classification
+        # Each batch represents a triage classification - FULL CONTENT, no truncation
         if issue_numbers:
+            # Build full content for classification
+            content = f"Issues {issue_numbers}: {theme}"
+            if reasoning:
+                content += f"\n\nReasoning: {reasoning}"
+
             artifacts.append({
                 "type": "triage_classification",
                 "format": "text",
-                "content": f"Issues {issue_numbers}: {theme}",
+                "content": content,  # FULL CONTENT - no truncation
                 "value_usd": 30,
                 "description": f"Classified {len(issue_numbers)} issue(s) as: {theme[:50]}",
                 "tab": "ops",
                 "confidence": confidence,
+                "metadata": {
+                    "issue_numbers": issue_numbers,
+                    "theme": theme,
+                    "reasoning": reasoning,
+                    "confidence": confidence,
+                },
             })
 
         # Check if priority was assigned (inferred from theme/reasoning)
@@ -109,13 +139,22 @@ def extract_triage_artifacts(
 
         for priority_kw in priority_keywords:
             if priority_kw in theme_lower or priority_kw in reasoning_lower:
+                # Build full content for priority assignment
+                content = f"Priority '{priority_kw}' assigned to issues {issue_numbers}"
+                if reasoning:
+                    content += f"\n\nContext: {reasoning}"
+
                 artifacts.append({
                     "type": "priority_assignment",
                     "format": "text",
-                    "content": f"Priority '{priority_kw}' assigned to issues {issue_numbers}",
+                    "content": content,  # FULL CONTENT - no truncation
                     "value_usd": 50,
                     "description": f"Priority assignment: {priority_kw}",
                     "tab": "ops",
+                    "metadata": {
+                        "priority": priority_kw,
+                        "issue_numbers": issue_numbers,
+                    },
                 })
                 break  # Only count one priority per batch
 
@@ -128,31 +167,51 @@ def extract_triage_artifacts(
 
         for label_kw in label_keywords:
             if label_kw in theme_lower:
+                # Build full content for label suggestion
+                content = f"Label '{label_kw}' suggested for issues {issue_numbers}"
+                if theme:
+                    content += f"\n\nBased on theme: {theme}"
+
                 artifacts.append({
                     "type": "label_suggestion",
                     "format": "text",
-                    "content": f"Label '{label_kw}' suggested for issues {issue_numbers}",
+                    "content": content,  # FULL CONTENT - no truncation
                     "value_usd": 20,
                     "description": f"Label suggestion: {label_kw}",
                     "tab": "ops",
+                    "metadata": {
+                        "label": label_kw,
+                        "issue_numbers": issue_numbers,
+                        "theme": theme,
+                    },
                 })
                 break  # Only count one label per batch
 
     # Check for duplicates (batches with multiple issues indicate related/potential duplicates)
     for batch in triage_results:
         issue_numbers = batch.get("issue_numbers", [])
-        reasoning = batch.get("reasoning", "").lower()
+        reasoning = batch.get("reasoning", "")
+        reasoning_lower = reasoning.lower()
 
         # If multiple issues in batch and reasoning mentions similarity/duplicate
         if len(issue_numbers) > 1:
-            if any(kw in reasoning for kw in ["duplicate", "same", "identical", "related"]):
+            if any(kw in reasoning_lower for kw in ["duplicate", "same", "identical", "related"]):
+                # Build full content for duplicate detection
+                content = f"Potential duplicates detected: {issue_numbers}"
+                if reasoning:
+                    content += f"\n\nReasoning: {reasoning}"
+
                 artifacts.append({
                     "type": "duplicate_detected",
                     "format": "text",
-                    "content": f"Potential duplicates detected: {issue_numbers}",
+                    "content": content,  # FULL CONTENT - no truncation
                     "value_usd": 75,
                     "description": f"Duplicate/related issues: {issue_numbers}",
                     "tab": "ops",
+                    "metadata": {
+                        "issue_numbers": issue_numbers,
+                        "reasoning": reasoning,
+                    },
                 })
 
     # Check for assignee suggestions in original issues (if present in labels/metadata)
@@ -161,16 +220,61 @@ def extract_triage_artifacts(
         assignee = issue.get("assignee")
 
         if assignee:
+            # Build full content for assignee suggestion
+            issue_number = issue.get('number')
+            issue_title = issue.get('title', 'No title')
+            content = f"Issue #{issue_number} assigned to {assignee}"
+            content += f"\n\nTitle: {issue_title}"
+            if labels:
+                label_names = [l.get('name', '') for l in labels if isinstance(l, dict)]
+                content += f"\nLabels: {', '.join(label_names)}"
+
             artifacts.append({
                 "type": "assignee_suggestion",
                 "format": "text",
-                "content": f"Issue #{issue.get('number')} assigned to {assignee}",
+                "content": content,  # FULL CONTENT - no truncation
                 "value_usd": 40,
-                "description": f"Assignee suggestion for issue #{issue.get('number')}",
+                "description": f"Assignee suggestion for issue #{issue_number}",
                 "tab": "ops",
+                "metadata": {
+                    "issue_number": issue_number,
+                    "assignee": assignee,
+                    "issue_title": issue_title,
+                },
             })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=None,  # GitHub triage doesn't have a spec
+                trace_id=trace_id,
+                agent_type="batch_analyzer",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 # Import validators
@@ -411,13 +515,22 @@ Respond with JSON only:
             if ROI_PUBLISHER_AVAILABLE:
                 try:
                     # Extract artifacts from triage results
-                    artifacts = extract_triage_artifacts(batches, issues)
+                    # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                    artifacts, langfuse_refs = extract_triage_artifacts(
+                        batches,
+                        issues,
+                        project_dir=self.project_dir,
+                        trace_id=langfuse_trace_id,
+                    )
 
-                    # Calculate triage metrics
+                    # Calculate triage metrics (use full artifacts for counts)
                     issues_triaged = len(issues)
                     labels_assigned = sum(1 for a in artifacts if a.get("type") == "label_suggestion")
                     priorities_set = sum(1 for a in artifacts if a.get("type") == "priority_assignment")
                     duplicates_found = sum(1 for a in artifacts if a.get("type") == "duplicate_detected")
+
+                    # Calculate total artifact value (use full artifacts for value)
+                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
                     # Estimate cost from tokens
                     total_tokens = total_input_tokens + total_output_tokens
@@ -437,12 +550,16 @@ Respond with JSON only:
                             "priorities_set": priorities_set,
                             "duplicates_found": duplicates_found,
                             "batches_created": len(batches),
+                            "artifacts_count": len(artifacts),
+                            "artifact_value_usd": total_artifact_value,
                         },
+                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
                     )
                     logger.info(
                         f"[BATCH_ANALYZER] ROI published: "
                         f"issues={issues_triaged}, labels={labels_assigned}, "
                         f"priorities={priorities_set}, duplicates={duplicates_found}, "
+                        f"artifacts={len(artifacts)}, value=${total_artifact_value}, "
                         f"trace_id={langfuse_trace_id}"
                     )
                 except Exception as e:
@@ -453,9 +570,9 @@ Respond with JSON only:
                 try:
                     # Set trace output before exiting - include artifacts for traceability
                     if langfuse_ctx_obj:
-                        trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
+                        # FULL content - NO truncation (Zero Truncation Policy)
                         output_data = {
-                            "response": trace_output,
+                            "response": response_text,
                             "batches_count": len(batches),
                         }
                         # Include artifacts if ROI was published

@@ -38,6 +38,17 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -102,9 +113,14 @@ def extract_mr_review_artifacts(
     findings: list,
     verdict: str,
     summary: str,
-) -> list[dict]:
+    project_dir: Path | None = None,
+    mr_iid: int | None = None,
+    trace_id: str | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Extract artifacts from MR review results for ROI tracking.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Artifact types and values:
     - review_comment ($50) - Each finding/comment in the review
@@ -117,9 +133,14 @@ def extract_mr_review_artifacts(
         findings: List of MRReviewFinding objects
         verdict: The MergeVerdict value
         summary: The review summary text
+        project_dir: Project root directory for local storage
+        mr_iid: MR identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
 
     Returns:
-        List of artifact dictionaries with type, content, value_usd, etc.
+        Tuple of (local_artifacts, langfuse_refs):
+        - local_artifacts: Full artifacts for local processing
+        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
     """
     artifacts = []
 
@@ -154,13 +175,16 @@ def extract_mr_review_artifacts(
             file_path = finding.get("file", "unknown")
             line = finding.get("line", 0)
 
-        content_preview = f"{title}: {description[:150]}" if description else title
+        # Build FULL content - no truncation!
+        full_content = f"{title}"
+        if description:
+            full_content += f": {description}"
 
         # 1. Every finding is a review_comment ($50)
         artifacts.append({
             "type": "review_comment",
             "format": "text",
-            "content": content_preview,
+            "content": full_content,  # FULL CONTENT - no truncation
             "value_usd": 50,
             "description": f"Review comment: {title}",
             "tab": "dev",
@@ -177,7 +201,7 @@ def extract_mr_review_artifacts(
             artifacts.append({
                 "type": "code_suggestion",
                 "format": "code",
-                "content": suggested_fix[:500] if len(suggested_fix) > 500 else suggested_fix,
+                "content": suggested_fix,  # FULL CONTENT - no truncation
                 "value_usd": 100,
                 "description": f"Code suggestion for: {title}",
                 "tab": "dev",
@@ -193,7 +217,7 @@ def extract_mr_review_artifacts(
             artifacts.append({
                 "type": "security_issue",
                 "format": "text",
-                "content": content_preview,
+                "content": full_content,  # FULL CONTENT - no truncation
                 "value_usd": 300,
                 "description": f"Security issue: {title}",
                 "tab": "ops",
@@ -210,7 +234,7 @@ def extract_mr_review_artifacts(
                 artifacts.append({
                     "type": "bug_detected",
                     "format": "text",
-                    "content": content_preview,
+                    "content": full_content,  # FULL CONTENT - no truncation
                     "value_usd": 200,
                     "description": f"Bug detected: {title}",
                     "tab": "dev",
@@ -223,10 +247,15 @@ def extract_mr_review_artifacts(
 
     # 5. Approval decision artifact ($75)
     verdict_str = verdict.value if hasattr(verdict, "value") else str(verdict)
+    # Build FULL content for approval decision - no truncation
+    approval_content = f"Merge verdict: {verdict_str}"
+    if summary:
+        approval_content += f". {summary}"  # FULL summary - no truncation
+
     artifacts.append({
         "type": "approval_decision",
         "format": "text",
-        "content": f"Merge verdict: {verdict_str}. {summary[:200]}" if summary else f"Merge verdict: {verdict_str}",
+        "content": approval_content,  # FULL CONTENT - no truncation
         "value_usd": 75,
         "description": f"Approval decision: {verdict_str}",
         "tab": "techlead",
@@ -236,7 +265,39 @@ def extract_mr_review_artifacts(
         }
     })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    spec_id = f"mr-{mr_iid}" if mr_iid else None
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="gitlab_mr_reviewer",
+                session_num=None,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                artifacts_dir = _get_artifacts_dir(project_dir)
+                storage_path = str(
+                    (artifacts_dir / artifact_id).relative_to(project_dir)
+                    if artifacts_dir.exists()
+                    else f".auto-claude/artifacts/{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 class MRReviewEngine:
@@ -459,9 +520,17 @@ Provide your review in the following JSON format:
             if ROI_PUBLISHER_AVAILABLE:
                 try:
                     # Extract artifacts from review results
-                    artifacts = extract_mr_review_artifacts(findings, verdict, summary)
+                    # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                    artifacts, langfuse_refs = extract_mr_review_artifacts(
+                        findings,
+                        verdict,
+                        summary,
+                        project_dir=project_root,
+                        mr_iid=context.mr_iid,
+                        trace_id=langfuse_trace_id,
+                    )
 
-                    # Count metrics for ROI calculation
+                    # Count metrics for ROI calculation (use full artifacts for counts)
                     security_count = sum(
                         1 for f in findings
                         if (hasattr(f, "category") and f.category.value == "security")
@@ -476,7 +545,10 @@ Provide your review in the following JSON format:
                     # Estimate review time saved (roughly 5-10 min per file reviewed)
                     review_time_saved_hours = len(context.changed_files) * 0.1  # ~6 min per file
 
-                    # Publish ROI
+                    # Calculate total artifact value (use full artifacts for value)
+                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+
+                    # Publish ROI with Langfuse refs (truncated previews, not full content)
                     import asyncio
                     asyncio.create_task(publish_feature_roi(
                         feature_type="mr_review",
@@ -491,10 +563,12 @@ Provide your review in the following JSON format:
                             "approval": verdict.value if hasattr(verdict, "value") else str(verdict),
                             "review_time_saved_hours": review_time_saved_hours,
                             "lines_changed": context.total_additions + context.total_deletions,
+                            "artifacts_count": len(artifacts),
+                            "artifact_value_usd": total_artifact_value,
                         },
-                        artifacts=artifacts,
+                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
                     ))
-                    logger.info(f"[GitLab MR] ROI published for MR !{context.mr_iid}")
+                    logger.info(f"[GitLab MR] ROI published for MR !{context.mr_iid} with {len(artifacts)} artifacts")
                 except Exception as e:
                     logger.warning(f"[GitLab MR] Failed to publish ROI: {e}")
 

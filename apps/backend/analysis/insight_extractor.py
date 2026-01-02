@@ -64,6 +64,17 @@ try:
 except ImportError:
     ROI_PUBLISHER_AVAILABLE = False
 
+# Artifact storage (optional - graceful degradation if not available)
+try:
+    from analytics.artifact_storage import (
+        save_artifact_safe,
+        create_langfuse_reference,
+        _get_artifacts_dir,
+    )
+    ARTIFACT_STORAGE_AVAILABLE = True
+except ImportError:
+    ARTIFACT_STORAGE_AVAILABLE = False
+
 from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
 from phase_config import resolve_model_id
 
@@ -533,8 +544,8 @@ async def run_insight_extraction(
             try:
                 # Set trace output before exiting
                 if langfuse_ctx_obj:
-                    trace_output = response_text[:3000] + "..." if len(response_text) > 3000 else response_text
-                    langfuse_ctx_obj.set_output({"response": trace_output})
+                    # FULL content - NO truncation (Zero Truncation Policy)
+                    langfuse_ctx_obj.set_output({"response": response_text})
                 trace_ctx.__exit__(None, None, None)
                 flush_langfuse()
             except Exception:
@@ -614,18 +625,30 @@ def parse_insights(response_text: str) -> dict | None:
 # =============================================================================
 
 
-def extract_insight_artifacts(insights: dict) -> list[dict]:
+def extract_insight_artifacts(
+    insights: dict,
+    project_dir: Path | None = None,
+    spec_id: str | None = None,
+    trace_id: str | None = None,
+    session_num: int | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Extract artifacts from insight extraction results for ROI tracking.
+
+    Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
     Artifacts represent valuable outputs that justify the cost of AI analysis.
     Each artifact type has a specific value in USD based on its impact.
 
     Args:
         insights: The parsed insights dictionary from LLM extraction
+        project_dir: Project root directory for local storage
+        spec_id: Spec identifier for grouping artifacts
+        trace_id: Langfuse trace ID for linking
+        session_num: Session number
 
     Returns:
-        List of artifact dictionaries with type, content, value, etc.
+        Tuple of (artifacts list, langfuse_refs list)
     """
     artifacts = []
 
@@ -635,10 +658,11 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
         # Handle both string and dict patterns
         if isinstance(pattern, str):
             content = pattern
-            description = f"Pattern #{i+1}: {pattern[:100]}"
+            description = f"Pattern #{i+1}: {pattern[:100]}" if len(pattern) > 100 else f"Pattern #{i+1}: {pattern}"
         elif isinstance(pattern, dict):
             content = pattern.get("description", pattern.get("pattern", str(pattern)))
-            description = f"Pattern #{i+1}: {content[:100]}"
+            content_str = content if isinstance(content, str) else str(content)
+            description = f"Pattern #{i+1}: {content_str[:100]}" if len(content_str) > 100 else f"Pattern #{i+1}: {content_str}"
         else:
             content = str(pattern)
             description = f"Pattern #{i+1}"
@@ -646,7 +670,7 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
         artifacts.append({
             "type": "pattern_discovered",
             "format": "text",
-            "content": content[:500] if isinstance(content, str) else str(content)[:500],
+            "content": content if isinstance(content, str) else str(content),  # FULL CONTENT - no truncation
             "value_usd": 100,
             "description": description,
             "tab": "techlead",
@@ -658,10 +682,11 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
         # Handle both string and dict gotchas
         if isinstance(gotcha, str):
             content = gotcha
-            description = f"Gotcha #{i+1}: {gotcha[:100]}"
+            description = f"Gotcha #{i+1}: {gotcha[:100]}" if len(gotcha) > 100 else f"Gotcha #{i+1}: {gotcha}"
         elif isinstance(gotcha, dict):
             content = gotcha.get("description", gotcha.get("gotcha", str(gotcha)))
-            description = f"Gotcha #{i+1}: {content[:100]}"
+            content_str = content if isinstance(content, str) else str(content)
+            description = f"Gotcha #{i+1}: {content_str[:100]}" if len(content_str) > 100 else f"Gotcha #{i+1}: {content_str}"
         else:
             content = str(gotcha)
             description = f"Gotcha #{i+1}"
@@ -669,7 +694,7 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
         artifacts.append({
             "type": "gotcha_identified",
             "format": "text",
-            "content": content[:500] if isinstance(content, str) else str(content)[:500],
+            "content": content if isinstance(content, str) else str(content),  # FULL CONTENT - no truncation
             "value_usd": 150,
             "description": description,
             "tab": "dev",
@@ -688,7 +713,7 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
         artifacts.append({
             "type": "best_practice",
             "format": "text",
-            "content": content[:500] if isinstance(content, str) else str(content)[:500],
+            "content": content if isinstance(content, str) else str(content),  # FULL CONTENT - no truncation
             "value_usd": 75,
             "description": f"Best practice #{i+1}",
             "tab": "techlead",
@@ -703,7 +728,7 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
             artifacts.append({
                 "type": "lesson_learned",
                 "format": "text",
-                "content": str(why_worked)[:500],
+                "content": str(why_worked),  # FULL CONTENT - no truncation
                 "value_usd": 50,
                 "description": "Lesson: What worked",
                 "tab": "dev",
@@ -714,7 +739,7 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
             artifacts.append({
                 "type": "lesson_learned",
                 "format": "text",
-                "content": str(why_failed)[:500],
+                "content": str(why_failed),  # FULL CONTENT - no truncation
                 "value_usd": 50,
                 "description": "Lesson: What to avoid",
                 "tab": "dev",
@@ -733,7 +758,7 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
             artifacts.append({
                 "type": "lesson_learned",
                 "format": "text",
-                "content": content[:500] if isinstance(content, str) else str(content)[:500],
+                "content": content if isinstance(content, str) else str(content),  # FULL CONTENT - no truncation
                 "value_usd": 50,
                 "description": f"Lesson: Alternative #{i+1}",
                 "tab": "dev",
@@ -749,13 +774,44 @@ def extract_insight_artifacts(insights: dict) -> list[dict]:
                 artifacts.append({
                     "type": "file_insight",
                     "format": "text",
-                    "content": f"{file_path}: {insight}"[:500],
+                    "content": f"{file_path}: {insight}",  # FULL CONTENT - no truncation
                     "value_usd": 25,
                     "description": f"File insight: {file_path}",
                     "tab": "dev",
                 })
 
-    return artifacts
+    # Save artifacts locally and create Langfuse references
+    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
+        langfuse_refs = []
+        for artifact in artifacts:
+            # Save full artifact locally
+            artifact_id = save_artifact_safe(
+                artifact=artifact,
+                project_dir=project_dir,
+                spec_id=spec_id,
+                trace_id=trace_id,
+                agent_type="insight_extractor",
+                session_num=session_num,
+            )
+
+            if artifact_id:
+                # Create lightweight reference for Langfuse
+                from datetime import datetime
+                storage_path = str(
+                    _get_artifacts_dir(project_dir)
+                    / datetime.now().strftime("%Y-%m-%d")
+                    / f"{artifact_id}.json"
+                )
+                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
+                langfuse_refs.append(ref)
+            else:
+                # Fallback: if storage fails, include full artifact as ref
+                langfuse_refs.append(artifact)
+
+        return artifacts, langfuse_refs
+    else:
+        # No local storage available - return artifacts as both
+        return artifacts, artifacts
 
 
 # =============================================================================
@@ -835,7 +891,15 @@ async def extract_session_insights(
             if ROI_PUBLISHER_AVAILABLE:
                 try:
                     # Extract artifacts for ROI calculation
-                    artifacts = extract_insight_artifacts(extracted)
+                    # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                    spec_id_for_extraction = spec_dir.name if spec_dir else None
+                    artifacts, langfuse_refs = extract_insight_artifacts(
+                        insights=extracted,
+                        project_dir=project_dir,
+                        spec_id=spec_id_for_extraction,
+                        trace_id=_trace_id,
+                        session_num=session_num,
+                    )
 
                     # Calculate metrics from extracted insights
                     metrics = {
@@ -854,6 +918,7 @@ async def extract_session_insights(
                     # Calculate total artifact value
                     total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
+                    # Publish ROI with Langfuse refs (truncated previews, not full content)
                     await publish_feature_roi(
                         feature_type="insight_extractor",
                         project_id=project_id,
@@ -862,7 +927,8 @@ async def extract_session_insights(
                         metrics=metrics,
                         model=get_extraction_model(),
                         trace_id=_trace_id,
-                        spec_id=spec_dir.name if spec_dir else None,
+                        spec_id=spec_id_for_extraction,
+                        artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
                     )
 
                     logger.info(

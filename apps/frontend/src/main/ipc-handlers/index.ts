@@ -32,6 +32,7 @@ import { registerAppUpdateHandlers } from './app-update-handlers';
 import { setupAnalyticsHandlers } from './analytics-handlers';
 import { setupROIHandlers } from './roi-handlers';
 import { setupExportHandlers } from './export-handlers';
+import { setupArtifactHandlers } from './artifact-handlers';
 import { registerListSkillsHandler } from './skills/list-skills';
 import { registerInstallSkillHandler } from './skills/install-skill';
 import { registerRemoveSkillHandler } from './skills/remove-skill';
@@ -123,6 +124,9 @@ export function setupIpcHandlers(
   // Export handlers
   setupExportHandlers();
 
+  // Artifact storage handlers (for full artifact content retrieval)
+  setupArtifactHandlers();
+
   // Skills management handlers
   registerListSkillsHandler();
   registerInstallSkillHandler();
@@ -170,6 +174,7 @@ export {
   setupAnalyticsHandlers,
   setupROIHandlers,
   setupExportHandlers,
+  setupArtifactHandlers,
   registerListSkillsHandler,
   registerInstallSkillHandler,
   registerRemoveSkillHandler,
