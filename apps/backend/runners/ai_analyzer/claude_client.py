@@ -44,6 +44,7 @@ except ImportError as e:
 
 try:
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+    from phase_config import resolve_model_id
 
     CLAUDE_SDK_AVAILABLE = True
 except ImportError:
@@ -63,7 +64,7 @@ except ImportError:
 class ClaudeAnalysisClient:
     """Wrapper for Claude SDK client with analysis-specific configuration."""
 
-    DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+    DEFAULT_MODEL = "sonnet"  # Shorthand - resolved via API Profile if configured
     ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Skill"]  # Enable Skills for analysis
     MAX_TURNS = 50
 
@@ -289,7 +290,7 @@ class ClaudeAnalysisClient:
 
         return ClaudeSDKClient(
             options=ClaudeAgentOptions(
-                model=self.DEFAULT_MODEL,
+                model=resolve_model_id(self.DEFAULT_MODEL),  # Resolve via API Profile
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 mcp_servers=mcp_servers,

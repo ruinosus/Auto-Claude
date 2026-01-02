@@ -64,6 +64,7 @@
   "steps": {
     "welcome": "Bienvenue",
     "authMode": "Mode Auth",
+    "authChoice": "Méthode d'auth",
     "auth": "OAuth",
     "azureFoundry": "Azure",
     "authToken": "Jeton",

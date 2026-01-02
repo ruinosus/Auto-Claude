@@ -7,6 +7,7 @@ Reads configuration from task_metadata.json and provides resolved model IDs.
 """
 
 import json
+import os
 from pathlib import Path
 from typing import Literal, TypedDict
 
@@ -94,6 +95,12 @@ def resolve_model_id(model: str) -> str:
     Resolve a model shorthand (haiku, sonnet, opus) to a full model ID.
     If the model is already a full ID, return it unchanged.
 
+    Priority:
+    1. Azure Foundry mode: use ANTHROPIC_DEFAULT_*_MODEL env vars for deployment names
+    2. API Profile: check ANTHROPIC_DEFAULT_*_MODEL env vars for custom mappings
+    3. Hardcoded MODEL_ID_MAP
+    4. Pass through unchanged (assume full model ID)
+
     When in Azure Foundry mode (CLAUDE_CODE_USE_FOUNDRY=1), the model name
     is mapped to the deployment name from ANTHROPIC_DEFAULT_*_MODEL env vars.
 
@@ -103,22 +110,34 @@ def resolve_model_id(model: str) -> str:
     Returns:
         Full Claude model ID (or Azure deployment name in Foundry mode)
     """
-    import os
-
     # Check if it's a shorthand first
     if model in MODEL_ID_MAP:
         resolved = MODEL_ID_MAP[model]
     else:
         resolved = model
 
-    # In Azure Foundry mode, use deployment names from env vars
-    # This is required because Azure deployments use shorter names (e.g., "claude-opus-4-5")
+    # Check for environment variable override (from API Profile or Foundry mode)
+    # In Azure Foundry mode, deployments use shorter names (e.g., "claude-opus-4-5")
     # instead of full model IDs with date stamps (e.g., "claude-opus-4-5-20251101")
     foundry_mode = os.environ.get("CLAUDE_CODE_USE_FOUNDRY", "") in ("1", "true", "True")
+
+    # Map model to env var for lookup
+    env_var_map = {
+        "haiku": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "sonnet": "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "opus": "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    }
+
+    # Check if we can resolve via environment variable
+    if model in env_var_map:
+        env_var = env_var_map[model]
+        env_value = os.environ.get(env_var)
+        if env_value:
+            return env_value
+
+    # In Foundry mode, also check by resolved model name (e.g., "claude-opus-4-5-20251101")
     if foundry_mode:
         resolved_lower = resolved.lower()
-
-        # Map to Azure Foundry deployment names
         if "opus" in resolved_lower:
             fallback = os.environ.get("ANTHROPIC_DEFAULT_OPUS_MODEL")
             if fallback:

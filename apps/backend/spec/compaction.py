@@ -43,7 +43,7 @@ except ImportError:
 async def summarize_phase_output(
     phase_name: str,
     phase_output: str,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str = "sonnet",  # Shorthand - resolved via API Profile if configured
     target_words: int = 500,
     project_dir: Path | None = None,
 ) -> tuple[str, str | None]:

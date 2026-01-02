@@ -18,7 +18,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from client import create_client
-from phase_config import get_thinking_budget
+from phase_config import get_thinking_budget, resolve_model_id
 from ui import print_status
 from debug import debug, debug_error
 
@@ -86,7 +86,7 @@ class IdeationGenerator:
         self,
         project_dir: Path,
         output_dir: Path,
-        model: str = "claude-opus-4-5-20251101",
+        model: str = "opus",
         thinking_level: str = "medium",
         max_ideas_per_type: int = 5,
     ):
@@ -148,7 +148,7 @@ class IdeationGenerator:
         client = create_client(
             self.project_dir,
             self.output_dir,
-            self.model,
+            resolve_model_id(self.model),
             max_thinking_tokens=self.thinking_budget,
         )
 
@@ -383,7 +383,7 @@ Write the fixed JSON to the file now.
         client = create_client(
             self.project_dir,
             self.output_dir,
-            self.model,
+            resolve_model_id(self.model),
             max_thinking_tokens=self.thinking_budget,
         )
 

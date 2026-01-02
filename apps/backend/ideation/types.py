@@ -31,6 +31,6 @@ class IdeationConfig:
     include_roadmap_context: bool = True
     include_kanban_context: bool = True
     max_ideas_per_type: int = 5
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = "opus"  # Shorthand - resolved via API Profile if configured
     refresh: bool = False
     append: bool = False  # If True, preserve existing ideas when merging

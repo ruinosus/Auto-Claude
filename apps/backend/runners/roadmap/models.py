@@ -23,6 +23,6 @@ class RoadmapConfig:
 
     project_dir: Path
     output_dir: Path
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = "opus"  # Shorthand - resolved via API Profile if configured
     refresh: bool = False  # Force regeneration even if roadmap exists
     enable_competitor_analysis: bool = False  # Enable competitor analysis phase

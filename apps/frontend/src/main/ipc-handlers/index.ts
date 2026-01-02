@@ -40,7 +40,8 @@ import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { registerMCPHandlers } from '../mcp-manager';
 import { registerDebugHandlers } from './debug-handlers';
 import { registerClaudeCodeHandlers } from './claude-code-handlers';
-// Note: registerMcpHandlers removed - conflicts with registerMCPHandlers for mcp:testConnection
+import { registerMcpHandlers } from './mcp-handlers';
+import { registerProfileHandlers } from './profile-handlers';
 import { notificationService } from '../notification-service';
 import { setupNotificationHandlers } from './notification-handlers';
 
@@ -148,6 +149,9 @@ export function setupIpcHandlers(
   // Note: MCP health check handlers (registerMcpHandlers) removed as registerMCPHandlers
   // already provides mcp:testConnection handler. MCP_CHECK_HEALTH can be added to mcp-manager if needed.
 
+  // API Profile handlers (custom Anthropic-compatible endpoints)
+  registerProfileHandlers();
+
   console.warn('[IPC] All handler modules registered successfully');
 }
 
@@ -182,5 +186,7 @@ export {
   registerMCPHandlers,
   setupNotificationHandlers,
   registerDebugHandlers,
-  registerClaudeCodeHandlers
+  registerClaudeCodeHandlers,
+  registerMcpHandlers,
+  registerProfileHandlers
 };

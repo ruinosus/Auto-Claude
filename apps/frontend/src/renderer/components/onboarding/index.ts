@@ -6,6 +6,7 @@
 export { OnboardingWizard } from './OnboardingWizard';
 export { WelcomeStep } from './WelcomeStep';
 export { AuthModeStep, type AuthMode } from './AuthModeStep';
+export { AuthChoiceStep } from './AuthChoiceStep';
 export { OAuthStep } from './OAuthStep';
 export { AzureFoundryStep } from './AzureFoundryStep';
 export { MemoryStep } from './MemoryStep';

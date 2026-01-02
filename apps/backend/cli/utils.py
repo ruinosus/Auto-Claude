@@ -28,8 +28,9 @@ from ui import (
     muted,
 )
 
-# Configuration
-DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+# Configuration - uses shorthand that resolves via API Profile if configured
+# The shorthand (opus, sonnet, haiku) is resolved via phase_config.resolve_model_id()
+DEFAULT_MODEL = "opus"
 
 
 def setup_environment() -> Path:

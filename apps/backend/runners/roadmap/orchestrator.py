@@ -357,7 +357,7 @@ class RoadmapOrchestrator:
         self,
         project_dir: Path,
         output_dir: Path | None = None,
-        model: str = "claude-sonnet-4-5-20250929",
+        model: str = "opus",  # Shorthand - resolved via API Profile if configured
         thinking_level: str = "medium",
         refresh: bool = False,
         enable_competitor_analysis: bool = False,

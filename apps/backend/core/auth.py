@@ -24,6 +24,24 @@ AUTH_TOKEN_ENV_VARS = [
 # NOTE: SDK environment variables are now handled in get_sdk_env_vars()
 # based on the authentication mode (Foundry vs Standard) to prevent
 # the "baseURL and resource are mutually exclusive" error.
+#
+# Environment variables to pass through to SDK subprocess
+# NOTE: ANTHROPIC_API_KEY is intentionally excluded to prevent silent API billing
+SDK_ENV_VARS = [
+    # API endpoint configuration
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    # Model overrides (from API Profile custom model mappings)
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    # SDK behavior configuration
+    "NO_PROXY",
+    "DISABLE_TELEMETRY",
+    "DISABLE_COST_WARNINGS",
+    "API_TIMEOUT_MS",
+]
 
 
 def get_token_from_keychain() -> str | None:

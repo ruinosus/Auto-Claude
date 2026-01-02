@@ -59,8 +59,8 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="claude-sonnet-4-5-20250929",
-        help="Model to use (default: claude-sonnet-4-5-20250929)",
+        default="opus",
+        help="Model to use (haiku, sonnet, opus, or full model ID)",
     )
     parser.add_argument(
         "--thinking-level",
