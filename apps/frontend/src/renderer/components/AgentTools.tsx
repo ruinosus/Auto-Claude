@@ -50,6 +50,7 @@ import { useSettingsStore } from '../stores/settings-store';
 import { useProjectStore } from '../stores/project-store';
 import type { ProjectEnvConfig, AgentMcpOverrides, AgentMcpOverride, CustomMcpServer, McpHealthCheckResult, McpHealthStatus } from '../../shared/types';
 import { CustomMcpDialog } from './CustomMcpDialog';
+import { MCPManager } from './mcp';
 import { useTranslation } from 'react-i18next';
 import {
   DEFAULT_PHASE_MODELS,
@@ -656,13 +657,7 @@ export function AgentTools() {
   const [envConfig, setEnvConfig] = useState<ProjectEnvConfig | null>(null);
   const [, setIsLoading] = useState(false);
 
-  // Custom MCP server dialog state
-  const [showCustomMcpDialog, setShowCustomMcpDialog] = useState(false);
-  const [editingCustomServer, setEditingCustomServer] = useState<CustomMcpServer | null>(null);
-
-  // Health status tracking for custom servers
-  const [serverHealthStatus, setServerHealthStatus] = useState<Record<string, McpHealthCheckResult>>({});
-  const [testingServers, setTestingServers] = useState<Set<string>>(new Set());
+  // Custom MCP server management is now handled by MCPManager component
 
   // Load project env config when project changes
   useEffect(() => {
@@ -687,32 +682,7 @@ export function AgentTools() {
     }
   }, [selectedProjectId, selectedProject?.autoBuildPath]);
 
-  // Update MCP server toggle
-  const updateMcpServer = useCallback(async (
-    key: keyof NonNullable<ProjectEnvConfig['mcpServers']>,
-    value: boolean
-  ) => {
-    if (!selectedProjectId || !envConfig) return;
-
-    const newMcpServers = {
-      ...envConfig.mcpServers,
-      [key]: value,
-    };
-
-    // Optimistic update
-    setEnvConfig((prev) => prev ? { ...prev, mcpServers: newMcpServers } : null);
-
-    // Save to backend
-    try {
-      await window.electronAPI.updateProjectEnv(selectedProjectId, {
-        mcpServers: newMcpServers,
-      });
-    } catch (error) {
-      // Revert on error
-      console.error('Failed to update MCP config:', error);
-      setEnvConfig((prev) => prev ? { ...prev, mcpServers: envConfig.mcpServers } : null);
-    }
-  }, [selectedProjectId, envConfig]);
+  // MCP server toggle is now handled by MCPManager component
 
   // Handle adding an MCP to an agent
   const handleAddMcp = useCallback(async (agentId: string, mcpId: string) => {
@@ -812,164 +782,7 @@ export function AgentTools() {
     }
   }, [selectedProjectId, envConfig]);
 
-  // Handle saving a custom MCP server
-  const handleSaveCustomServer = useCallback(async (server: CustomMcpServer) => {
-    if (!selectedProjectId || !envConfig) return;
-
-    const currentServers = envConfig.customMcpServers || [];
-    const existingIndex = currentServers.findIndex(s => s.id === server.id);
-
-    let newServers: CustomMcpServer[];
-    if (existingIndex >= 0) {
-      // Update existing
-      newServers = [...currentServers];
-      newServers[existingIndex] = server;
-    } else {
-      // Add new
-      newServers = [...currentServers, server];
-    }
-
-    // Optimistic update
-    setEnvConfig((prev) => prev ? { ...prev, customMcpServers: newServers } : null);
-
-    // Save to backend
-    try {
-      await window.electronAPI.updateProjectEnv(selectedProjectId, {
-        customMcpServers: newServers,
-      });
-    } catch (error) {
-      console.error('Failed to save custom MCP server:', error);
-      setEnvConfig((prev) => prev ? { ...prev, customMcpServers: currentServers } : null);
-    }
-  }, [selectedProjectId, envConfig]);
-
-  // Handle deleting a custom MCP server
-  const handleDeleteCustomServer = useCallback(async (serverId: string) => {
-    if (!selectedProjectId || !envConfig) return;
-
-    const currentServers = envConfig.customMcpServers || [];
-    const newServers = currentServers.filter(s => s.id !== serverId);
-
-    // Also remove from any agent overrides that reference it
-    const currentOverrides = envConfig.agentMcpOverrides || {};
-    const newOverrides = { ...currentOverrides };
-    for (const agentId of Object.keys(newOverrides)) {
-      const override = newOverrides[agentId];
-      if (override.add?.includes(serverId)) {
-        newOverrides[agentId] = {
-          ...override,
-          add: override.add.filter(m => m !== serverId),
-        };
-        if (newOverrides[agentId].add?.length === 0) {
-          delete newOverrides[agentId].add;
-        }
-        if (Object.keys(newOverrides[agentId]).length === 0) {
-          delete newOverrides[agentId];
-        }
-      }
-    }
-
-    // Optimistic update
-    setEnvConfig((prev) => prev ? {
-      ...prev,
-      customMcpServers: newServers,
-      agentMcpOverrides: newOverrides,
-    } : null);
-
-    // Save to backend
-    try {
-      await window.electronAPI.updateProjectEnv(selectedProjectId, {
-        customMcpServers: newServers,
-        agentMcpOverrides: newOverrides,
-      });
-    } catch (error) {
-      console.error('Failed to delete custom MCP server:', error);
-      setEnvConfig((prev) => prev ? { ...prev, customMcpServers: currentServers, agentMcpOverrides: currentOverrides } : null);
-    }
-  }, [selectedProjectId, envConfig]);
-
-  // Check health of all custom MCP servers
-  const checkAllServersHealth = useCallback(async () => {
-    const servers = envConfig?.customMcpServers || [];
-    if (servers.length === 0) return;
-
-    for (const server of servers) {
-      // Set checking status
-      setServerHealthStatus(prev => ({
-        ...prev,
-        [server.id]: {
-          serverId: server.id,
-          status: 'checking',
-          checkedAt: new Date().toISOString(),
-        }
-      }));
-
-      try {
-        const result = await window.electronAPI.checkMcpHealth(server);
-        if (result.success && result.data) {
-          setServerHealthStatus(prev => ({
-            ...prev,
-            [server.id]: result.data!,
-          }));
-        }
-      } catch (error) {
-        setServerHealthStatus(prev => ({
-          ...prev,
-          [server.id]: {
-            serverId: server.id,
-            status: 'unknown',
-            message: 'Health check failed',
-            checkedAt: new Date().toISOString(),
-          }
-        }));
-      }
-    }
-  }, [envConfig?.customMcpServers]);
-
-  // Check health when custom servers change
-  useEffect(() => {
-    if (envConfig?.customMcpServers && envConfig.customMcpServers.length > 0) {
-      checkAllServersHealth();
-    }
-  }, [envConfig?.customMcpServers, checkAllServersHealth]);
-
-  // Test a single server connection (full test)
-  const handleTestConnection = useCallback(async (server: CustomMcpServer) => {
-    setTestingServers(prev => new Set(prev).add(server.id));
-
-    try {
-      const result = await window.electronAPI.testMcpConnection(server);
-      if (result.success && result.data) {
-        // Update health status based on test result
-        setServerHealthStatus(prev => ({
-          ...prev,
-          [server.id]: {
-            serverId: server.id,
-            status: result.data!.success ? 'healthy' : 'unhealthy',
-            message: result.data!.message,
-            responseTime: result.data!.responseTime,
-            checkedAt: new Date().toISOString(),
-          }
-        }));
-      }
-    } catch (error) {
-      setServerHealthStatus(prev => ({
-        ...prev,
-        [server.id]: {
-          serverId: server.id,
-          status: 'unhealthy',
-          message: 'Connection test failed',
-          checkedAt: new Date().toISOString(),
-        }
-      }));
-    } finally {
-      setTestingServers(prev => {
-        const next = new Set(prev);
-        next.delete(server.id);
-        return next;
-      });
-    }
-  }, []);
+  // Custom MCP server save/delete/test are now handled by MCPManager component
 
   // Get phase and feature settings with defaults
   const phaseModels = settings.customPhaseModels || DEFAULT_PHASE_MODELS;
@@ -977,18 +790,7 @@ export function AgentTools() {
   const featureModels = settings.featureModels || DEFAULT_FEATURE_MODELS;
   const featureThinking = settings.featureThinking || DEFAULT_FEATURE_THINKING;
 
-  // Get MCP server states for display
-  const mcpServers = envConfig?.mcpServers || {};
-
-  // Count enabled MCP servers
-  const enabledCount = [
-    mcpServers.context7Enabled !== false,
-    mcpServers.graphitiEnabled && envConfig?.graphitiProviderConfig,
-    mcpServers.linearMcpEnabled !== false && envConfig?.linearEnabled,
-    mcpServers.electronEnabled,
-    mcpServers.puppeteerEnabled,
-    true, // auto-claude always enabled
-  ].filter(Boolean).length;
+  // MCP server count is now handled by MCPManager component
 
   // Resolve model and thinking for an agent based on its settings source
   const resolveAgentSettings = useMemo(() => {
@@ -1063,11 +865,7 @@ export function AgentTools() {
                 : t('settings:mcp.descriptionNoProject')}
             </p>
           </div>
-          {envConfig && (
-            <div className="text-right">
-              <span className="text-sm text-muted-foreground">{t('settings:mcp.serversEnabled', { count: enabledCount })}</span>
-            </div>
-          )}
+          {/* Server count now shown in MCPManager */}
         </div>
       </div>
 
@@ -1096,246 +894,10 @@ export function AgentTools() {
             </div>
           )}
 
-          {/* MCP Server Configuration */}
-          {envConfig && (
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-medium text-foreground">{t('settings:mcp.configuration')}</h2>
-                <span className="text-xs text-muted-foreground">
-                  {t('settings:mcp.configurationHint')}
-                </span>
-              </div>
-
-              <div className="space-y-4">
-                {/* Context7 */}
-                <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div className="flex items-center gap-3">
-                    <Search className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <span className="text-sm font-medium">{t('settings:mcp.servers.context7.name')}</span>
-                      <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.context7.description')}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={mcpServers.context7Enabled !== false}
-                    onCheckedChange={(checked) => updateMcpServer('context7Enabled', checked)}
-                  />
-                </div>
-
-                {/* Graphiti Memory */}
-                <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div className="flex items-center gap-3">
-                    <Brain className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <span className="text-sm font-medium">{t('settings:mcp.servers.graphiti.name')}</span>
-                      <p className="text-xs text-muted-foreground">
-                        {envConfig.graphitiProviderConfig
-                          ? t('settings:mcp.servers.graphiti.description')
-                          : t('settings:mcp.servers.graphiti.notConfigured')}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={mcpServers.graphitiEnabled !== false && !!envConfig.graphitiProviderConfig}
-                    onCheckedChange={(checked) => updateMcpServer('graphitiEnabled', checked)}
-                    disabled={!envConfig.graphitiProviderConfig}
-                  />
-                </div>
-
-                {/* Linear */}
-                <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div className="flex items-center gap-3">
-                    <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <span className="text-sm font-medium">{t('settings:mcp.servers.linear.name')}</span>
-                      <p className="text-xs text-muted-foreground">
-                        {envConfig.linearEnabled
-                          ? t('settings:mcp.servers.linear.description')
-                          : t('settings:mcp.servers.linear.notConfigured')}
-                      </p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={mcpServers.linearMcpEnabled !== false && envConfig.linearEnabled}
-                    onCheckedChange={(checked) => updateMcpServer('linearMcpEnabled', checked)}
-                    disabled={!envConfig.linearEnabled}
-                  />
-                </div>
-
-                {/* Browser Automation Section */}
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Info className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                      {t('settings:mcp.browserAutomation')}
-                    </span>
-                  </div>
-
-                  {/* Electron */}
-                  <div className="flex items-center justify-between py-2 border-b border-border">
-                    <div className="flex items-center gap-3">
-                      <Monitor className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <span className="text-sm font-medium">{t('settings:mcp.servers.electron.name')}</span>
-                        <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.electron.description')}</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={mcpServers.electronEnabled === true}
-                      onCheckedChange={(checked) => updateMcpServer('electronEnabled', checked)}
-                    />
-                  </div>
-
-                  {/* Puppeteer */}
-                  <div className="flex items-center justify-between py-2">
-                    <div className="flex items-center gap-3">
-                      <Globe className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <span className="text-sm font-medium">{t('settings:mcp.servers.puppeteer.name')}</span>
-                        <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.puppeteer.description')}</p>
-                      </div>
-                    </div>
-                    <Switch
-                      checked={mcpServers.puppeteerEnabled === true}
-                      onCheckedChange={(checked) => updateMcpServer('puppeteerEnabled', checked)}
-                    />
-                  </div>
-                </div>
-
-                {/* Auto-Claude (always enabled) */}
-                <div className="flex items-center justify-between py-2 border-t border-border opacity-60">
-                  <div className="flex items-center gap-3">
-                    <ListChecks className="h-4 w-4 text-muted-foreground" />
-                    <div>
-                      <span className="text-sm font-medium">{t('settings:mcp.servers.autoClaude.name')}</span>
-                      <p className="text-xs text-muted-foreground">{t('settings:mcp.servers.autoClaude.description')} ({t('settings:mcp.alwaysEnabled')})</p>
-                    </div>
-                  </div>
-                  <Switch checked={true} disabled />
-                </div>
-
-                {/* Custom MCP Servers Section */}
-                <div className="pt-4 border-t border-border">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Terminal className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider">
-                        {t('settings:mcp.customServers')}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => { setEditingCustomServer(null); setShowCustomMcpDialog(true); }}
-                      className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
-                    >
-                      <Plus className="h-3 w-3" />
-                      {t('settings:mcp.addCustomServer')}
-                    </button>
-                  </div>
-
-                  {(envConfig.customMcpServers?.length ?? 0) > 0 ? (
-                    <div className="space-y-2">
-                      {envConfig.customMcpServers?.map((server) => {
-                        const health = serverHealthStatus[server.id];
-                        const isTesting = testingServers.has(server.id);
-                        const isChecking = health?.status === 'checking';
-
-                        // Status indicator component
-                        const StatusIndicator = () => {
-                          if (isTesting || isChecking) {
-                            return <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />;
-                          }
-                          switch (health?.status) {
-                            case 'healthy':
-                              return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
-                            case 'needs_auth':
-                              return <Lock className="h-3.5 w-3.5 text-amber-500" />;
-                            case 'unhealthy':
-                              return <AlertCircle className="h-3.5 w-3.5 text-destructive" />;
-                            default:
-                              return <Circle className="h-3.5 w-3.5 text-muted-foreground" />;
-                          }
-                        };
-
-                        return (
-                          <div
-                            key={server.id}
-                            className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg group"
-                          >
-                            <div className="flex items-center gap-3">
-                              {/* Status indicator */}
-                              <StatusIndicator />
-                              {server.type === 'command' ? (
-                                <Terminal className="h-4 w-4 text-muted-foreground" />
-                              ) : (
-                                <Globe className="h-4 w-4 text-muted-foreground" />
-                              )}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">{server.name}</span>
-                                  {health?.responseTime && (
-                                    <span className="text-[10px] text-muted-foreground">
-                                      {health.responseTime}ms
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {health?.message || (server.type === 'command'
-                                    ? `${server.command} ${server.args?.join(' ') || ''}`
-                                    : server.url)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              {/* Test button - always visible */}
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleTestConnection(server)}
-                                disabled={isTesting}
-                                className="h-7 px-2 text-xs"
-                                title="Test Connection"
-                              >
-                                {isTesting ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <RefreshCw className="h-3 w-3" />
-                                )}
-                                <span className="ml-1">Test</span>
-                              </Button>
-                              {/* Edit/Delete - show on hover */}
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  type="button"
-                                  onClick={() => { setEditingCustomServer(server); setShowCustomMcpDialog(true); }}
-                                  className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                                  title="Edit"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteCustomServer(server.id)}
-                                  className="p-1.5 text-muted-foreground hover:text-destructive transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-3">
-                      {t('settings:mcp.noCustomServers')}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* MCP Server Configuration - Uses unified MCPManager component */}
+          <div className="rounded-lg border border-border overflow-hidden" style={{ height: '400px' }}>
+            <MCPManager />
+          </div>
 
           {/* Agent Categories */}
           {Object.entries(CATEGORIES).map(([categoryId, category]) => {
@@ -1395,14 +957,7 @@ export function AgentTools() {
         </div>
       </ScrollArea>
 
-      {/* Custom MCP Server Dialog */}
-      <CustomMcpDialog
-        open={showCustomMcpDialog}
-        onOpenChange={setShowCustomMcpDialog}
-        server={editingCustomServer}
-        existingIds={(envConfig?.customMcpServers || []).map(s => s.id)}
-        onSave={handleSaveCustomServer}
-      />
+      {/* Custom MCP Server Dialog is now handled by MCPManager */}
     </div>
   );
 }
