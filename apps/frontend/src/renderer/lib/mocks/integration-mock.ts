@@ -320,6 +320,11 @@ export const integrationMock = {
     }
   }),
 
+  installGitLabCli: async () => ({
+    success: false,
+    error: 'Not available in browser mock'
+  }),
+
   checkGitLabAuth: async () => ({
     success: true,
     data: {

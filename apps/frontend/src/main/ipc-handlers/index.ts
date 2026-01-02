@@ -38,6 +38,8 @@ import { registerRemoveSkillHandler } from './skills/remove-skill';
 import { registerGetSkillContentHandler } from './skills/get-skill-content';
 import { registerMCPHandlers } from '../mcp-manager';
 import { registerDebugHandlers } from './debug-handlers';
+import { registerClaudeCodeHandlers } from './claude-code-handlers';
+import { registerMcpHandlers } from './mcp-handlers';
 import { notificationService } from '../notification-service';
 import { setupNotificationHandlers } from './notification-handlers';
 
@@ -136,6 +138,12 @@ export function setupIpcHandlers(
   // Debug handlers (logs, debug info, etc.)
   registerDebugHandlers();
 
+  // Claude Code CLI handlers (version checking, installation)
+  registerClaudeCodeHandlers();
+
+  // MCP server health check handlers
+  registerMcpHandlers();
+
   console.warn('[IPC] All handler modules registered successfully');
 }
 
@@ -168,5 +176,7 @@ export {
   registerGetSkillContentHandler,
   registerMCPHandlers,
   setupNotificationHandlers,
-  registerDebugHandlers
+  registerDebugHandlers,
+  registerClaudeCodeHandlers,
+  registerMcpHandlers
 };

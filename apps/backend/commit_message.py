@@ -213,9 +213,15 @@ Fixes #N (if applicable)"""
     return prompt
 
 
-async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> str:
-    """Call Claude Haiku with low thinking for fast commit message generation."""
+async def _call_claude(prompt: str, project_dir: Path | None = None) -> str:
+    """Call Claude for commit message generation.
+
+    Reads model/thinking settings from environment variables:
+    - UTILITY_MODEL_ID: Full model ID (e.g., "claude-haiku-4-5-20251001")
+    - UTILITY_THINKING_BUDGET: Thinking budget tokens (e.g., "1024")
+    """
     from core.auth import ensure_claude_code_oauth_token, get_auth_token, get_sdk_env_vars
+    from core.model_config import get_utility_model_config
 
     if not get_auth_token():
         logger.warning("No authentication token found")
@@ -229,6 +235,13 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
         logger.warning("core.simple_client not available")
         return ""
 
+    # Get model settings from environment (passed from frontend)
+    model, thinking_budget = get_utility_model_config()
+
+    logger.info(
+        f"Commit message using model={model}, thinking_budget={thinking_budget}"
+    )
+
     # Initialize tracker
     tracker = None
     if TRACKING_AVAILABLE and is_tracking_enabled():
@@ -239,16 +252,16 @@ async def _call_claude_haiku(prompt: str, project_dir: Path | None = None) -> st
                 project_id=project_id,
                 feature_type=FEATURE_INSIGHTS,
                 db_path=db_path,
-                metadata={"model": "claude-haiku-4-5-20251001", "operation": "commit_message"}
+                metadata={"model": model, "operation": "commit_message"}
             )
         except Exception:
             tracker = None
 
     client = create_simple_client(
         agent_type="commit_message",
-        model="claude-haiku-4-5-20251001",
+        model=model,
         system_prompt=SYSTEM_PROMPT,
-        max_thinking_tokens=1024,  # Low thinking for speed
+        max_thinking_tokens=thinking_budget,
     )
 
     # Check Langfuse availability
@@ -418,10 +431,10 @@ def generate_commit_message_sync(
 
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 result = pool.submit(
-                    lambda: asyncio.run(_call_claude_haiku(prompt, project_dir))
+                    lambda: asyncio.run(_call_claude(prompt, project_dir))
                 ).result()
         else:
-            result = asyncio.run(_call_claude_haiku(prompt, project_dir))
+            result = asyncio.run(_call_claude(prompt, project_dir))
 
         if result:
             return result
@@ -483,7 +496,7 @@ async def generate_commit_message(
 
     # Call Claude
     try:
-        result = await _call_claude_haiku(prompt, project_dir)
+        result = await _call_claude(prompt, project_dir)
         if result:
             return result
     except Exception as e:

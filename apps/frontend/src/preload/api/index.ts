@@ -15,6 +15,8 @@ import { ROIAPI, createROIAPI } from './modules/roi-api';
 import { NotificationAPI, createNotificationAPI } from './modules/notification-api';
 import { ExportAPI, createExportAPI } from './modules/export-api';
 import { DebugAPI, createDebugAPI } from './modules/debug-api';
+import { ClaudeCodeAPI, createClaudeCodeAPI } from './modules/claude-code-api';
+import { McpAPI, createMcpAPI } from './modules/mcp-api';
 
 export interface ElectronAPI extends
   ProjectAPI,
@@ -32,7 +34,9 @@ export interface ElectronAPI extends
   ROIAPI,
   NotificationAPI,
   ExportAPI,
-  DebugAPI {
+  DebugAPI,
+  ClaudeCodeAPI,
+  McpAPI {
   github: GitHubAPI;
 }
 
@@ -53,6 +57,8 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createNotificationAPI(),
   ...createExportAPI(),
   ...createDebugAPI(),
+  ...createClaudeCodeAPI(),
+  ...createMcpAPI(),
   github: createGitHubAPI()
 });
 
@@ -74,7 +80,9 @@ export {
   createROIAPI,
   createNotificationAPI,
   createExportAPI,
-  createDebugAPI
+  createDebugAPI,
+  createClaudeCodeAPI,
+  createMcpAPI
 };
 
 export type {
@@ -94,5 +102,7 @@ export type {
   ROIAPI,
   NotificationAPI,
   ExportAPI,
-  DebugAPI
+  DebugAPI,
+  ClaudeCodeAPI,
+  McpAPI
 };

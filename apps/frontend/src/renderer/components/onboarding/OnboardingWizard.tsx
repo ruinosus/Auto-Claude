@@ -15,6 +15,7 @@ import { WelcomeStep } from './WelcomeStep';
 import { AuthModeStep, AuthMode } from './AuthModeStep';
 import { OAuthStep } from './OAuthStep';
 import { AzureFoundryStep } from './AzureFoundryStep';
+import { ClaudeCodeStep } from './ClaudeCodeStep';
 import { DevToolsStep } from './DevToolsStep';
 import { MemoryStep } from './MemoryStep';
 import { CompletionStep } from './CompletionStep';
@@ -28,7 +29,7 @@ interface OnboardingWizardProps {
 }
 
 // Wizard step identifiers
-type WizardStepId = 'welcome' | 'auth-mode' | 'oauth' | 'azure-foundry' | 'auth-token' | 'devtools' | 'memory' | 'completion';
+type WizardStepId = 'welcome' | 'auth-mode' | 'oauth' | 'azure-foundry' | 'auth-token' | 'claude-code' | 'devtools' | 'memory' | 'completion';
 
 // Step configuration with translation keys
 interface WizardStepConfig {
@@ -51,6 +52,7 @@ const AUTH_STEPS: Record<AuthMode, WizardStepConfig> = {
 
 // Final steps always shown
 const FINAL_STEPS: WizardStepConfig[] = [
+  { id: 'claude-code', labelKey: 'steps.claudeCode' },
   { id: 'devtools', labelKey: 'steps.devtools' },
   { id: 'memory', labelKey: 'steps.memory' },
   { id: 'completion', labelKey: 'steps.done' }
@@ -232,6 +234,14 @@ export function OnboardingWizard({
               Continue
             </button>
           </div>
+        );
+      case 'claude-code':
+        return (
+          <ClaudeCodeStep
+            onNext={goToNextStep}
+            onBack={goToPreviousStep}
+            onSkip={skipWizard}
+          />
         );
       case 'devtools':
         return (

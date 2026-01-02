@@ -48,6 +48,7 @@ export function useGitHubPRs(projectId?: string): UseGitHubPRsResult {
   const prReviews = usePRReviewStore((state) => state.prReviews);
   const getPRReviewState = usePRReviewStore((state) => state.getPRReviewState);
   const getActivePRReviews = usePRReviewStore((state) => state.getActivePRReviews);
+  const setNewCommitsCheckAction = usePRReviewStore((state) => state.setNewCommitsCheck);
 
   // Get review state for the selected PR from the store
   const selectedPRReviewState = useMemo(() => {
@@ -104,18 +105,48 @@ export function useGitHubPRs(projectId?: string): UseGitHubPRsResult {
             setPrs(result);
 
             // Preload review results for all PRs
-            result.forEach(pr => {
+            const preloadPromises = result.map(async (pr) => {
               const existingState = getPRReviewState(projectId, pr.number);
               // Only fetch from disk if we don't have a result in the store
               if (!existingState?.result) {
-                window.electronAPI.github.getPRReview(projectId, pr.number).then(reviewResult => {
-                  if (reviewResult) {
-                    // Update store with the loaded result
-                    usePRReviewStore.getState().setPRReviewResult(projectId, reviewResult);
-                  }
-                });
+                const reviewResult = await window.electronAPI.github.getPRReview(projectId, pr.number);
+                if (reviewResult) {
+                  // Update store with the loaded result
+                  usePRReviewStore.getState().setPRReviewResult(projectId, reviewResult);
+                  return { prNumber: pr.number, reviewResult };
+                }
+              } else {
+                return { prNumber: pr.number, reviewResult: existingState.result };
               }
+              return null;
             });
+
+            // Wait for all preloads to complete, then check for new commits
+            const preloadResults = await Promise.all(preloadPromises);
+
+            // Check for new commits on PRs that have been reviewed
+            // (either has reviewedCommitSha or the snake_case variant from older reviews)
+            const prsWithReviews = preloadResults.filter(
+              (r): r is { prNumber: number; reviewResult: PRReviewResult } =>
+                r !== null &&
+                (!!r.reviewResult?.reviewedCommitSha || !!(r.reviewResult as any)?.reviewed_commit_sha)
+            );
+
+            if (prsWithReviews.length > 0) {
+              // Check new commits in parallel for all reviewed PRs
+              await Promise.all(
+                prsWithReviews.map(async ({ prNumber }) => {
+                  try {
+                    const newCommitsResult = await window.electronAPI.github.checkNewCommits(projectId, prNumber);
+                    // Use the action from the hook subscription to ensure proper React re-renders
+                    setNewCommitsCheckAction(projectId, prNumber, newCommitsResult);
+                  } catch (err) {
+                    // Silently fail for individual PR checks - don't block the list
+                    console.warn(`Failed to check new commits for PR #${prNumber}:`, err);
+                  }
+                })
+              );
+            }
           }
         }
       } else {
@@ -129,7 +160,7 @@ export function useGitHubPRs(projectId?: string): UseGitHubPRsResult {
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, getPRReviewState]);
+  }, [projectId, getPRReviewState, setNewCommitsCheckAction]);
 
   useEffect(() => {
     fetchPRs();
@@ -183,13 +214,14 @@ export function useGitHubPRs(projectId?: string): UseGitHubPRsResult {
     try {
       const result = await window.electronAPI.github.checkNewCommits(projectId, prNumber);
       // Cache the result in the store so the list view can use it
-      usePRReviewStore.getState().setNewCommitsCheck(projectId, prNumber, result);
+      // Use the action from the hook subscription to ensure proper React re-renders
+      setNewCommitsCheckAction(projectId, prNumber, result);
       return result;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to check for new commits');
       return { hasNewCommits: false, newCommitCount: 0 };
     }
-  }, [projectId]);
+  }, [projectId, setNewCommitsCheckAction]);
 
   const cancelReview = useCallback(async (prNumber: number): Promise<boolean> => {
     if (!projectId) return false;

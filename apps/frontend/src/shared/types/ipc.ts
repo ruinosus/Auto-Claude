@@ -20,7 +20,10 @@ import type {
   InfrastructureStatus,
   GraphitiValidationResult,
   GraphitiConnectionTestResult,
-  GitStatus
+  GitStatus,
+  CustomMcpServer,
+  McpHealthCheckResult,
+  McpTestConnectionResult
 } from './project';
 import type {
   Task,
@@ -470,6 +473,7 @@ export interface ElectronAPI {
 
   // GitLab OAuth operations (glab CLI)
   checkGitLabCli: () => Promise<IPCResult<{ installed: boolean; version?: string }>>;
+  installGitLabCli: () => Promise<IPCResult<{ command: string }>>;
   checkGitLabAuth: (hostname?: string) => Promise<IPCResult<{ authenticated: boolean; username?: string }>>;
   startGitLabAuth: (hostname?: string) => Promise<IPCResult<{
     success: boolean;
@@ -694,6 +698,12 @@ export interface ElectronAPI {
     version?: string;
     message?: string;
   }>>;
+  checkOllamaInstalled: () => Promise<IPCResult<{
+    installed: boolean;
+    path?: string;
+    version?: string;
+  }>>;
+  installOllama: () => Promise<IPCResult<{ command: string }>>;
   listOllamaModels: (baseUrl?: string) => Promise<IPCResult<{
     models: Array<{
       name: string;
@@ -801,6 +811,10 @@ export interface ElectronAPI {
     }>;
   };
 
+  // Claude Code CLI operations
+  checkClaudeCodeVersion: () => Promise<IPCResult<import('./cli').ClaudeCodeVersionInfo>>;
+  installClaudeCode: () => Promise<IPCResult<{ command: string }>>;
+
   // Debug operations
   getDebugInfo: () => Promise<{
     systemInfo: Record<string, string>;
@@ -817,6 +831,10 @@ export interface ElectronAPI {
     size: number;
     modified: string;
   }>>;
+
+  // MCP Server health check operations
+  checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;
+  testMcpConnection: (server: CustomMcpServer) => Promise<IPCResult<McpTestConnectionResult>>;
 }
 
 declare global {
