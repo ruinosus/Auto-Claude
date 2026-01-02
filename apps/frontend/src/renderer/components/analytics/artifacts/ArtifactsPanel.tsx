@@ -165,6 +165,8 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
   const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<SelectedArtifact | null>(null);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
 
   useEffect(() => {
     async function fetchArtifacts() {
@@ -188,9 +190,39 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
     fetchArtifacts();
   }, [projectId, projectPath]);
 
+  // Filter traces by date range
+  const filterByDateRange = (tracesToFilter: ArtifactTrace[]): ArtifactTrace[] => {
+    if (!startDate && !endDate) return tracesToFilter;
+
+    return tracesToFilter.filter(trace => {
+      const traceDate = new Date(trace.timestamp);
+      // Set time to start of day for comparison
+      const traceDateOnly = new Date(traceDate.getFullYear(), traceDate.getMonth(), traceDate.getDate());
+
+      if (startDate) {
+        const start = new Date(startDate);
+        if (traceDateOnly < start) return false;
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        // Include the end date by checking if trace is before end of day
+        if (traceDateOnly > end) return false;
+      }
+
+      return true;
+    });
+  };
+
+  // Clear date filters
+  const clearDateFilters = () => {
+    setStartDate('');
+    setEndDate('');
+  };
+
   // Filter artifacts by tab if specified
   const allowedTypes = filterByTab ? TAB_ARTIFACT_TYPES[filterByTab] : [];
-  const filteredTraces = traces.map(trace => {
+  const tabFilteredTraces = traces.map(trace => {
     if (allowedTypes.length === 0) return trace; // No filter, show all
 
     const filteredArtifacts = trace.artifacts.filter(a =>
@@ -210,6 +242,9 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
       total_value_usd: filteredValue,
     };
   }).filter((trace): trace is ArtifactTrace => trace !== null);
+
+  // Apply date range filter after tab filter
+  const filteredTraces = filterByDateRange(tabFilteredTraces);
 
   const displayTitle = title || (filterByTab
     ? `${filterByTab.charAt(0).toUpperCase() + filterByTab.slice(1)} Artifacts`
@@ -297,6 +332,36 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
             {formatCurrency(totalValue)} value
           </span>
         </div>
+      </div>
+
+      {/* Date Range Filter */}
+      <div className="flex items-center gap-3 mb-4 p-3 bg-gray-800/50 rounded-lg">
+        <span className="text-sm text-gray-400">Date Range:</span>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+            placeholder="Start date"
+          />
+          <span className="text-gray-500">to</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 focus:outline-none focus:border-blue-500"
+            placeholder="End date"
+          />
+        </div>
+        {(startDate || endDate) && (
+          <button
+            onClick={clearDateFilters}
+            className="px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 transition-colors"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Traces list */}

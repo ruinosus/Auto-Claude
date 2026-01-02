@@ -1079,4 +1079,1255 @@ Example:
 
     tools.append(delete_artifact_tool)
 
+    # -------------------------------------------------------------------------
+    # Tool: aggregate_artifacts_by_agent
+    # -------------------------------------------------------------------------
+
+    # Import the aggregation function
+    try:
+        from analytics.artifact_storage import get_artifacts_by_agent
+        AGGREGATION_AVAILABLE = True
+    except ImportError:
+        AGGREGATION_AVAILABLE = False
+        get_artifacts_by_agent = None
+
+    @tool(
+        "aggregate_artifacts_by_agent",
+        """Get artifacts aggregated by agent type.
+
+Groups all artifacts by their creating agent (planner, coder, qa_reviewer, qa_fixer, etc.)
+and returns count, total value in USD, and artifact types for each agent.
+
+Use this to understand:
+- Which agents are generating the most valuable artifacts
+- What types of artifacts each agent produces
+- Total value contribution per agent
+
+Optional date filtering allows analyzing specific time periods.
+
+Example output:
+{
+  "planner": {"count": 5, "total_value_usd": 250, "types": ["diagram", "architecture_insight"]},
+  "coder": {"count": 12, "total_value_usd": 480, "types": ["code_example", "bug_fix"]},
+  "qa_reviewer": {"count": 8, "total_value_usd": 320, "types": ["security_finding", "recommendation"]}
+}
+""",
+        {
+            "date_from": str,
+            "date_to": str,
+        },
+    )
+    async def aggregate_artifacts_by_agent_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Aggregate artifacts by agent type."""
+        date_from = args.get("date_from", "")
+        date_to = args.get("date_to", "")
+
+        if not AGGREGATION_AVAILABLE or not get_artifacts_by_agent:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Artifact aggregation not available."}
+                ]
+            }
+
+        try:
+            # Get aggregation results
+            by_agent = get_artifacts_by_agent(
+                project_dir=project_dir,
+                date_from=date_from if date_from else None,
+                date_to=date_to if date_to else None,
+            )
+
+            if not by_agent:
+                return {
+                    "content": [
+                        {"type": "text", "text": "No artifacts found for aggregation."}
+                    ]
+                }
+
+            # Calculate totals
+            total_count = sum(data["count"] for data in by_agent.values())
+            total_value = sum(data["total_value_usd"] for data in by_agent.values())
+
+            # Format response
+            lines = ["=== Artifacts by Agent Type ===", ""]
+
+            if date_from or date_to:
+                date_range = f"{date_from or 'start'} to {date_to or 'now'}"
+                lines.append(f"Date Range: {date_range}")
+                lines.append("")
+
+            # Sort by total value descending
+            sorted_agents = sorted(
+                by_agent.items(),
+                key=lambda x: x[1]["total_value_usd"],
+                reverse=True
+            )
+
+            for agent_type, data in sorted_agents:
+                lines.append(f"## {agent_type.upper()}")
+                lines.append(f"  Count: {data['count']} artifacts")
+                lines.append(f"  Value: ${data['total_value_usd']}")
+                lines.append(f"  Types: {', '.join(data['types'])}")
+                lines.append("")
+
+            lines.append("--- Summary ---")
+            lines.append(f"Total Artifacts: {total_count}")
+            lines.append(f"Total Value: ${total_value}")
+            lines.append(f"Agents: {len(by_agent)}")
+
+            # Return both text and structured content
+            return {
+                "content": [{"type": "text", "text": "\n".join(lines)}],
+                "structuredContent": {
+                    "by_agent": by_agent,
+                    "summary": {
+                        "total_count": total_count,
+                        "total_value_usd": total_value,
+                        "agent_count": len(by_agent),
+                    }
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error aggregating artifacts by agent: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error aggregating artifacts: {str(e)}"}
+                ]
+            }
+
+    tools.append(aggregate_artifacts_by_agent_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: get_artifact_statistics
+    # -------------------------------------------------------------------------
+
+    # Import the comprehensive stats function
+    try:
+        from analytics.artifact_storage import get_comprehensive_artifact_stats
+        STATS_AVAILABLE = True
+    except ImportError:
+        STATS_AVAILABLE = False
+        get_comprehensive_artifact_stats = None
+
+    @tool(
+        "get_artifact_statistics",
+        """Get comprehensive artifact statistics for the project.
+
+Returns detailed statistics about all stored artifacts including:
+- Total count and total value in USD
+- Breakdown by artifact type (diagram, code_example, security_finding, etc.)
+- Breakdown by dashboard tab (dev, techlead, ops, business)
+- Breakdown by time period (last 7 days, last 30 days, all time)
+- Top 5 most valuable artifacts
+- Value distribution by type and tab
+
+Use this to:
+- Understand the ROI generated by Auto-Claude
+- See which types of artifacts are being created most
+- Identify the most valuable contributions
+- Track artifact creation over time
+
+Example output:
+{
+  "total_count": 45,
+  "total_value_usd": 2500,
+  "by_type": {"diagram": 10, "code_example": 15, "security_finding": 5, ...},
+  "by_tab": {"dev": 20, "techlead": 15, "ops": 5, "business": 5},
+  "by_period": {"last_7_days": 12, "last_30_days": 35, "all_time": 45},
+  "top_valuable": [
+    {"id": "art_xxx", "type": "security_finding", "value_usd": 200, "date": "2024-01-15"},
+    ...
+  ]
+}
+""",
+        {},
+    )
+    async def get_artifact_statistics_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Get comprehensive artifact statistics."""
+        if not STATS_AVAILABLE or not get_comprehensive_artifact_stats:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Artifact statistics not available."}
+                ]
+            }
+
+        try:
+            stats = get_comprehensive_artifact_stats(project_dir)
+
+            # Format response text
+            lines = ["=== Artifact Statistics ===", ""]
+
+            # Overview
+            lines.append("## Overview")
+            lines.append(f"  Total Artifacts: {stats['total_count']}")
+            lines.append(f"  Total Value: ${stats['total_value_usd']:.2f}")
+            lines.append(f"  Last Updated: {stats.get('last_updated', 'N/A')}")
+            lines.append("")
+
+            # By Period
+            lines.append("## By Time Period")
+            by_period = stats.get("by_period", {})
+            lines.append(f"  Last 7 Days: {by_period.get('last_7_days', 0)} artifacts")
+            lines.append(f"  Last 30 Days: {by_period.get('last_30_days', 0)} artifacts")
+            lines.append(f"  All Time: {by_period.get('all_time', 0)} artifacts")
+            lines.append("")
+
+            # By Tab
+            lines.append("## By Dashboard Tab")
+            by_tab = stats.get("by_tab", {})
+            value_by_tab = stats.get("value_by_tab", {})
+            for tab in ["dev", "techlead", "ops", "business"]:
+                count = by_tab.get(tab, 0)
+                value = value_by_tab.get(tab, 0)
+                tab_name = TAB_NAMES.get(tab, tab)
+                lines.append(f"  {tab_name}: {count} artifacts (${value:.2f})")
+            lines.append("")
+
+            # By Type (top 10)
+            lines.append("## By Artifact Type (Top 10)")
+            by_type = stats.get("by_type", {})
+            value_by_type = stats.get("value_by_type", {})
+            sorted_types = sorted(
+                by_type.items(),
+                key=lambda x: value_by_type.get(x[0], 0),
+                reverse=True
+            )[:10]
+            for art_type, count in sorted_types:
+                value = value_by_type.get(art_type, 0)
+                lines.append(f"  {art_type}: {count} (${value:.2f})")
+            lines.append("")
+
+            # Top Valuable
+            lines.append("## Top 5 Most Valuable")
+            top_valuable = stats.get("top_valuable", [])
+            for i, art in enumerate(top_valuable, 1):
+                lines.append(f"  {i}. {art['type']} - ${art['value_usd']:.2f}")
+                lines.append(f"     ID: {art['id']}, Date: {art['date']}")
+            if not top_valuable:
+                lines.append("  No artifacts with value found.")
+
+            return {
+                "content": [{"type": "text", "text": "\n".join(lines)}],
+                "structuredContent": stats
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting artifact statistics: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error getting statistics: {str(e)}"}
+                ]
+            }
+
+    tools.append(get_artifact_statistics_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: search_artifacts
+    # -------------------------------------------------------------------------
+
+    # Import the search function
+    try:
+        from analytics.artifact_storage import search_artifacts as storage_search_artifacts
+        SEARCH_AVAILABLE = True
+    except ImportError:
+        SEARCH_AVAILABLE = False
+        storage_search_artifacts = None
+
+    @tool(
+        "search_artifacts",
+        """Search artifacts by content, description, and type.
+
+Performs case-insensitive full-text search across all stored artifacts.
+Returns matching artifacts sorted by relevance with previews and match highlights.
+
+Search is performed on:
+- artifact content (code, diagrams, findings, recommendations, etc.)
+- artifact description
+- artifact type name
+
+Results include:
+- Preview of the first 200 characters of content
+- Highlighted snippet showing where the query matched
+- Location of matches (content, description, or type)
+- Relevance score (higher = more relevant)
+
+Optional filters:
+- artifact_types: Filter to specific types (e.g., ["security_finding", "diagram"])
+- spec_id: Filter to artifacts from a specific spec
+- limit: Maximum results to return (default: 50)
+
+Examples:
+  query: "SQL injection"       -> Find security findings about SQL injection
+  query: "authentication"      -> Find all artifacts mentioning authentication
+  query: "diagram"             -> Find all diagram artifacts (matches type)
+  query: "TODO"                -> Find artifacts with TODO comments
+
+Example response:
+[
+  {
+    "id": "art_abc123",
+    "type": "security_finding",
+    "description": "SQL Injection vulnerability in login",
+    "preview": "Found SQL injection vulnerability in...",
+    "match_highlight": "...user input allows **SQL injection** attacks...",
+    "match_locations": ["content", "description"],
+    "relevance_score": 175
+  }
+]
+""",
+        {
+            "query": str,
+            "artifact_types": list,
+            "spec_id": str,
+            "limit": int,
+        },
+    )
+    async def search_artifacts_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Search artifacts by content, description, and type."""
+        query = args.get("query", "")
+        artifact_types_filter = args.get("artifact_types", None)
+        spec_id_filter = args.get("spec_id", "")
+        limit = args.get("limit", 50)
+
+        if not SEARCH_AVAILABLE or not storage_search_artifacts:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Artifact search not available."}
+                ]
+            }
+
+        if not query or len(query.strip()) < 1:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Search query is required."}
+                ]
+            }
+
+        try:
+            # Perform search
+            results = storage_search_artifacts(
+                project_dir=project_dir,
+                query=query,
+                artifact_types=artifact_types_filter if artifact_types_filter else None,
+                spec_id=spec_id_filter if spec_id_filter else None,
+                limit=limit if limit else 50,
+            )
+
+            if not results:
+                return {
+                    "content": [
+                        {"type": "text", "text": f"No artifacts found matching '{query}'."}
+                    ]
+                }
+
+            # Format response text
+            lines = [f"=== Search Results for '{query}' ===", ""]
+            lines.append(f"Found {len(results)} matching artifact(s)")
+            lines.append("")
+
+            for i, result in enumerate(results, 1):
+                lines.append(f"## {i}. {result['type']} (${result['value_usd']})")
+                lines.append(f"   ID: {result['id']}")
+                if result.get("description"):
+                    lines.append(f"   Description: {result['description'][:100]}{'...' if len(result.get('description', '')) > 100 else ''}")
+                lines.append(f"   Tab: {TAB_NAMES.get(result.get('tab', ''), result.get('tab', 'N/A'))}")
+                lines.append(f"   Created: {result.get('created_at', 'N/A')[:10]}")
+                lines.append(f"   Matched in: {', '.join(result.get('match_locations', []))}")
+                if result.get("match_highlight"):
+                    lines.append(f"   Match: {result['match_highlight']}")
+                lines.append(f"   Relevance: {result.get('relevance_score', 0)}")
+                lines.append("")
+
+            return {
+                "content": [{"type": "text", "text": "\n".join(lines)}],
+                "structuredContent": {
+                    "query": query,
+                    "total_results": len(results),
+                    "results": results,
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error searching artifacts: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error searching artifacts: {str(e)}"}
+                ]
+            }
+
+    tools.append(search_artifacts_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: export_artifacts
+    # -------------------------------------------------------------------------
+
+    # Import the export functions
+    try:
+        from analytics.artifact_storage import (
+            export_artifacts_json as storage_export_json,
+            export_artifacts_markdown as storage_export_markdown,
+        )
+        EXPORT_AVAILABLE = True
+    except ImportError:
+        EXPORT_AVAILABLE = False
+        storage_export_json = None
+        storage_export_markdown = None
+
+    @tool(
+        "export_artifacts",
+        """Export artifacts to JSON or Markdown format.
+
+Exports artifacts with optional filters to a file or returns the content directly.
+Useful for generating reports, sharing artifacts, or archiving.
+
+Formats:
+- json: Structured JSON with full artifact data, summaries, and breakdowns
+- markdown: Human-readable Markdown with emojis, tables, and organized sections
+
+Filters:
+- artifact_types: List of types to include (e.g., ["security_finding", "diagram"])
+- date_from: Start date filter (YYYY-MM-DD)
+- date_to: End date filter (YYYY-MM-DD)
+- agent_type: Filter by creating agent (planner, coder, qa_reviewer, etc.)
+- spec_id: Filter to a specific spec
+
+Markdown options:
+- include_content: Whether to include full artifact content (default: true)
+- max_content_length: Max chars per artifact content, 0=unlimited (default: 2000)
+
+If output_path is provided, saves to file and returns path.
+If output_path is omitted, returns the content directly.
+
+Examples:
+  Export all to JSON file:
+    format: "json"
+    output_path: "/path/to/export.json"
+
+  Export security findings to Markdown:
+    format: "markdown"
+    artifact_types: ["security_finding"]
+    output_path: "/path/to/security-report.md"
+
+  Get last 7 days as Markdown content:
+    format: "markdown"
+    date_from: "2026-01-01"
+    (no output_path - returns content directly)
+""",
+        {
+            "format": str,
+            "output_path": str,
+            "artifact_types": list,
+            "date_from": str,
+            "date_to": str,
+            "agent_type": str,
+            "spec_id": str,
+            "include_content": bool,
+            "max_content_length": int,
+        },
+    )
+    async def export_artifacts_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Export artifacts to JSON or Markdown format."""
+        export_format = args.get("format", "json").lower()
+        output_path = args.get("output_path", "")
+        artifact_types_filter = args.get("artifact_types", None)
+        date_from = args.get("date_from", "")
+        date_to = args.get("date_to", "")
+        agent_type_filter = args.get("agent_type", "")
+        spec_id_filter = args.get("spec_id", "")
+        include_content = args.get("include_content", True)
+        max_content_length = args.get("max_content_length", 2000)
+
+        if not EXPORT_AVAILABLE:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Artifact export not available."}
+                ]
+            }
+
+        # Validate format
+        if export_format not in ["json", "markdown", "md"]:
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error: Invalid format '{export_format}'. Use 'json' or 'markdown'."}
+                ]
+            }
+
+        try:
+            from pathlib import Path as PathLib
+
+            # Prepare output path
+            out_path = PathLib(output_path) if output_path else None
+
+            # Call appropriate export function
+            if export_format == "json":
+                result = storage_export_json(
+                    project_dir=project_dir,
+                    output_path=out_path,
+                    artifact_types=artifact_types_filter if artifact_types_filter else None,
+                    date_from=date_from if date_from else None,
+                    date_to=date_to if date_to else None,
+                    agent_type=agent_type_filter if agent_type_filter else None,
+                    spec_id=spec_id_filter if spec_id_filter else None,
+                )
+            else:  # markdown or md
+                result = storage_export_markdown(
+                    project_dir=project_dir,
+                    output_path=out_path,
+                    artifact_types=artifact_types_filter if artifact_types_filter else None,
+                    date_from=date_from if date_from else None,
+                    date_to=date_to if date_to else None,
+                    agent_type=agent_type_filter if agent_type_filter else None,
+                    spec_id=spec_id_filter if spec_id_filter else None,
+                    include_content=include_content,
+                    max_content_length=max_content_length if max_content_length else 2000,
+                )
+
+            # Build response
+            if "saved_to" in result:
+                response_text = f"""
+Export completed successfully!
+
+Format: {export_format.upper()}
+Saved to: {result['saved_to']}
+Artifacts: {result['artifact_count']}
+Total Value: ${result['total_value']:,.2f}
+"""
+                return {"content": [{"type": "text", "text": response_text.strip()}]}
+            else:
+                # Return content directly
+                content = result.get("content", "")
+                header = f"=== Export ({result['artifact_count']} artifacts, ${result['total_value']:,.2f}) ===\n\n"
+                return {"content": [{"type": "text", "text": header + content}]}
+
+        except Exception as e:
+            logger.error(f"Error exporting artifacts: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error exporting artifacts: {str(e)}"}
+                ]
+            }
+
+    tools.append(export_artifacts_tool)
+
+    # =========================================================================
+    # TAG MANAGEMENT TOOLS
+    # =========================================================================
+
+    # Import tag management functions
+    try:
+        from analytics.artifact_storage import (
+            add_tag_to_artifact as storage_add_tag,
+            remove_tag_from_artifact as storage_remove_tag,
+            get_artifacts_by_tag as storage_get_by_tag,
+            get_all_tags as storage_get_all_tags,
+        )
+        TAGS_AVAILABLE = True
+    except ImportError:
+        TAGS_AVAILABLE = False
+        storage_add_tag = None
+        storage_remove_tag = None
+        storage_get_by_tag = None
+        storage_get_all_tags = None
+
+    # -------------------------------------------------------------------------
+    # Tool: tag_artifact
+    # -------------------------------------------------------------------------
+    @tool(
+        "tag_artifact",
+        """Add or remove tags from an artifact.
+
+Tags help organize and categorize artifacts for easy filtering and retrieval.
+Tags are stored in lowercase and must be non-empty strings.
+
+Actions:
+- add: Add a tag to the artifact
+- remove: Remove a tag from the artifact
+
+Example usage:
+  action: "add"
+  artifact_id: "art_abc123def456"
+  tag: "security"
+
+Common tags: security, performance, architecture, bug, feature, documentation,
+             refactoring, testing, critical, review-needed, approved
+""",
+        {
+            "action": str,
+            "artifact_id": str,
+            "tag": str,
+        },
+    )
+    async def tag_artifact_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Add or remove tags from an artifact."""
+        action = args.get("action", "").lower()
+        artifact_id = args.get("artifact_id", "")
+        tag = args.get("tag", "")
+
+        if not TAGS_AVAILABLE:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Tag management not available."}
+                ]
+            }
+
+        if action not in ["add", "remove"]:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: action must be 'add' or 'remove'."}
+                ]
+            }
+
+        if not artifact_id:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: artifact_id is required."}
+                ]
+            }
+
+        if not tag or not tag.strip():
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: tag is required and cannot be empty."}
+                ]
+            }
+
+        try:
+            project_path = str(project_dir)
+            tag = tag.strip().lower()
+
+            if action == "add":
+                success = storage_add_tag(project_path, artifact_id, tag)
+                if success:
+                    return {
+                        "content": [
+                            {"type": "text", "text": f"Tag '{tag}' added to artifact {artifact_id}"}
+                        ]
+                    }
+                else:
+                    return {
+                        "content": [
+                            {"type": "text", "text": f"Failed to add tag '{tag}' to artifact {artifact_id}. Artifact may not exist."}
+                        ],
+                        "isError": True
+                    }
+            else:  # remove
+                success = storage_remove_tag(project_path, artifact_id, tag)
+                if success:
+                    return {
+                        "content": [
+                            {"type": "text", "text": f"Tag '{tag}' removed from artifact {artifact_id}"}
+                        ]
+                    }
+                else:
+                    return {
+                        "content": [
+                            {"type": "text", "text": f"Failed to remove tag '{tag}' from artifact {artifact_id}. Artifact may not exist."}
+                        ],
+                        "isError": True
+                    }
+
+        except Exception as e:
+            logger.error(f"Error in tag_artifact: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error managing tag: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(tag_artifact_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: get_artifacts_by_tag
+    # -------------------------------------------------------------------------
+    @tool(
+        "get_artifacts_by_tag",
+        """Get all artifacts that have a specific tag.
+
+Returns a list of artifacts matching the specified tag.
+Tags are case-insensitive.
+
+Example:
+  tag: "security"
+
+Returns artifacts with that tag, including their full content.
+""",
+        {
+            "tag": str,
+        },
+    )
+    async def get_artifacts_by_tag_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Get artifacts by tag."""
+        tag = args.get("tag", "")
+
+        if not TAGS_AVAILABLE or not storage_get_by_tag:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Tag management not available."}
+                ]
+            }
+
+        if not tag or not tag.strip():
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: tag is required."}
+                ]
+            }
+
+        try:
+            project_path = str(project_dir)
+            tag = tag.strip().lower()
+
+            artifacts = storage_get_by_tag(project_path, tag)
+
+            if not artifacts:
+                return {
+                    "content": [
+                        {"type": "text", "text": f"No artifacts found with tag '{tag}'."}
+                    ]
+                }
+
+            # Format response
+            lines = [f"=== Artifacts with tag '{tag}' ({len(artifacts)}) ===", ""]
+
+            for art in artifacts:
+                lines.append(f"ID: {art.get('id', 'unknown')}")
+                lines.append(f"  Type: {art.get('type', 'unknown')} | Tab: {TAB_NAMES.get(art.get('tab', ''), art.get('tab', ''))}")
+                lines.append(f"  Value: ${art.get('value_usd', 0)} | {art.get('created_at', '')[:10] if art.get('created_at') else 'N/A'}")
+                lines.append(f"  Tags: {', '.join(art.get('metadata', {}).get('tags', []))}")
+                content_preview = art.get("content", "")[:50]
+                if len(art.get("content", "")) > 50:
+                    content_preview += "..."
+                lines.append(f"  Preview: {content_preview}")
+                lines.append("")
+
+            return {
+                "content": [{"type": "text", "text": "\n".join(lines)}],
+                "structuredContent": {
+                    "tag": tag,
+                    "count": len(artifacts),
+                    "artifacts": artifacts
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting artifacts by tag: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error getting artifacts by tag: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(get_artifacts_by_tag_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: list_all_tags
+    # -------------------------------------------------------------------------
+    @tool(
+        "list_all_tags",
+        """List all unique tags used across all artifacts in the project.
+
+Returns a sorted list of all tags that have been applied to any artifact.
+Useful for discovering available tags for filtering.
+
+No arguments required.
+""",
+        {},
+    )
+    async def list_all_tags_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """List all unique tags."""
+        if not TAGS_AVAILABLE or not storage_get_all_tags:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Tag management not available."}
+                ]
+            }
+
+        try:
+            project_path = str(project_dir)
+            tags = storage_get_all_tags(project_path)
+
+            if not tags:
+                return {
+                    "content": [
+                        {"type": "text", "text": "No tags found. Use tag_artifact to add tags to artifacts."}
+                    ]
+                }
+
+            # Format response
+            lines = [f"=== All Tags ({len(tags)}) ===", ""]
+            for tag in tags:
+                lines.append(f"  - {tag}")
+
+            return {
+                "content": [{"type": "text", "text": "\n".join(lines)}],
+                "structuredContent": {
+                    "count": len(tags),
+                    "tags": tags
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing all tags: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error listing tags: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(list_all_tags_tool)
+
+    # =========================================================================
+    # CLEANUP AND RETENTION TOOLS
+    # =========================================================================
+
+    # Import cleanup functions
+    try:
+        from analytics.artifact_storage import (
+            cleanup_old_artifacts as storage_cleanup_old,
+            cleanup_by_type as storage_cleanup_by_type,
+            get_cleanup_preview as storage_get_cleanup_preview,
+            archive_artifacts as storage_archive_artifacts,
+            restore_archived_artifact as storage_restore_archived,
+            get_archived_artifacts as storage_get_archived,
+        )
+        CLEANUP_AVAILABLE = True
+    except ImportError:
+        CLEANUP_AVAILABLE = False
+        storage_cleanup_old = None
+        storage_cleanup_by_type = None
+        storage_get_cleanup_preview = None
+        storage_archive_artifacts = None
+        storage_restore_archived = None
+        storage_get_archived = None
+
+    # -------------------------------------------------------------------------
+    # Tool: cleanup_artifacts
+    # -------------------------------------------------------------------------
+    @tool(
+        "cleanup_artifacts",
+        """Clean up old artifacts by age or type.
+
+IMPORTANT: By default this runs in dry_run mode (preview only).
+Set dry_run=false to actually delete artifacts.
+
+Cleanup modes:
+1. By age: Delete artifacts older than N days
+   - days: Number of days (default: 30)
+   - dry_run: Preview only (default: true)
+
+2. By type: Keep only the N most recent artifacts of a specific type
+   - artifact_type: The type to clean up (e.g., "diagram", "code_example")
+   - keep_latest: Number to keep (default: 10)
+   - dry_run: Preview only (default: true)
+
+Safety:
+- ALWAYS runs in dry_run mode by default
+- Review the preview before running with dry_run=false
+- Consider using archive_artifacts instead of deleting
+
+Examples:
+  # Preview cleanup of artifacts older than 30 days
+  days: 30
+
+  # Actually delete artifacts older than 60 days
+  days: 60
+  dry_run: false
+
+  # Preview keeping only 5 most recent diagrams
+  artifact_type: "diagram"
+  keep_latest: 5
+
+  # Actually clean up, keeping 10 recent code_examples
+  artifact_type: "code_example"
+  keep_latest: 10
+  dry_run: false
+""",
+        {
+            "days": int,
+            "artifact_type": str,
+            "keep_latest": int,
+            "dry_run": bool,
+        },
+    )
+    async def cleanup_artifacts_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Clean up artifacts by age or type."""
+        days = args.get("days", 30)
+        artifact_type = args.get("artifact_type", "")
+        keep_latest = args.get("keep_latest", 10)
+        dry_run = args.get("dry_run", True)  # Default to dry run for safety
+
+        if not CLEANUP_AVAILABLE:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Artifact cleanup not available."}
+                ]
+            }
+
+        try:
+            if artifact_type:
+                # Cleanup by type
+                result = storage_cleanup_by_type(
+                    project_dir=project_dir,
+                    artifact_type=artifact_type,
+                    keep_latest=keep_latest,
+                    dry_run=dry_run,
+                )
+
+                action_word = "Would delete" if dry_run else "Deleted"
+                response_text = f"""
+=== Cleanup by Type: {artifact_type} ===
+
+Mode: {"DRY RUN (preview only)" if dry_run else "ACTUAL DELETION"}
+Type: {artifact_type}
+Keep Latest: {keep_latest}
+
+{action_word}: {result['deleted_count']} artifacts
+Kept: {result['kept_count']} artifacts
+
+{f"IDs that would be deleted:" if dry_run else "Deleted IDs:"}
+{chr(10).join(f"  - {id}" for id in result['deleted_ids'][:20]) if result['deleted_ids'] else "  (none)"}
+{f"  ... and {len(result['deleted_ids']) - 20} more" if len(result['deleted_ids']) > 20 else ""}
+"""
+                if dry_run:
+                    response_text += "\nTo actually delete, run again with dry_run=false"
+
+            else:
+                # Cleanup by age
+                result = storage_cleanup_old(
+                    project_dir=project_dir,
+                    days=days,
+                    dry_run=dry_run,
+                )
+
+                action_word = "Would delete" if dry_run else "Deleted"
+                freed_kb = result['freed_bytes'] / 1024
+                response_text = f"""
+=== Cleanup by Age ===
+
+Mode: {"DRY RUN (preview only)" if dry_run else "ACTUAL DELETION"}
+Cutoff: {days} days old
+
+{action_word}: {result['deleted_count']} artifacts
+{action_word.replace('delete', 'free')}: {freed_kb:.2f} KB
+
+{f"IDs that would be deleted:" if dry_run else "Deleted IDs:"}
+{chr(10).join(f"  - {id}" for id in result['deleted_ids'][:20]) if result['deleted_ids'] else "  (none)"}
+{f"  ... and {len(result['deleted_ids']) - 20} more" if len(result['deleted_ids']) > 20 else ""}
+"""
+                if dry_run:
+                    response_text += "\nTo actually delete, run again with dry_run=false"
+
+            return {
+                "content": [{"type": "text", "text": response_text.strip()}],
+                "structuredContent": result
+            }
+
+        except Exception as e:
+            logger.error(f"Error in cleanup_artifacts: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error cleaning up artifacts: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(cleanup_artifacts_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: archive_artifacts
+    # -------------------------------------------------------------------------
+    @tool(
+        "archive_artifacts",
+        """Archive specific artifacts.
+
+Archived artifacts are MOVED (not deleted) to .auto-claude/artifacts/archive/
+This preserves them while keeping the main storage clean.
+
+Use this instead of deleting when you want to:
+- Keep a backup of old artifacts
+- Clean up without permanent deletion
+- Be able to restore artifacts later
+
+Args:
+  artifact_ids: List of artifact IDs to archive
+
+Example:
+  artifact_ids: ["art_abc123", "art_def456"]
+
+Returns count of successfully archived artifacts and any failures.
+""",
+        {
+            "artifact_ids": list,
+        },
+    )
+    async def archive_artifacts_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Archive specific artifacts."""
+        artifact_ids = args.get("artifact_ids", [])
+
+        if not CLEANUP_AVAILABLE or not storage_archive_artifacts:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Artifact archiving not available."}
+                ]
+            }
+
+        if not artifact_ids:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: artifact_ids list is required."}
+                ]
+            }
+
+        try:
+            result = storage_archive_artifacts(
+                project_dir=project_dir,
+                artifact_ids=artifact_ids,
+            )
+
+            response_text = f"""
+=== Archive Results ===
+
+Archived: {result['archived_count']} artifacts
+Failed: {result['failed_count']} artifacts
+
+Archived IDs:
+{chr(10).join(f"  - {id}" for id in result['archived_ids']) if result['archived_ids'] else "  (none)"}
+
+{f"Failed IDs:{chr(10)}{chr(10).join(f'  - {id}' for id in result['failed_ids'])}" if result['failed_ids'] else ""}
+"""
+            return {
+                "content": [{"type": "text", "text": response_text.strip()}],
+                "structuredContent": result
+            }
+
+        except Exception as e:
+            logger.error(f"Error archiving artifacts: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error archiving artifacts: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(archive_artifacts_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: get_cleanup_preview
+    # -------------------------------------------------------------------------
+    @tool(
+        "get_cleanup_preview",
+        """Preview what would be deleted by cleanup.
+
+Shows a detailed preview of artifacts that would be deleted if you run
+cleanup_artifacts with dry_run=false.
+
+Args:
+  days: Preview artifacts older than this many days (default: 30)
+
+Returns:
+- Number of artifacts that would be deleted
+- Total bytes that would be freed
+- List of artifact summaries (ID, type, date, value, size)
+
+Use this to review before running actual cleanup.
+""",
+        {
+            "days": int,
+        },
+    )
+    async def get_cleanup_preview_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Preview cleanup results."""
+        days = args.get("days", 30)
+
+        if not CLEANUP_AVAILABLE or not storage_get_cleanup_preview:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Cleanup preview not available."}
+                ]
+            }
+
+        try:
+            result = storage_get_cleanup_preview(
+                project_dir=project_dir,
+                days=days,
+            )
+
+            freed_kb = result['total_bytes'] / 1024
+            response_text = f"""
+=== Cleanup Preview ===
+
+Cutoff: {days} days (before {result.get('cutoff_date', 'N/A')})
+Would Delete: {result['would_delete']} artifacts
+Would Free: {freed_kb:.2f} KB
+
+Artifacts to delete (oldest first):
+"""
+            for art in result.get('artifacts', [])[:30]:
+                size_kb = art.get('size_bytes', 0) / 1024
+                response_text += f"\n  {art['id']}"
+                response_text += f"\n    Type: {art['type']} | Date: {art['date']} | Value: ${art.get('value_usd', 0)} | Size: {size_kb:.1f}KB"
+                if art.get('spec_id'):
+                    response_text += f" | Spec: {art['spec_id']}"
+
+            if len(result.get('artifacts', [])) > 30:
+                response_text += f"\n\n  ... and {len(result['artifacts']) - 30} more artifacts"
+
+            if result['would_delete'] > 0:
+                response_text += "\n\nTo delete these, run cleanup_artifacts with dry_run=false"
+
+            return {
+                "content": [{"type": "text", "text": response_text.strip()}],
+                "structuredContent": result
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting cleanup preview: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error getting cleanup preview: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(get_cleanup_preview_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: list_archived_artifacts
+    # -------------------------------------------------------------------------
+    @tool(
+        "list_archived_artifacts",
+        """List all archived artifacts.
+
+Shows artifacts that have been moved to the archive directory.
+Archived artifacts can be restored using restore_archived_artifact.
+
+No arguments required.
+""",
+        {},
+    )
+    async def list_archived_artifacts_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """List archived artifacts."""
+        if not CLEANUP_AVAILABLE or not storage_get_archived:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Archive listing not available."}
+                ]
+            }
+
+        try:
+            archived = storage_get_archived(project_dir)
+
+            if not archived:
+                return {
+                    "content": [
+                        {"type": "text", "text": "No archived artifacts found."}
+                    ]
+                }
+
+            response_text = f"=== Archived Artifacts ({len(archived)}) ===\n"
+
+            for art in archived[:50]:
+                response_text += f"\n{art['id']}"
+                response_text += f"\n  Type: {art['type']} | Value: ${art.get('value_usd', 0)}"
+                response_text += f"\n  Created: {art.get('created_at', 'N/A')[:10] if art.get('created_at') else 'N/A'}"
+                response_text += f"\n  Archived: {art.get('archived_at', 'N/A')[:10] if art.get('archived_at') else 'N/A'}"
+                if art.get('description'):
+                    response_text += f"\n  Description: {art['description'][:50]}..."
+                response_text += "\n"
+
+            if len(archived) > 50:
+                response_text += f"\n... and {len(archived) - 50} more archived artifacts"
+
+            return {
+                "content": [{"type": "text", "text": response_text.strip()}],
+                "structuredContent": {
+                    "count": len(archived),
+                    "artifacts": archived
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"Error listing archived artifacts: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error listing archived artifacts: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(list_archived_artifacts_tool)
+
+    # -------------------------------------------------------------------------
+    # Tool: restore_archived_artifact
+    # -------------------------------------------------------------------------
+    @tool(
+        "restore_archived_artifact",
+        """Restore an archived artifact back to active storage.
+
+Moves an artifact from the archive back to its original date directory.
+The artifact will be available again in searches and listings.
+
+Args:
+  artifact_id: The artifact ID to restore
+
+Example:
+  artifact_id: "art_abc123def456"
+""",
+        {
+            "artifact_id": str,
+        },
+    )
+    async def restore_archived_artifact_tool(args: dict[str, Any]) -> dict[str, Any]:
+        """Restore an archived artifact."""
+        artifact_id = args.get("artifact_id", "")
+
+        if not CLEANUP_AVAILABLE or not storage_restore_archived:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: Archive restoration not available."}
+                ]
+            }
+
+        if not artifact_id:
+            return {
+                "content": [
+                    {"type": "text", "text": "Error: artifact_id is required."}
+                ]
+            }
+
+        try:
+            result = storage_restore_archived(
+                project_dir=project_dir,
+                artifact_id=artifact_id,
+            )
+
+            if result['success']:
+                return {
+                    "content": [
+                        {"type": "text", "text": f"Artifact {artifact_id} restored successfully.\n{result['message']}"}
+                    ]
+                }
+            else:
+                return {
+                    "content": [
+                        {"type": "text", "text": f"Failed to restore artifact: {result['message']}"}
+                    ],
+                    "isError": True
+                }
+
+        except Exception as e:
+            logger.error(f"Error restoring archived artifact: {e}")
+            return {
+                "content": [
+                    {"type": "text", "text": f"Error restoring artifact: {str(e)}"}
+                ],
+                "isError": True
+            }
+
+    tools.append(restore_archived_artifact_tool)
+
     return tools

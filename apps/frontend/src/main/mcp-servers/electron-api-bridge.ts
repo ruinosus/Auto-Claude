@@ -641,6 +641,379 @@ export function startElectronApiBridge(): ReturnType<typeof express> {
     }
   });
 
+  // Endpoint: Get comprehensive artifact statistics
+  app.get('/api/artifacts/statistics', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { projectPath } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      // Get all artifacts
+      const artifacts = listArtifacts(projectPath, {});
+
+      // Calculate dates for period filtering
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      // Map artifact types to tabs
+      const TYPE_TO_TAB: Record<string, string> = {
+        diagram: 'techlead',
+        code_example: 'dev',
+        refactoring: 'dev',
+        bug_fix: 'dev',
+        test_case: 'dev',
+        security_finding: 'ops',
+        performance_insight: 'ops',
+        architecture_insight: 'techlead',
+        api_design: 'techlead',
+        documentation: 'techlead',
+        recommendation: 'business',
+        cost_analysis: 'business',
+        priority_assessment: 'business',
+      };
+
+      // Initialize counters
+      let totalValue = 0;
+      const byType: Record<string, number> = {};
+      const byTab: Record<string, number> = { dev: 0, techlead: 0, ops: 0, business: 0 };
+      const valueByType: Record<string, number> = {};
+      const valueByTab: Record<string, number> = { dev: 0, techlead: 0, ops: 0, business: 0 };
+      const byPeriod = { last_7_days: 0, last_30_days: 0, all_time: artifacts.length };
+      const artifactsWithValue: Array<{ id: string; type: string; value_usd: number; date: string }> = [];
+
+      for (const artifact of artifacts) {
+        const artType = artifact.type || 'unknown';
+        const valueUsd = artifact.value_usd || 0;
+        const artDate = artifact.created_at?.split('T')[0] || '';
+
+        // Accumulate total value
+        totalValue += valueUsd;
+
+        // Count by type
+        byType[artType] = (byType[artType] || 0) + 1;
+        valueByType[artType] = (valueByType[artType] || 0) + valueUsd;
+
+        // Count by tab
+        const tab = TYPE_TO_TAB[artType] || 'dev';
+        byTab[tab] = (byTab[tab] || 0) + 1;
+        valueByTab[tab] = (valueByTab[tab] || 0) + valueUsd;
+
+        // Count by period
+        if (artDate >= sevenDaysAgo) {
+          byPeriod.last_7_days += 1;
+        }
+        if (artDate >= thirtyDaysAgo) {
+          byPeriod.last_30_days += 1;
+        }
+
+        // Track for top valuable
+        if (valueUsd > 0) {
+          artifactsWithValue.push({ id: artifact.id, type: artType, value_usd: valueUsd, date: artDate });
+        }
+      }
+
+      // Sort by value descending and take top 5
+      artifactsWithValue.sort((a, b) => b.value_usd - a.value_usd);
+      const topValuable = artifactsWithValue.slice(0, 5);
+
+      res.json({
+        total_count: artifacts.length,
+        total_value_usd: totalValue,
+        by_type: byType,
+        by_tab: byTab,
+        by_period: byPeriod,
+        top_valuable: topValuable,
+        value_by_type: valueByType,
+        value_by_tab: valueByTab,
+        last_updated: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifacts/statistics:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
+  // Endpoint: Search artifacts
+  app.get('/api/artifacts/search', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { projectPath, query, artifact_types, spec_id, limit } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      if (!query || typeof query !== 'string' || query.trim().length < 1) {
+        res.status(400).json({ error: 'query is required' });
+        return;
+      }
+
+      const searchQuery = query.trim().toLowerCase();
+      const maxResults = limit ? parseInt(limit as string, 10) : 50;
+      const PREVIEW_LENGTH = 200;
+
+      // Parse artifact_types filter if provided
+      let typeFilter: string[] | null = null;
+      if (artifact_types && typeof artifact_types === 'string') {
+        try {
+          typeFilter = JSON.parse(artifact_types);
+        } catch {
+          typeFilter = [artifact_types];
+        }
+      }
+
+      // Get all artifacts with optional spec_id filter
+      let artifacts = listArtifacts(projectPath, {
+        spec_id: spec_id as string | undefined,
+        limit: 10000 // High limit, we'll filter and limit manually
+      });
+
+      // Apply type filter if provided
+      if (typeFilter && typeFilter.length > 0) {
+        artifacts = artifacts.filter(a => typeFilter!.includes(a.type || ''));
+      }
+
+      // Helper function to highlight match
+      const highlightMatch = (text: string, searchQuery: string, contextChars: number = 30): string => {
+        if (!text || !searchQuery) return '';
+
+        const textLower = text.toLowerCase();
+        const queryLower = searchQuery.toLowerCase();
+
+        const matchIdx = textLower.indexOf(queryLower);
+        if (matchIdx === -1) return '';
+
+        const start = Math.max(0, matchIdx - contextChars);
+        const end = Math.min(text.length, matchIdx + searchQuery.length + contextChars);
+
+        const snippet = text.substring(start, end);
+        const prefix = start > 0 ? '...' : '';
+        const suffix = end < text.length ? '...' : '';
+
+        const matchStartInSnippet = matchIdx - start;
+        const matchEndInSnippet = matchStartInSnippet + searchQuery.length;
+
+        const highlighted =
+          snippet.substring(0, matchStartInSnippet) +
+          '**' + snippet.substring(matchStartInSnippet, matchEndInSnippet) + '**' +
+          snippet.substring(matchEndInSnippet);
+
+        return prefix + highlighted + suffix;
+      };
+
+      // Helper function to calculate relevance score
+      const calculateRelevance = (
+        artifact: LocalArtifact,
+        searchQuery: string,
+        contentMatch: boolean,
+        descriptionMatch: boolean,
+        typeMatch: boolean
+      ): number => {
+        let score = 0;
+
+        if (typeMatch) score += 100;
+        if (descriptionMatch) {
+          score += 50;
+          if (artifact.description?.toLowerCase().startsWith(searchQuery)) {
+            score += 25;
+          }
+        }
+        if (contentMatch) {
+          score += 25;
+          const content = artifact.content || '';
+          const contentLower = content.toLowerCase();
+          const matchIdx = contentLower.indexOf(searchQuery);
+          if (matchIdx !== -1 && matchIdx < 500) {
+            score += 25 - Math.floor(matchIdx / 20);
+          }
+          // Multiple occurrences
+          const regex = new RegExp(searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+          const occurrences = (content.match(regex) || []).length;
+          score += Math.min(occurrences * 5, 25);
+        }
+
+        // Recency bonus
+        const today = new Date().toISOString().split('T')[0];
+        if (artifact.created_at?.startsWith(today)) {
+          score += 10;
+        }
+
+        return score;
+      };
+
+      // Map artifact types to tabs
+      const TYPE_TO_TAB: Record<string, string> = {
+        diagram: 'techlead',
+        code_example: 'dev',
+        refactoring: 'dev',
+        bug_fix: 'dev',
+        test_case: 'dev',
+        security_finding: 'ops',
+        performance_insight: 'ops',
+        architecture_insight: 'techlead',
+        api_design: 'techlead',
+        documentation: 'techlead',
+        recommendation: 'business',
+        cost_analysis: 'business',
+        priority_assessment: 'business',
+      };
+
+      // Search and score artifacts
+      const results: Array<{
+        id: string;
+        type: string;
+        format?: string;
+        description: string;
+        value_usd: number;
+        created_at: string;
+        spec_id?: string;
+        tab?: string;
+        preview: string;
+        match_highlight: string;
+        match_locations: string[];
+        relevance_score: number;
+      }> = [];
+
+      for (const artifact of artifacts) {
+        const content = (artifact.content || '').toLowerCase();
+        const description = (artifact.description || '').toLowerCase();
+        const artType = (artifact.type || '').toLowerCase();
+
+        const contentMatch = content.includes(searchQuery);
+        const descriptionMatch = description.includes(searchQuery);
+        const typeMatch = artType.includes(searchQuery);
+
+        if (!contentMatch && !descriptionMatch && !typeMatch) {
+          continue;
+        }
+
+        const matchLocations: string[] = [];
+        if (contentMatch) matchLocations.push('content');
+        if (descriptionMatch) matchLocations.push('description');
+        if (typeMatch) matchLocations.push('type');
+
+        let matchHighlight = '';
+        if (contentMatch) {
+          matchHighlight = highlightMatch(artifact.content || '', query);
+        } else if (descriptionMatch) {
+          matchHighlight = highlightMatch(artifact.description || '', query);
+        } else if (typeMatch) {
+          matchHighlight = `Type: **${artifact.type}**`;
+        }
+
+        const preview = (artifact.content || '').substring(0, PREVIEW_LENGTH) +
+          ((artifact.content || '').length > PREVIEW_LENGTH ? '...' : '');
+
+        const relevanceScore = calculateRelevance(artifact, searchQuery, contentMatch, descriptionMatch, typeMatch);
+
+        results.push({
+          id: artifact.id,
+          type: artifact.type || 'unknown',
+          format: artifact.format,
+          description: artifact.description || '',
+          value_usd: artifact.value_usd || 0,
+          created_at: artifact.created_at || '',
+          spec_id: artifact.spec_id,
+          tab: TYPE_TO_TAB[artifact.type || ''] || 'dev',
+          preview,
+          match_highlight: matchHighlight,
+          match_locations: matchLocations,
+          relevance_score: relevanceScore,
+        });
+      }
+
+      // Sort by relevance score (descending)
+      results.sort((a, b) => b.relevance_score - a.relevance_score);
+
+      // Apply limit
+      const limitedResults = results.slice(0, maxResults);
+
+      res.json({
+        query,
+        total_results: limitedResults.length,
+        results: limitedResults
+      });
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifacts/search:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
+  // Endpoint: Aggregate artifacts by agent type
+  app.get('/api/artifacts/by-agent', async (req: ExpressRequest, res: ExpressResponse) => {
+    try {
+      const { projectPath, date_from, date_to } = req.query;
+
+      if (!projectPath || typeof projectPath !== 'string') {
+        res.status(400).json({ error: 'projectPath is required' });
+        return;
+      }
+
+      // Get all artifacts (with optional date filtering via listArtifacts)
+      const artifacts = listArtifacts(projectPath, {
+        date_from: date_from as string | undefined,
+        date_to: date_to as string | undefined,
+      });
+
+      // Aggregate by agent_type
+      const byAgent: Record<string, { count: number; total_value_usd: number; types: Set<string> }> = {};
+
+      for (const artifact of artifacts) {
+        const agentType = artifact.agent_type || 'unknown';
+        const artifactType = artifact.type || 'unknown';
+        const valueUsd = artifact.value_usd || 0;
+
+        if (!byAgent[agentType]) {
+          byAgent[agentType] = {
+            count: 0,
+            total_value_usd: 0,
+            types: new Set()
+          };
+        }
+
+        byAgent[agentType].count += 1;
+        byAgent[agentType].total_value_usd += valueUsd;
+        byAgent[agentType].types.add(artifactType);
+      }
+
+      // Convert Sets to arrays for JSON serialization
+      const result: Record<string, { count: number; total_value_usd: number; types: string[] }> = {};
+      for (const [agent, data] of Object.entries(byAgent)) {
+        result[agent] = {
+          count: data.count,
+          total_value_usd: data.total_value_usd,
+          types: Array.from(data.types).sort()
+        };
+      }
+
+      // Calculate summary
+      const totalCount = Object.values(result).reduce((sum, d) => sum + d.count, 0);
+      const totalValue = Object.values(result).reduce((sum, d) => sum + d.total_value_usd, 0);
+
+      res.json({
+        by_agent: result,
+        summary: {
+          total_count: totalCount,
+          total_value_usd: totalValue,
+          agent_count: Object.keys(result).length
+        }
+      });
+    } catch (error) {
+      console.error('[API Bridge] Error in /api/artifacts/by-agent:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Internal server error'
+      });
+    }
+  });
+
   // Health check
   app.get('/api/health', (_req: ExpressRequest, res: ExpressResponse) => {
     res.json({

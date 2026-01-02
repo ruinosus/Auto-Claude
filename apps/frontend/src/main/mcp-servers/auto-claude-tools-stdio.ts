@@ -610,6 +610,806 @@ async function main() {
     }
   );
 
+  // Tool 16: Aggregate Artifacts by Agent
+  server.registerTool(
+    'aggregate_artifacts_by_agent',
+    {
+      title: 'Aggregate Artifacts by Agent',
+      description: 'Get artifacts aggregated by agent type (planner, coder, qa_reviewer, etc.). Returns count, total value, and artifact types per agent.',
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        date_from: z.string().describe('Optional start date filter (YYYY-MM-DD)').optional(),
+        date_to: z.string().describe('Optional end date filter (YYYY-MM-DD)').optional()
+      }
+    },
+    async ({ project_path, date_from, date_to }) => {
+      try {
+        const params: Record<string, string> = { projectPath: project_path };
+        if (date_from) params.date_from = date_from;
+        if (date_to) params.date_to = date_to;
+
+        const url = new URL(`${ELECTRON_API_URL}/artifacts/by-agent`);
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+
+        const response = await fetch(url.toString());
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify(data, null, 2)
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error aggregating artifacts by agent: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 17: Get Artifact Statistics
+  server.registerTool(
+    'get_artifact_statistics',
+    {
+      title: 'Get Artifact Statistics',
+      description: `Get comprehensive artifact statistics for the project including:
+- Total count and total value in USD
+- Breakdown by artifact type (diagram, code_example, security_finding, etc.)
+- Breakdown by dashboard tab (dev, techlead, ops, business)
+- Breakdown by time period (last 7 days, last 30 days, all time)
+- Top 5 most valuable artifacts
+- Value distribution by type and tab`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ project_path }) => {
+      try {
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/statistics?projectPath=${encodeURIComponent(project_path)}`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        // Format text output
+        const lines = ['=== Artifact Statistics ===', ''];
+
+        lines.push('## Overview');
+        lines.push(`  Total Artifacts: ${data.total_count}`);
+        lines.push(`  Total Value: $${data.total_value_usd.toFixed(2)}`);
+        lines.push('');
+
+        lines.push('## By Time Period');
+        lines.push(`  Last 7 Days: ${data.by_period?.last_7_days || 0} artifacts`);
+        lines.push(`  Last 30 Days: ${data.by_period?.last_30_days || 0} artifacts`);
+        lines.push(`  All Time: ${data.by_period?.all_time || 0} artifacts`);
+        lines.push('');
+
+        lines.push('## By Dashboard Tab');
+        const tabNames: Record<string, string> = {
+          dev: 'Developer',
+          techlead: 'Tech Lead',
+          ops: 'Operations',
+          business: 'Business'
+        };
+        for (const tab of ['dev', 'techlead', 'ops', 'business']) {
+          const count = data.by_tab?.[tab] || 0;
+          const value = data.value_by_tab?.[tab] || 0;
+          lines.push(`  ${tabNames[tab]}: ${count} artifacts ($${value.toFixed(2)})`);
+        }
+        lines.push('');
+
+        lines.push('## By Artifact Type (Top 10)');
+        const sortedTypes = Object.entries(data.by_type || {})
+          .sort((a, b) => (data.value_by_type?.[b[0]] || 0) - (data.value_by_type?.[a[0]] || 0))
+          .slice(0, 10);
+        for (const [artType, count] of sortedTypes) {
+          const value = data.value_by_type?.[artType] || 0;
+          lines.push(`  ${artType}: ${count} ($${value.toFixed(2)})`);
+        }
+        lines.push('');
+
+        lines.push('## Top 5 Most Valuable');
+        for (const [i, art] of (data.top_valuable || []).entries()) {
+          lines.push(`  ${i + 1}. ${art.type} - $${art.value_usd.toFixed(2)}`);
+          lines.push(`     ID: ${art.id}, Date: ${art.date}`);
+        }
+        if (!data.top_valuable?.length) {
+          lines.push('  No artifacts with value found.');
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: lines.join('\n')
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error getting artifact statistics: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 18: Search Artifacts
+  server.registerTool(
+    'search_artifacts',
+    {
+      title: 'Search Artifacts',
+      description: `Search artifacts by content, description, and type.
+
+Performs case-insensitive full-text search across all stored artifacts.
+Returns matching artifacts sorted by relevance with previews and match highlights.
+
+Search is performed on:
+- artifact content (code, diagrams, findings, recommendations, etc.)
+- artifact description
+- artifact type name
+
+Results include:
+- Preview of the first 200 characters of content
+- Highlighted snippet showing where the query matched
+- Location of matches (content, description, or type)
+- Relevance score (higher = more relevant)
+
+Examples:
+  query: "SQL injection"       -> Find security findings about SQL injection
+  query: "authentication"      -> Find all artifacts mentioning authentication
+  query: "diagram"             -> Find all diagram artifacts (matches type)`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        query: z.string().describe('Search query string (case-insensitive)'),
+        artifact_types: z.array(z.string()).describe('Filter by artifact types (e.g., ["security_finding", "diagram"])').optional(),
+        spec_id: z.string().describe('Filter by spec ID').optional(),
+        limit: z.number().min(1).max(100).describe('Maximum number of results (default: 50)').default(50).optional()
+      }
+    },
+    async ({ project_path, query, artifact_types, spec_id, limit }) => {
+      try {
+        const params: Record<string, string> = { projectPath: project_path, query };
+        if (artifact_types && artifact_types.length > 0) params.artifact_types = JSON.stringify(artifact_types);
+        if (spec_id) params.spec_id = spec_id;
+        if (limit) params.limit = String(limit);
+
+        const url = new URL(`${ELECTRON_API_URL}/artifacts/search`);
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+
+        const response = await fetch(url.toString());
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        // Format text output
+        const lines = [`=== Search Results for '${query}' ===`, ''];
+        lines.push(`Found ${data.total_results || data.results?.length || 0} matching artifact(s)`);
+        lines.push('');
+
+        for (const [i, result] of (data.results || []).entries()) {
+          lines.push(`## ${i + 1}. ${result.type} ($${result.value_usd || 0})`);
+          lines.push(`   ID: ${result.id}`);
+          if (result.description) {
+            const desc = result.description.length > 100
+              ? result.description.substring(0, 100) + '...'
+              : result.description;
+            lines.push(`   Description: ${desc}`);
+          }
+          const tabNames: Record<string, string> = {
+            dev: 'Developer',
+            techlead: 'Tech Lead',
+            ops: 'Operations',
+            business: 'Business'
+          };
+          lines.push(`   Tab: ${tabNames[result.tab] || result.tab || 'N/A'}`);
+          lines.push(`   Created: ${(result.created_at || 'N/A').substring(0, 10)}`);
+          lines.push(`   Matched in: ${(result.match_locations || []).join(', ')}`);
+          if (result.match_highlight) {
+            lines.push(`   Match: ${result.match_highlight}`);
+          }
+          lines.push(`   Relevance: ${result.relevance_score || 0}`);
+          lines.push('');
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: lines.join('\n')
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error searching artifacts: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 19: Export Artifacts
+  server.registerTool(
+    'export_artifacts',
+    {
+      title: 'Export Artifacts',
+      description: `Export artifacts to JSON or Markdown format.
+
+Exports artifacts with optional filters to a file or returns the content directly.
+Useful for generating reports, sharing artifacts, or archiving.
+
+Formats:
+- json: Structured JSON with full artifact data, summaries, and breakdowns
+- markdown: Human-readable Markdown with emojis, tables, and organized sections
+
+Filters:
+- artifact_types: List of types to include (e.g., ["security_finding", "diagram"])
+- date_from: Start date filter (YYYY-MM-DD)
+- date_to: End date filter (YYYY-MM-DD)
+- agent_type: Filter by creating agent (planner, coder, qa_reviewer, etc.)
+- spec_id: Filter to a specific spec
+
+Markdown options:
+- include_content: Whether to include full artifact content (default: true)
+- max_content_length: Max chars per artifact content, 0=unlimited (default: 2000)
+
+If output_path is provided, saves to file and returns path.
+If output_path is omitted, returns the content directly.`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        format: z.enum(['json', 'markdown', 'md']).describe('Export format: json or markdown'),
+        output_path: z.string().describe('Optional path to save the export file').optional(),
+        artifact_types: z.array(z.string()).describe('Filter by artifact types').optional(),
+        date_from: z.string().describe('Start date filter (YYYY-MM-DD)').optional(),
+        date_to: z.string().describe('End date filter (YYYY-MM-DD)').optional(),
+        agent_type: z.string().describe('Filter by agent type (planner, coder, qa_reviewer, etc.)').optional(),
+        spec_id: z.string().describe('Filter by spec ID').optional(),
+        include_content: z.boolean().describe('Include full artifact content in markdown (default: true)').default(true).optional(),
+        max_content_length: z.number().describe('Max content length per artifact in markdown (default: 2000, 0=unlimited)').default(2000).optional()
+      }
+    },
+    async ({ project_path, format, output_path, artifact_types, date_from, date_to, agent_type, spec_id, include_content, max_content_length }) => {
+      try {
+        const params: Record<string, string> = {
+          projectPath: project_path,
+          format: format || 'json'
+        };
+        if (output_path) params.output_path = output_path;
+        if (artifact_types && artifact_types.length > 0) params.artifact_types = JSON.stringify(artifact_types);
+        if (date_from) params.date_from = date_from;
+        if (date_to) params.date_to = date_to;
+        if (agent_type) params.agent_type = agent_type;
+        if (spec_id) params.spec_id = spec_id;
+        if (include_content !== undefined) params.include_content = String(include_content);
+        if (max_content_length !== undefined) params.max_content_length = String(max_content_length);
+
+        const url = new URL(`${ELECTRON_API_URL}/artifacts/export`);
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+
+        const response = await fetch(url.toString());
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        // Check if saved to file or content returned
+        if (data.saved_to) {
+          return {
+            content: [{
+              type: 'text',
+              text: `Export completed successfully!
+
+Format: ${format?.toUpperCase() || 'JSON'}
+Saved to: ${data.saved_to}
+Artifacts: ${data.artifact_count}
+Total Value: $${(data.total_value || 0).toFixed(2)}`
+            }],
+            structuredContent: data
+          };
+        } else {
+          // Return content directly
+          const header = `=== Export (${data.artifact_count} artifacts, $${(data.total_value || 0).toFixed(2)}) ===\n\n`;
+          return {
+            content: [{
+              type: 'text',
+              text: header + (data.content || '')
+            }],
+            structuredContent: data
+          };
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error exporting artifacts: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // ============================================================================
+  // TAG MANAGEMENT TOOLS
+  // ============================================================================
+
+  // Tool 20: Tag Artifact
+  server.registerTool(
+    'tag_artifact',
+    {
+      title: 'Tag Artifact',
+      description: `Add or remove tags from an artifact.
+
+Tags help organize and categorize artifacts for easy filtering and retrieval.
+Tags are stored in lowercase and must be non-empty strings.
+
+Actions:
+- add: Add a tag to the artifact
+- remove: Remove a tag from the artifact
+
+Example usage:
+  action: "add"
+  artifact_id: "art_abc123def456"
+  tag: "security"
+
+Common tags: security, performance, architecture, bug, feature, documentation,
+             refactoring, testing, critical, review-needed, approved`,
+      inputSchema: {
+        action: z.enum(['add', 'remove']).describe('Action to perform: add or remove'),
+        artifact_id: z.string().describe('The artifact ID to tag'),
+        tag: z.string().describe('The tag to add or remove'),
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ action, artifact_id, tag, project_path }) => {
+      try {
+        const params: Record<string, string> = {
+          action,
+          artifact_id,
+          tag,
+          projectPath: project_path
+        };
+
+        const url = new URL(`${ELECTRON_API_URL}/artifact/tag`);
+        Object.entries(params).forEach(([key, value]) => {
+          url.searchParams.append(key, value);
+        });
+
+        const response = await fetch(url.toString(), { method: 'POST' });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        return {
+          content: [{
+            type: 'text',
+            text: data.message || `Tag '${tag}' ${action === 'add' ? 'added to' : 'removed from'} artifact ${artifact_id}`
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error managing tag: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 21: Get Artifacts by Tag
+  server.registerTool(
+    'get_artifacts_by_tag',
+    {
+      title: 'Get Artifacts by Tag',
+      description: `Get all artifacts that have a specific tag.
+
+Returns a list of artifacts matching the specified tag.
+Tags are case-insensitive.
+
+Example:
+  tag: "security"
+
+Returns artifacts with that tag, including their full content.`,
+      inputSchema: {
+        tag: z.string().describe('The tag to filter by'),
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ tag, project_path }) => {
+      try {
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/by-tag/${encodeURIComponent(tag)}?projectPath=${encodeURIComponent(project_path)}`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+
+        // Format text output
+        const artifacts = data.artifacts || [];
+        const lines = [`=== Artifacts with tag '${tag}' (${artifacts.length}) ===`, ''];
+
+        for (const art of artifacts) {
+          lines.push(`ID: ${art.id}`);
+          lines.push(`  Type: ${art.type || 'unknown'}`);
+          lines.push(`  Value: $${art.value_usd || 0}`);
+          lines.push(`  Tags: ${(art.metadata?.tags || []).join(', ')}`);
+          const preview = (art.content || '').substring(0, 50);
+          lines.push(`  Preview: ${preview}${art.content?.length > 50 ? '...' : ''}`);
+          lines.push('');
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: lines.join('\n')
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error getting artifacts by tag: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 22: List All Tags
+  server.registerTool(
+    'list_all_tags',
+    {
+      title: 'List All Tags',
+      description: `List all unique tags used across all artifacts in the project.
+
+Returns a sorted list of all tags that have been applied to any artifact.
+Useful for discovering available tags for filtering.`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory')
+      }
+    },
+    async ({ project_path }) => {
+      try {
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/tags?projectPath=${encodeURIComponent(project_path)}`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const data = await response.json();
+        const tags = data.tags || [];
+
+        // Format text output
+        const lines = [`=== All Tags (${tags.length}) ===`, ''];
+        for (const tag of tags) {
+          lines.push(`  - ${tag}`);
+        }
+
+        if (tags.length === 0) {
+          lines.push('  No tags found. Use tag_artifact to add tags to artifacts.');
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: lines.join('\n')
+          }],
+          structuredContent: data
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error listing tags: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // ============================================================================
+  // CLEANUP AND RETENTION TOOLS
+  // ============================================================================
+
+  // Tool 23: Cleanup Artifacts
+  server.registerTool(
+    'cleanup_artifacts',
+    {
+      title: 'Cleanup Artifacts',
+      description: `Clean up old artifacts by age or type.
+
+IMPORTANT: By default this runs in dry_run mode (preview only).
+Set dry_run=false to actually delete artifacts.
+
+Cleanup modes:
+1. By age: Delete artifacts older than N days
+   - days: Number of days (default: 30)
+   - dry_run: Preview only (default: true)
+
+2. By type: Keep only the N most recent artifacts of a specific type
+   - artifact_type: The type to clean up (e.g., "diagram", "code_example")
+   - keep_latest: Number to keep (default: 10)
+   - dry_run: Preview only (default: true)
+
+Safety:
+- ALWAYS runs in dry_run mode by default
+- Review the preview before running with dry_run=false
+- Consider using archive_artifacts instead of deleting`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        days: z.number().min(1).describe('Delete artifacts older than this many days (default: 30)').default(30).optional(),
+        artifact_type: z.string().describe('Clean up specific artifact type (e.g., "diagram", "code_example")').optional(),
+        keep_latest: z.number().min(0).describe('When cleaning by type, keep this many most recent (default: 10)').default(10).optional(),
+        dry_run: z.boolean().describe('Preview only without deleting (default: true)').default(true).optional()
+      }
+    },
+    async ({ project_path, days, artifact_type, keep_latest, dry_run }) => {
+      try {
+        const actualDryRun = dry_run !== false;  // Default to true for safety
+        const actualDays = days || 30;
+        const actualKeepLatest = keep_latest || 10;
+
+        const params = new URLSearchParams({
+          projectPath: project_path,
+          dryRun: String(actualDryRun)
+        });
+
+        if (artifact_type) {
+          params.append('artifactType', artifact_type);
+          params.append('keepLatest', String(actualKeepLatest));
+        } else {
+          params.append('days', String(actualDays));
+        }
+
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/cleanup?${params.toString()}`,
+          { method: 'POST' }
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const result = await response.json();
+
+        // Format response based on cleanup type
+        let responseText: string;
+
+        if (artifact_type) {
+          const actionWord = actualDryRun ? "Would delete" : "Deleted";
+          responseText = `=== Cleanup by Type: ${artifact_type} ===
+
+Mode: ${actualDryRun ? "DRY RUN (preview only)" : "ACTUAL DELETION"}
+Type: ${artifact_type}
+Keep Latest: ${actualKeepLatest}
+
+${actionWord}: ${result.deleted_count || 0} artifacts
+Kept: ${result.kept_count || 0} artifacts
+
+${actualDryRun ? "IDs that would be deleted:" : "Deleted IDs:"}
+${(result.deleted_ids || []).slice(0, 20).map((id: string) => `  - ${id}`).join('\n') || '  (none)'}
+${(result.deleted_ids || []).length > 20 ? `  ... and ${result.deleted_ids.length - 20} more` : ''}`;
+        } else {
+          const actionWord = actualDryRun ? "Would delete" : "Deleted";
+          const freedKb = (result.freed_bytes || 0) / 1024;
+          responseText = `=== Cleanup by Age ===
+
+Mode: ${actualDryRun ? "DRY RUN (preview only)" : "ACTUAL DELETION"}
+Cutoff: ${actualDays} days old
+
+${actionWord}: ${result.deleted_count || 0} artifacts
+${actionWord.replace('delete', 'free')}: ${freedKb.toFixed(2)} KB
+
+${actualDryRun ? "IDs that would be deleted:" : "Deleted IDs:"}
+${(result.deleted_ids || []).slice(0, 20).map((id: string) => `  - ${id}`).join('\n') || '  (none)'}
+${(result.deleted_ids || []).length > 20 ? `  ... and ${result.deleted_ids.length - 20} more` : ''}`;
+        }
+
+        if (actualDryRun && (result.deleted_count || 0) > 0) {
+          responseText += '\n\nTo actually delete, run again with dry_run=false';
+        }
+
+        return {
+          content: [{ type: 'text', text: responseText }],
+          structuredContent: result
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error cleaning up artifacts: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 24: Archive Artifacts
+  server.registerTool(
+    'archive_artifacts',
+    {
+      title: 'Archive Artifacts',
+      description: `Archive specific artifacts.
+
+Archived artifacts are MOVED (not deleted) to .auto-claude/artifacts/archive/
+This preserves them while keeping the main storage clean.
+
+Use this instead of deleting when you want to:
+- Keep a backup of old artifacts
+- Clean up without permanent deletion
+- Be able to restore artifacts later
+
+Returns count of successfully archived artifacts and any failures.`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        artifact_ids: z.array(z.string()).describe('List of artifact IDs to archive')
+      }
+    },
+    async ({ project_path, artifact_ids }) => {
+      try {
+        if (!artifact_ids || artifact_ids.length === 0) {
+          return {
+            content: [{ type: 'text', text: 'Error: artifact_ids list is required and cannot be empty.' }],
+            isError: true
+          };
+        }
+
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/archive`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectPath: project_path,
+              artifactIds: artifact_ids
+            })
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const result = await response.json();
+
+        const responseText = `=== Archive Results ===
+
+Archived: ${result.archived_count || 0} artifacts
+Failed: ${result.failed_count || 0} artifacts
+
+Archived IDs:
+${(result.archived_ids || []).map((id: string) => `  - ${id}`).join('\n') || '  (none)'}
+${(result.failed_ids || []).length > 0 ? `\nFailed IDs:\n${result.failed_ids.map((id: string) => `  - ${id}`).join('\n')}` : ''}`;
+
+        return {
+          content: [{ type: 'text', text: responseText }],
+          structuredContent: result
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error archiving artifacts: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Tool 25: Get Cleanup Preview
+  server.registerTool(
+    'get_cleanup_preview',
+    {
+      title: 'Get Cleanup Preview',
+      description: `Preview what would be deleted by cleanup.
+
+Shows a detailed preview of artifacts that would be deleted if you run
+cleanup_artifacts with dry_run=false.
+
+Returns:
+- Number of artifacts that would be deleted
+- Total bytes that would be freed
+- List of artifact summaries (ID, type, date, value, size)
+
+Use this to review before running actual cleanup.`,
+      inputSchema: {
+        project_path: z.string().describe('Path to the project directory'),
+        days: z.number().min(1).describe('Preview artifacts older than this many days (default: 30)').default(30).optional()
+      }
+    },
+    async ({ project_path, days }) => {
+      try {
+        const actualDays = days || 30;
+        const response = await fetch(
+          `${ELECTRON_API_URL}/artifacts/cleanup/preview?projectPath=${encodeURIComponent(project_path)}&days=${actualDays}`
+        );
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || response.statusText);
+        }
+
+        const result = await response.json();
+        const freedKb = (result.total_bytes || 0) / 1024;
+
+        let responseText = `=== Cleanup Preview ===
+
+Cutoff: ${actualDays} days (before ${result.cutoff_date || 'N/A'})
+Would Delete: ${result.would_delete || 0} artifacts
+Would Free: ${freedKb.toFixed(2)} KB
+
+Artifacts to delete (oldest first):`;
+
+        for (const art of (result.artifacts || []).slice(0, 30)) {
+          const sizeKb = (art.size_bytes || 0) / 1024;
+          responseText += `\n  ${art.id}`;
+          responseText += `\n    Type: ${art.type} | Date: ${art.date} | Value: $${art.value_usd || 0} | Size: ${sizeKb.toFixed(1)}KB`;
+          if (art.spec_id) {
+            responseText += ` | Spec: ${art.spec_id}`;
+          }
+        }
+
+        if ((result.artifacts || []).length > 30) {
+          responseText += `\n\n  ... and ${result.artifacts.length - 30} more artifacts`;
+        }
+
+        if ((result.would_delete || 0) > 0) {
+          responseText += '\n\nTo delete these, run cleanup_artifacts with dry_run=false';
+        }
+
+        return {
+          content: [{ type: 'text', text: responseText }],
+          structuredContent: result
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          content: [{ type: 'text', text: `Error getting cleanup preview: ${errorMsg}` }],
+          isError: true
+        };
+      }
+    }
+  );
+
   // ============================================================================
   // PROMPTS - Pre-configured prompt templates for common auto-claude workflows
   // ============================================================================
@@ -1189,6 +1989,9 @@ Auto-Claude is a multi-agent autonomous coding framework that builds software th
 - \`list_artifacts\` - List artifacts with filters
 - \`get_artifacts_by_trace\` - Get artifacts by trace ID
 - \`get_artifact_content\` - Get artifact content only
+- \`aggregate_artifacts_by_agent\` - Get artifacts grouped by agent
+- \`get_artifact_statistics\` - Get comprehensive artifact statistics
+- \`search_artifacts\` - Search artifacts by content, description, and type
 
 ## Available Prompts
 
@@ -1217,7 +2020,7 @@ Auto-Claude is a multi-agent autonomous coding framework that builds software th
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error('[Auto-Claude Tools STDIO] Server started with 15 tools, 6 prompts, 6 resources');
+  console.error('[Auto-Claude Tools STDIO] Server started with 25 tools, 6 prompts, 6 resources');
 }
 
 // Run server

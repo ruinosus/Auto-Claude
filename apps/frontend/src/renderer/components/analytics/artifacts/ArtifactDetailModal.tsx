@@ -9,10 +9,48 @@ import {
   Hash,
   FileText,
   AlertCircle,
-  Loader2
+  Loader2,
+  Download
 } from 'lucide-react';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { LocalArtifact } from '../../../../shared/types/analytics-v2';
 import { formatCurrency } from '../utils/formatters';
+
+// Custom dark theme matching the UI background (#0f0f1a)
+const customDarkTheme: { [key: string]: React.CSSProperties } = {
+  ...oneDark,
+  'pre[class*="language-"]': {
+    ...(oneDark['pre[class*="language-"]'] as React.CSSProperties),
+    background: '#0f0f1a',
+    margin: 0,
+    padding: '1rem',
+    fontSize: '0.875rem',
+    lineHeight: '1.5',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  },
+  'code[class*="language-"]': {
+    ...(oneDark['code[class*="language-"]'] as React.CSSProperties),
+    background: '#0f0f1a',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+  },
+};
+
+// Map artifact formats to syntax highlighter language identifiers
+const getLanguageFromFormat = (format?: string): string => {
+  const languageMap: Record<string, string> = {
+    typescript: 'typescript',
+    javascript: 'javascript',
+    python: 'python',
+    json: 'json',
+    diff: 'diff',
+    mermaid: 'markdown',
+    code: 'typescript', // Default code to typescript
+  };
+  return format ? languageMap[format] || 'text' : 'text';
+};
 
 interface ArtifactDetailModalProps {
   isOpen: boolean;
@@ -110,6 +148,46 @@ export function ArtifactDetailModal({
     }
   };
 
+  const getFileExtension = (format?: string): string => {
+    switch (format) {
+      case 'typescript':
+        return 'ts';
+      case 'javascript':
+        return 'js';
+      case 'python':
+        return 'py';
+      case 'json':
+        return 'json';
+      case 'mermaid':
+        return 'mmd';
+      case 'diff':
+        return 'diff';
+      case 'markdown':
+        return 'md';
+      default:
+        return 'txt';
+    }
+  };
+
+  const handleDownload = () => {
+    if (!artifact?.content) return;
+
+    const ext = getFileExtension(artifact.format);
+    const filename = `${artifact.type}_${artifact.id.slice(0, 8)}.${ext}`;
+
+    const blob = new Blob([artifact.content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    URL.revokeObjectURL(url);
+  };
+
   const formatTimestamp = (ts: string) => {
     const date = new Date(ts);
     return date.toLocaleString('pt-BR', {
@@ -131,7 +209,7 @@ export function ArtifactDetailModal({
   };
 
   const isCodeContent = (artifact: LocalArtifact) => {
-    const codeFormats = ['code', 'json', 'typescript', 'javascript', 'python', 'diff'];
+    const codeFormats = ['code', 'json', 'typescript', 'javascript', 'python', 'diff', 'mermaid'];
     const codeTypes = ['code_example', 'code_implementation', 'code_suggestion', 'code_choice', 'fix_applied'];
     return codeFormats.includes(artifact.format || '') || codeTypes.includes(artifact.type);
   };
@@ -179,6 +257,15 @@ export function ArtifactDetailModal({
                   <span>Copy</span>
                 </>
               )}
+            </button>
+
+            <button
+              onClick={handleDownload}
+              disabled={!artifact?.content}
+              className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm text-gray-200 transition-colors disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              <span>Download</span>
             </button>
 
             <button
@@ -248,9 +335,19 @@ export function ArtifactDetailModal({
               {/* Full content */}
               <div className="bg-[#0f0f1a] rounded-lg overflow-hidden">
                 {isCodeContent(artifact) ? (
-                  <pre className="p-4 text-sm text-gray-200 font-mono overflow-x-auto whitespace-pre-wrap break-words">
+                  <SyntaxHighlighter
+                    language={getLanguageFromFormat(artifact.format)}
+                    style={customDarkTheme}
+                    customStyle={{
+                      background: '#0f0f1a',
+                      margin: 0,
+                      borderRadius: '0.5rem',
+                    }}
+                    wrapLines={true}
+                    wrapLongLines={true}
+                  >
                     {artifact.content}
-                  </pre>
+                  </SyntaxHighlighter>
                 ) : (
                   <div className="p-4 text-gray-200 whitespace-pre-wrap break-words leading-relaxed">
                     {artifact.content}
