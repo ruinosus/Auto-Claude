@@ -251,7 +251,7 @@ async def _publish_artifact_roi(
 
         if trace_id:
             # Add score to existing trace
-            client.score(
+            client.create_score(
                 trace_id=trace_id,
                 name=f"artifact_{artifact_type}_value",
                 value=float(value_usd),
@@ -259,7 +259,7 @@ async def _publish_artifact_roi(
             )
 
             # Also add to total value
-            client.score(
+            client.create_score(
                 trace_id=trace_id,
                 name="total_value_usd",
                 value=float(value_usd),
@@ -302,7 +302,7 @@ async def _publish_artifact_roi(
 
             if trace and trace.id:
                 # Value score by category
-                client.score(
+                client.create_score(
                     trace_id=trace.id,
                     name=f"value_{category}_usd",
                     value=float(value_usd),
@@ -310,7 +310,7 @@ async def _publish_artifact_roi(
                 )
 
                 # Total value score
-                client.score(
+                client.create_score(
                     trace_id=trace.id,
                     name="total_value_usd",
                     value=float(value_usd),
@@ -318,7 +318,7 @@ async def _publish_artifact_roi(
                 )
 
                 # Artifact count
-                client.score(
+                client.create_score(
                     trace_id=trace.id,
                     name=f"artifact_{artifact_type}_count",
                     value=1.0,
@@ -534,7 +534,17 @@ Format: {format_type}
         if result_info.get("save_error"):
             response_text += f"\n⚠️ Storage warning: {result_info['save_error']}\n"
 
-        return {"content": [{"type": "text", "text": response_text.strip()}]}
+        # Return with structured metadata for extensions hook to detect already-saved artifacts
+        # The hook checks artifact_id to avoid duplicate saves
+        return {
+            "content": [{"type": "text", "text": response_text.strip()}],
+            # Metadata for extensions layer (prevents duplicate artifact saves)
+            "artifact_id": result_info.get("artifact_id"),
+            "artifact_type": artifact_type,
+            "value_usd": value_usd,
+            "format": format_type,
+            "description": description,
+        }
 
     tools.append(create_artifact)
 

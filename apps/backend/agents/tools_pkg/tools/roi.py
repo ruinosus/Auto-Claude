@@ -555,7 +555,7 @@ async def _publish_to_langfuse(
         # Create scores for ROI tracking
         if trace and trace.id:
             # Value score
-            client.score(
+            client.create_score(
                 trace_id=trace.id,
                 name=f"value_{activity_record['category']}_usd",
                 value=activity_record["value_usd"],
@@ -563,7 +563,7 @@ async def _publish_to_langfuse(
             )
 
             # Total value score
-            client.score(
+            client.create_score(
                 trace_id=trace.id,
                 name="total_value_usd",
                 value=activity_record["value_usd"],
@@ -571,7 +571,7 @@ async def _publish_to_langfuse(
             )
 
             # Activity count score
-            client.score(
+            client.create_score(
                 trace_id=trace.id,
                 name=f"activity_{activity_record['activity_type']}_count",
                 value=float(activity_record["count"]),

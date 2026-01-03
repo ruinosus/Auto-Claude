@@ -218,7 +218,7 @@ Research each external dependency to validate:
 
 Output your findings to research.json.
 """
-            success, output = await self.run_agent_fn(
+            success, output, _ = await self.run_agent_fn(
                 "spec_researcher.md",
                 additional_context=context_str,
                 phase_name="research",

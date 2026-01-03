@@ -1,0 +1,8 @@
+# Extensions Layer Dependencies
+# Install: pip install -r extensions/requirements.txt
+
+# Safe monkey patching (like OpenTelemetry uses)
+wrapt>=1.16.0
+
+# Note: Other dependencies (analytics, claude_agent_sdk) come from
+# the main requirements.txt - this file only lists ADDITIONAL deps.

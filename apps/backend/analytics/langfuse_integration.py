@@ -866,7 +866,7 @@ def save_categorical_score(
         return False
 
     try:
-        _langfuse_client.score(
+        _langfuse_client.create_score(
             trace_id=trace_id,
             name=name,
             value=value,
@@ -902,7 +902,7 @@ def save_boolean_score(
         return False
 
     try:
-        _langfuse_client.score(
+        _langfuse_client.create_score(
             trace_id=trace_id,
             name=name,
             value=value,

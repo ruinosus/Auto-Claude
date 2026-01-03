@@ -416,8 +416,9 @@ Current question: {message}"""
                 system_prompt=system_prompt,
                 allowed_tools=allowed_tools,
                 mcp_servers=mcp_servers if mcp_servers else None,  # Only pass if we have servers
-                # Removed setting_sources to avoid loading skills/MCP servers
-                # that can cause initialization timeouts
+                # setting_sources enables proper MCP server initialization
+                # Required for MCP tools like create_artifact, create_diagram etc. to work
+                setting_sources=["user", "project"],
                 max_turns=30,  # Allow sufficient turns for codebase exploration
                 cwd=str(project_path),
                 env=sdk_env,  # Pass ANTHROPIC_BASE_URL, Azure Foundry vars, LANGFUSE_TRACE_ID

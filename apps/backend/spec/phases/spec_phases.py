@@ -47,7 +47,7 @@ Create:
 1. A concise spec.md with just the essential sections
 2. A simple implementation_plan.json with 1-2 subtasks
 """
-            success, output = await self.run_agent_fn(
+            success, output, _ = await self.run_agent_fn(
                 "spec_quick.md",
                 additional_context=context_str,
                 phase_name="quick_spec",
@@ -86,7 +86,7 @@ Create:
                 f"Running spec writer (attempt {attempt + 1})...", "progress"
             )
 
-            success, output = await self.run_agent_fn(
+            success, output, _ = await self.run_agent_fn(
                 "spec_writer.md",
                 phase_name="spec_writing",
             )
@@ -163,7 +163,7 @@ Output critique_report.json with:
   "critique_summary": "..."
 }}
 """
-            success, output = await self.run_agent_fn(
+            success, output, _ = await self.run_agent_fn(
                 "spec_critic.md",
                 additional_context=context_str,
                 phase_name="self_critique",

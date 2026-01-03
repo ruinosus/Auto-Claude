@@ -391,7 +391,7 @@ async def run_ai_complexity_assessment(
         context += f"\n**Requirements File**: {requirements_file} (read this for full details)\n"
 
     try:
-        success, output = await run_agent_fn(
+        success, output, _ = await run_agent_fn(
             "complexity_assessor.md",
             additional_context=context,
         )
