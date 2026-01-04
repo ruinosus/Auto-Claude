@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getLocalArtifacts, Artifact } from '../../../services/analytics-api';
+import { getLocalArtifacts, Artifact, searchArtifacts } from '../../../services/analytics-api';
 import { formatCurrency } from '../utils/formatters';
+import { ArtifactSearch } from './ArtifactSearch';
+import type { ArtifactSearchParams, RichLocalArtifact } from '../../../../shared/types/analytics-v2';
 
 // Group artifacts by agent_type for display (similar to trace grouping)
 interface ArtifactGroup {
@@ -205,6 +207,14 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
   const [selectedArtifact, setSelectedArtifact] = useState<SelectedArtifact | null>(null);
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [searchParams, setSearchParams] = useState<ArtifactSearchParams>({});
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Handle search callback
+  const handleSearch = useCallback(async (params: ArtifactSearchParams) => {
+    setSearchParams(params);
+    // Search will be applied via the useEffect below
+  }, []);
 
   useEffect(() => {
     async function fetchArtifacts() {
@@ -217,17 +227,44 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
 
       try {
         setLoading(true);
-        // Fetch directly from local storage - bypasses Langfuse trace_id requirement
-        const response = await getLocalArtifacts({
-          project_path: projectPath,
-          from_date: startDate || undefined,
-          to_date: endDate || undefined,
-          limit: 200  // Higher limit since local storage
-        });
+        setIsSearching(Object.keys(searchParams).length > 0);
+
+        let artifacts: Artifact[] = [];
+
+        // Use search if we have search params, otherwise use regular fetch
+        const hasSearchParams = searchParams.query ||
+          (searchParams.types && searchParams.types.length > 0) ||
+          (searchParams.priorities && searchParams.priorities.length > 0) ||
+          (searchParams.agent_types && searchParams.agent_types.length > 0) ||
+          searchParams.has_rationale !== undefined ||
+          searchParams.has_acceptance_criteria !== undefined ||
+          searchParams.has_user_stories !== undefined ||
+          searchParams.min_value !== undefined ||
+          searchParams.max_value !== undefined;
+
+        if (hasSearchParams) {
+          const searchResponse = await searchArtifacts(projectPath, {
+            ...searchParams,
+            from_date: startDate || undefined,
+            to_date: endDate || undefined,
+            limit: 200,
+          });
+          // Cast RichLocalArtifact to Artifact (compatible base structure)
+          artifacts = searchResponse.artifacts as unknown as Artifact[];
+        } else {
+          // Fetch directly from local storage - bypasses Langfuse trace_id requirement
+          const response = await getLocalArtifacts({
+            project_path: projectPath,
+            from_date: startDate || undefined,
+            to_date: endDate || undefined,
+            limit: 200  // Higher limit since local storage
+          });
+          artifacts = response.artifacts as unknown as Artifact[];
+        }
 
         // Group artifacts by agent_type
         const groupedByAgent = new Map<string, Artifact[]>();
-        for (const artifact of response.artifacts) {
+        for (const artifact of artifacts) {
           const agentType = artifact.agent_type || 'unknown';
           if (!groupedByAgent.has(agentType)) {
             groupedByAgent.set(agentType, []);
@@ -270,7 +307,7 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
     }
 
     fetchArtifacts();
-  }, [projectPath, startDate, endDate]);
+  }, [projectPath, startDate, endDate, searchParams]);
 
   // Clear date filters
   const clearDateFilters = () => {
@@ -390,6 +427,13 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
           </span>
         </div>
       </div>
+
+      {/* Artifact Search */}
+      <ArtifactSearch
+        onSearch={handleSearch}
+        isLoading={loading || isSearching}
+        className="mb-4"
+      />
 
       {/* Date Range Filter */}
       <div className="flex items-center gap-3 mb-4 p-3 bg-gray-800/50 rounded-lg">

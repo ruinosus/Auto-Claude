@@ -95,3 +95,122 @@ export interface ArtifactFilters {
   date?: string;
   limit?: number;
 }
+
+// =============================================================================
+// Rich Artifact Types (for enhanced analytics dashboard)
+// =============================================================================
+
+/**
+ * Rich artifact metadata with quality indicators
+ */
+export interface ArtifactMetadata {
+  title?: string;
+  priority?: 'must' | 'should' | 'could' | 'wont' | string;
+  complexity?: 'low' | 'medium' | 'high' | 'very_high' | string;
+  impact?: 'low' | 'medium' | 'high' | string;
+  status?: string;
+  phase?: string;
+  phase_id?: string;
+  feature_id?: string;
+  feature_name?: string;
+  feature_index?: number;
+  has_acceptance_criteria?: boolean;
+  has_user_stories?: boolean;
+  has_rationale?: boolean;
+  dependency_count?: number;
+  ideation_type?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Enhanced local artifact with rich fields extracted from content
+ */
+export interface RichLocalArtifact extends Omit<LocalArtifact, 'metadata'> {
+  metadata: ArtifactMetadata;
+  rationale?: string;
+  acceptance_criteria?: string[];
+  user_stories?: string[];
+  dependencies?: string[];
+}
+
+/**
+ * Quality metrics for artifact collections
+ */
+export interface ArtifactQualityMetrics {
+  with_rationale: number;
+  with_acceptance_criteria: number;
+  with_user_stories: number;
+  with_dependencies: number;
+  total_with_quality: number;
+  quality_percentage: number;
+}
+
+/**
+ * Aggregate statistics for artifacts
+ */
+export interface ArtifactStatistics {
+  total_count: number;
+  total_value_usd: number;
+  by_type: Record<string, number>;
+  by_agent: Record<string, number>;
+  by_priority: Record<string, number>;
+  by_tab: Record<string, number>;
+  quality_metrics: ArtifactQualityMetrics;
+  avg_value_per_artifact: number;
+  value_by_type: Record<string, number>;
+  value_by_priority: Record<string, number>;
+}
+
+/**
+ * Single entry for artifact timeline visualization
+ */
+export interface ArtifactTimelineEntry {
+  date: string;
+  count: number;
+  value_usd: number;
+  by_type: Record<string, number>;
+  by_agent: Record<string, number>;
+}
+
+/**
+ * Response for artifact timeline endpoint
+ */
+export interface ArtifactTimelineResponse {
+  timeline: ArtifactTimelineEntry[];
+  granularity: 'hour' | 'day' | 'week';
+  total_count: number;
+  total_value: number;
+}
+
+/**
+ * Search parameters for artifact search endpoint
+ */
+export interface ArtifactSearchParams {
+  query?: string;
+  types?: string[];
+  priorities?: string[];
+  has_rationale?: boolean;
+  has_acceptance_criteria?: boolean;
+  has_user_stories?: boolean;
+  has_dependencies?: boolean;
+  min_value?: number;
+  max_value?: number;
+  agent_types?: string[];
+  tabs?: string[];
+  from_date?: string;
+  to_date?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/**
+ * Response for artifact search/list with pagination and stats
+ */
+export interface LocalArtifactsResponse {
+  artifacts: RichLocalArtifact[];
+  total: number;
+  limit: number;
+  offset: number;
+  stats?: ArtifactStatistics;
+  error?: string;
+}

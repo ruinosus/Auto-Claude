@@ -26,7 +26,8 @@ class TraceData:
     trace_id: str
     agent_type: str
     started_at: datetime
-    context: Any = None  # Langfuse context manager
+    context_manager: Any = None  # The generator context manager (for __exit__)
+    trace_context: Any = None  # The TraceContext object returned by trace_context()
     tool_uses: List[Dict[str, Any]] = field(default_factory=list)
     artifacts_created: List[str] = field(default_factory=list)
     session_metrics: Dict[str, Any] = field(default_factory=dict)
@@ -81,7 +82,7 @@ def start_trace(agent_type: str) -> Optional[str]:
         # Determine project ID from environment or cwd
         project_id = os.environ.get("PROJECT_ID", os.path.basename(os.getcwd()))
 
-        ctx = trace_context(
+        ctx_manager = trace_context(
             name=f"{agent_type}-session",
             agent_type=agent_type,
             project_id=project_id,
@@ -92,16 +93,23 @@ def start_trace(agent_type: str) -> Optional[str]:
             },
         )
 
-        # Enter context
-        trace_obj = ctx.__enter__()
-        trace_id = trace_obj.trace_id
+        # Enter context - ctx_manager is a generator, trace_ctx is the TraceContext
+        trace_ctx = ctx_manager.__enter__()
 
-        # Store trace data
+        # Handle case where trace_ctx is None (sampling skipped)
+        if trace_ctx is None:
+            logger.debug(f"Trace skipped for {agent_type} (sampling)")
+            return None
+
+        trace_id = trace_ctx.trace_id
+
+        # Store trace data with both the manager and the context
         _active_traces[trace_id] = TraceData(
             trace_id=trace_id,
             agent_type=agent_type,
             started_at=datetime.now(),
-            context=ctx,
+            context_manager=ctx_manager,
+            trace_context=trace_ctx,
         )
 
         _current_trace_id = trace_id
@@ -133,28 +141,29 @@ def end_trace(trace_id: str, success: bool = True):
         return
 
     try:
-        ctx = trace_data.context
+        trace_ctx = trace_data.trace_context
+        ctx_manager = trace_data.context_manager
 
-        if ctx:
-            # Set output with collected data
-            output = {
-                "success": success,
-                "agent_type": trace_data.agent_type,
-                "duration_seconds": (datetime.now() - trace_data.started_at).total_seconds(),
-                "tool_uses_count": len(trace_data.tool_uses),
-                "artifacts_count": len(trace_data.artifacts_created),
-                "session_metrics": trace_data.session_metrics,
-            }
+        # Set output with collected data
+        output = {
+            "success": success,
+            "agent_type": trace_data.agent_type,
+            "duration_seconds": (datetime.now() - trace_data.started_at).total_seconds(),
+            "tool_uses_count": len(trace_data.tool_uses),
+            "artifacts_count": len(trace_data.artifacts_created),
+            "session_metrics": trace_data.session_metrics,
+        }
 
-            # Get trace object and set output
-            if hasattr(ctx, '__enter__'):
-                # Context manager style
-                trace_obj = ctx.__enter__()
-                if hasattr(trace_obj, 'set_output'):
-                    trace_obj.set_output(output)
-                ctx.__exit__(None, None, None)
-            elif hasattr(ctx, 'set_output'):
-                ctx.set_output(output)
+        # Use the trace_context object to set output (if available)
+        if trace_ctx and hasattr(trace_ctx, 'set_output'):
+            trace_ctx.set_output(output)
+
+        # Exit the context manager properly
+        if ctx_manager:
+            try:
+                ctx_manager.__exit__(None, None, None)
+            except Exception as exit_err:
+                logger.debug(f"Error exiting context manager: {exit_err}")
 
         trace_data.ended = True
         logger.info(f"Ended trace: {trace_id}, success={success}")

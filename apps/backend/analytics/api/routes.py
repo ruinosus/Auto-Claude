@@ -47,6 +47,14 @@ from .models import (
     FeatureROIResponse,
     UnifiedROISummary,
     UnifiedROIResponse,
+    # Rich Artifact models
+    ArtifactMetadataModel,
+    RichArtifactResponse,
+    ArtifactQualityMetrics,
+    ArtifactStatistics,
+    ArtifactTimelineEntry,
+    ArtifactTimelineResponse,
+    LocalArtifactsResponse,
 )
 from .langfuse_client import TraceFilter
 from pathlib import Path
@@ -1615,3 +1623,449 @@ async def get_recent_activity(limit: int = Query(default=10, le=50)) -> RecentAc
     except Exception as e:
         logger.error(f"Failed to get recent activity: {e}")
         return RecentActivityResponse()
+
+
+# =============================================================================
+# Rich Artifact Endpoints (Search, Statistics, Timeline)
+# =============================================================================
+
+
+def _parse_artifact_metadata(artifact: dict) -> ArtifactMetadataModel:
+    """Parse artifact metadata into the ArtifactMetadataModel."""
+    meta = artifact.get("metadata", {})
+    return ArtifactMetadataModel(
+        title=meta.get("title") or meta.get("feature_name"),
+        priority=meta.get("priority"),
+        complexity=meta.get("complexity"),
+        impact=meta.get("impact"),
+        status=meta.get("status"),
+        phase=meta.get("phase"),
+        phase_id=meta.get("phase_id"),
+        feature_id=meta.get("feature_id"),
+        feature_name=meta.get("feature_name"),
+        feature_index=meta.get("feature_index"),
+        has_acceptance_criteria=meta.get("has_acceptance_criteria", False),
+        has_user_stories=meta.get("has_user_stories", False),
+        has_rationale=meta.get("has_rationale", False),
+        dependency_count=meta.get("dependency_count", 0),
+        ideation_type=meta.get("ideation_type"),
+    )
+
+
+def _extract_rich_fields_from_content(content: str) -> dict:
+    """Extract rationale, acceptance criteria, user stories, and dependencies from content."""
+    import re
+
+    result = {
+        "rationale": None,
+        "acceptance_criteria": [],
+        "user_stories": [],
+        "dependencies": [],
+    }
+
+    if not content:
+        return result
+
+    # Extract Strategic Rationale section
+    rationale_match = re.search(
+        r'##\s*(?:Strategic\s+)?Rationale\s*\n+(.+?)(?=\n##|\Z)',
+        content, re.DOTALL | re.IGNORECASE
+    )
+    if rationale_match:
+        result["rationale"] = rationale_match.group(1).strip()
+
+    # Extract Acceptance Criteria section (numbered list)
+    ac_match = re.search(
+        r'##\s*Acceptance\s+Criteria\s*\n+(.+?)(?=\n##|\Z)',
+        content, re.DOTALL | re.IGNORECASE
+    )
+    if ac_match:
+        criteria_text = ac_match.group(1)
+        result["acceptance_criteria"] = re.findall(r'^\d+\.\s*(.+)$', criteria_text, re.MULTILINE)
+
+    # Extract User Stories section (bullet list)
+    us_match = re.search(
+        r'##\s*User\s+Stories\s*\n+(.+?)(?=\n##|\Z)',
+        content, re.DOTALL | re.IGNORECASE
+    )
+    if us_match:
+        stories_text = us_match.group(1)
+        result["user_stories"] = re.findall(r'^-\s*(.+)$', stories_text, re.MULTILINE)
+
+    # Extract Dependencies section
+    deps_match = re.search(
+        r'##\s*Dependencies\s*\n+(.+?)(?=\n##|\Z)',
+        content, re.DOTALL | re.IGNORECASE
+    )
+    if deps_match:
+        deps_text = deps_match.group(1)
+        # Match "Requires: **Feature Name**" pattern
+        deps = re.findall(r'Requires:\s*\*\*([^*]+)\*\*', deps_text)
+        if not deps:
+            # Fallback to bullet list
+            deps = re.findall(r'^-\s*(.+)$', deps_text, re.MULTILINE)
+        result["dependencies"] = deps
+
+    return result
+
+
+def _convert_to_rich_artifact(artifact: dict) -> RichArtifactResponse:
+    """Convert a raw artifact dict to RichArtifactResponse."""
+    metadata = _parse_artifact_metadata(artifact)
+    content = artifact.get("content", "")
+    rich_fields = _extract_rich_fields_from_content(content)
+
+    return RichArtifactResponse(
+        id=artifact.get("id", ""),
+        type=artifact.get("type", "unknown"),
+        format=artifact.get("format", "markdown"),
+        content=content,
+        value_usd=artifact.get("value_usd", 0.0),
+        description=artifact.get("description"),
+        tab=artifact.get("tab"),
+        created_at=artifact.get("created_at", ""),
+        trace_id=artifact.get("trace_id"),
+        spec_id=artifact.get("spec_id"),
+        project_id=artifact.get("project_id"),
+        agent_type=artifact.get("agent_type"),
+        session_num=artifact.get("session_num"),
+        metadata=metadata,
+        rationale=rich_fields["rationale"],
+        acceptance_criteria=rich_fields["acceptance_criteria"],
+        user_stories=rich_fields["user_stories"],
+        dependencies=rich_fields["dependencies"],
+    )
+
+
+@router.get("/artifacts/search", response_model=LocalArtifactsResponse)
+async def search_artifacts(
+    project_path: str = Query(..., description="Project path to search artifacts"),
+    query: Optional[str] = Query(None, description="Full-text search query"),
+    types: Optional[str] = Query(None, description="Comma-separated artifact types"),
+    priorities: Optional[str] = Query(None, description="Comma-separated priorities (must,should,could,wont)"),
+    has_rationale: Optional[bool] = Query(None, description="Filter by has rationale"),
+    has_acceptance_criteria: Optional[bool] = Query(None, description="Filter by has acceptance criteria"),
+    has_dependencies: Optional[bool] = Query(None, description="Filter by has dependencies"),
+    min_value: Optional[float] = Query(None, description="Minimum value USD"),
+    max_value: Optional[float] = Query(None, description="Maximum value USD"),
+    agent_types: Optional[str] = Query(None, description="Comma-separated agent types"),
+    tabs: Optional[str] = Query(None, description="Comma-separated tabs (dev,techlead,ops,business)"),
+    from_date: Optional[str] = Query(None, description="From date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="To date (YYYY-MM-DD)"),
+    limit: int = Query(100, ge=1, le=500, description="Max results"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+):
+    """
+    Search artifacts with rich filtering and full-text search.
+
+    Supports filtering by:
+    - Full-text query across content, title, description
+    - Artifact type (roadmap_feature, idea, security_finding, etc.)
+    - Priority (must, should, could, wont)
+    - Quality flags (has_rationale, has_acceptance_criteria, has_dependencies)
+    - Value range (min_value, max_value)
+    - Agent type (roadmap_generator, ideation, qa_reviewer, etc.)
+    - Tab (dev, techlead, ops, business)
+    - Date range
+    """
+    if not ARTIFACT_STORAGE_AVAILABLE:
+        return LocalArtifactsResponse(
+            artifacts=[],
+            total=0,
+            error="Artifact storage module not available",
+        )
+
+    try:
+        # Parse comma-separated filters
+        type_list = [t.strip() for t in types.split(",")] if types else None
+        priority_list = [p.strip().lower() for p in priorities.split(",")] if priorities else None
+        agent_type_list = [a.strip() for a in agent_types.split(",")] if agent_types else None
+        tab_list = [t.strip() for t in tabs.split(",")] if tabs else None
+
+        # Get all artifacts with basic filtering
+        artifacts = list_local_artifacts(
+            project_dir=Path(project_path),
+            date_from=from_date,
+            date_to=to_date,
+            artifact_types=type_list,
+            limit=500,  # Get more to filter locally
+        )
+
+        # Apply additional filters
+        filtered = []
+        for art in artifacts:
+            # Full-text search
+            if query:
+                query_lower = query.lower()
+                content = (art.get("content", "") or "").lower()
+                description = (art.get("description", "") or "").lower()
+                title = (art.get("metadata", {}).get("title", "") or "").lower()
+                if query_lower not in content and query_lower not in description and query_lower not in title:
+                    continue
+
+            # Priority filter
+            if priority_list:
+                art_priority = (art.get("metadata", {}).get("priority", "") or "").lower()
+                if art_priority not in priority_list:
+                    continue
+
+            # Quality flags filters
+            meta = art.get("metadata", {})
+            if has_rationale is not None and meta.get("has_rationale", False) != has_rationale:
+                continue
+            if has_acceptance_criteria is not None and meta.get("has_acceptance_criteria", False) != has_acceptance_criteria:
+                continue
+            if has_dependencies is not None and (meta.get("dependency_count", 0) > 0) != has_dependencies:
+                continue
+
+            # Value range filter
+            value = art.get("value_usd", 0)
+            if min_value is not None and value < min_value:
+                continue
+            if max_value is not None and value > max_value:
+                continue
+
+            # Agent type filter
+            if agent_type_list:
+                art_agent = art.get("agent_type", "")
+                if art_agent not in agent_type_list:
+                    continue
+
+            # Tab filter
+            if tab_list:
+                art_tab = art.get("tab", "")
+                if art_tab not in tab_list:
+                    continue
+
+            filtered.append(art)
+
+        # Apply pagination
+        total = len(filtered)
+        paginated = filtered[offset:offset + limit]
+
+        # Convert to rich response
+        rich_artifacts = [_convert_to_rich_artifact(a) for a in paginated]
+
+        # Calculate stats for filtered results
+        stats = _calculate_artifact_statistics(filtered)
+
+        return LocalArtifactsResponse(
+            artifacts=rich_artifacts,
+            total=total,
+            limit=limit,
+            offset=offset,
+            stats=stats,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to search artifacts: {e}")
+        return LocalArtifactsResponse(artifacts=[], total=0, error=str(e))
+
+
+def _calculate_artifact_statistics(artifacts: List[dict]) -> ArtifactStatistics:
+    """Calculate statistics from a list of artifacts."""
+    from collections import defaultdict
+
+    if not artifacts:
+        return ArtifactStatistics()
+
+    by_type = defaultdict(int)
+    by_agent = defaultdict(int)
+    by_priority = defaultdict(int)
+    by_tab = defaultdict(int)
+    value_by_type = defaultdict(float)
+    value_by_priority = defaultdict(float)
+
+    total_value = 0.0
+    with_rationale = 0
+    with_acceptance_criteria = 0
+    with_user_stories = 0
+    with_dependencies = 0
+    with_any_quality = 0
+
+    for art in artifacts:
+        art_type = art.get("type", "unknown")
+        agent = art.get("agent_type", "unknown")
+        tab = art.get("tab", "unknown")
+        value = art.get("value_usd", 0)
+        meta = art.get("metadata", {})
+        priority = (meta.get("priority", "") or "unknown").lower()
+
+        by_type[art_type] += 1
+        by_agent[agent] += 1
+        by_priority[priority] += 1
+        by_tab[tab] += 1
+
+        total_value += value
+        value_by_type[art_type] += value
+        value_by_priority[priority] += value
+
+        # Quality metrics
+        has_r = meta.get("has_rationale", False)
+        has_ac = meta.get("has_acceptance_criteria", False)
+        has_us = meta.get("has_user_stories", False)
+        has_deps = meta.get("dependency_count", 0) > 0
+
+        if has_r:
+            with_rationale += 1
+        if has_ac:
+            with_acceptance_criteria += 1
+        if has_us:
+            with_user_stories += 1
+        if has_deps:
+            with_dependencies += 1
+        if has_r or has_ac or has_us or has_deps:
+            with_any_quality += 1
+
+    total_count = len(artifacts)
+    quality_pct = (with_any_quality / total_count * 100) if total_count > 0 else 0
+
+    return ArtifactStatistics(
+        total_count=total_count,
+        total_value_usd=round(total_value, 2),
+        by_type=dict(by_type),
+        by_agent=dict(by_agent),
+        by_priority=dict(by_priority),
+        by_tab=dict(by_tab),
+        quality_metrics=ArtifactQualityMetrics(
+            with_rationale=with_rationale,
+            with_acceptance_criteria=with_acceptance_criteria,
+            with_user_stories=with_user_stories,
+            with_dependencies=with_dependencies,
+            total_with_quality=with_any_quality,
+            quality_percentage=round(quality_pct, 1),
+        ),
+        avg_value_per_artifact=round(total_value / total_count, 2) if total_count > 0 else 0,
+        value_by_type={k: round(v, 2) for k, v in value_by_type.items()},
+        value_by_priority={k: round(v, 2) for k, v in value_by_priority.items()},
+    )
+
+
+@router.get("/artifacts/statistics", response_model=ArtifactStatistics)
+async def get_artifact_statistics(
+    project_path: str = Query(..., description="Project path to get statistics"),
+    from_date: Optional[str] = Query(None, description="From date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="To date (YYYY-MM-DD)"),
+):
+    """
+    Get aggregate statistics for artifacts.
+
+    Returns:
+    - Total count and value
+    - Breakdown by type, agent, priority, tab
+    - Quality metrics (rationale, acceptance criteria, user stories, dependencies)
+    - Value distribution by type and priority
+    """
+    if not ARTIFACT_STORAGE_AVAILABLE:
+        return ArtifactStatistics()
+
+    try:
+        artifacts = list_local_artifacts(
+            project_dir=Path(project_path),
+            date_from=from_date,
+            date_to=to_date,
+            limit=1000,  # Get all for statistics
+        )
+
+        return _calculate_artifact_statistics(artifacts)
+
+    except Exception as e:
+        logger.error(f"Failed to get artifact statistics: {e}")
+        return ArtifactStatistics()
+
+
+@router.get("/artifacts/timeline", response_model=ArtifactTimelineResponse)
+async def get_artifact_timeline(
+    project_path: str = Query(..., description="Project path to get timeline"),
+    granularity: str = Query("day", description="Timeline granularity (hour, day, week)"),
+    from_date: Optional[str] = Query(None, description="From date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="To date (YYYY-MM-DD)"),
+):
+    """
+    Get artifact creation timeline for visualization.
+
+    Returns time-series data showing artifact creation over time,
+    grouped by the specified granularity (hour, day, or week).
+    """
+    from collections import defaultdict
+
+    if not ARTIFACT_STORAGE_AVAILABLE:
+        return ArtifactTimelineResponse(granularity=granularity)
+
+    try:
+        artifacts = list_local_artifacts(
+            project_dir=Path(project_path),
+            date_from=from_date,
+            date_to=to_date,
+            limit=1000,
+        )
+
+        # Group by time period
+        timeline_data = defaultdict(lambda: {
+            "count": 0,
+            "value_usd": 0.0,
+            "by_type": defaultdict(int),
+            "by_agent": defaultdict(int),
+        })
+
+        total_count = 0
+        total_value = 0.0
+
+        for art in artifacts:
+            created_at = art.get("created_at", "")
+            if not created_at:
+                continue
+
+            # Parse timestamp and get period key
+            try:
+                if "T" in created_at:
+                    dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                else:
+                    dt = datetime.fromisoformat(created_at)
+
+                if granularity == "hour":
+                    period_key = dt.strftime("%Y-%m-%d %H:00")
+                elif granularity == "week":
+                    # Get start of week (Monday)
+                    week_start = dt - timedelta(days=dt.weekday())
+                    period_key = week_start.strftime("%Y-%m-%d")
+                else:  # day
+                    period_key = dt.strftime("%Y-%m-%d")
+
+            except (ValueError, TypeError):
+                continue
+
+            art_type = art.get("type", "unknown")
+            agent = art.get("agent_type", "unknown")
+            value = art.get("value_usd", 0)
+
+            timeline_data[period_key]["count"] += 1
+            timeline_data[period_key]["value_usd"] += value
+            timeline_data[period_key]["by_type"][art_type] += 1
+            timeline_data[period_key]["by_agent"][agent] += 1
+
+            total_count += 1
+            total_value += value
+
+        # Convert to response
+        timeline = [
+            ArtifactTimelineEntry(
+                date=date,
+                count=data["count"],
+                value_usd=round(data["value_usd"], 2),
+                by_type=dict(data["by_type"]),
+                by_agent=dict(data["by_agent"]),
+            )
+            for date, data in sorted(timeline_data.items())
+        ]
+
+        return ArtifactTimelineResponse(
+            timeline=timeline,
+            granularity=granularity,
+            total_count=total_count,
+            total_value=round(total_value, 2),
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get artifact timeline: {e}")
+        return ArtifactTimelineResponse(granularity=granularity)

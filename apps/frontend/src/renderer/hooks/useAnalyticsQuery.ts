@@ -28,6 +28,12 @@ import type {
   UnifiedROIResponse,
   UnifiedROIParams,
 } from '../services/analytics-api';
+import type {
+  ArtifactSearchParams,
+  ArtifactStatistics,
+  ArtifactTimelineResponse,
+  LocalArtifactsResponse,
+} from '../../shared/types/analytics-v2';
 
 // =============================================================================
 // Query Keys
@@ -56,6 +62,14 @@ export const analyticsKeys = {
   hourlyMetrics: (hours?: number, project_id?: string) => [...analyticsKeys.all, 'hourlyMetrics', hours, project_id] as const,
   errorMetrics: (hours?: number, project_id?: string) => [...analyticsKeys.all, 'errorMetrics', hours, project_id] as const,
   recentActivity: (limit?: number) => [...analyticsKeys.all, 'recentActivity', limit] as const,
+  // Artifact keys
+  artifacts: () => [...analyticsKeys.all, 'artifacts'] as const,
+  artifactSearch: (projectPath: string, params?: ArtifactSearchParams) =>
+    [...analyticsKeys.artifacts(), 'search', projectPath, params] as const,
+  artifactStatistics: (projectPath: string, fromDate?: string, toDate?: string) =>
+    [...analyticsKeys.artifacts(), 'statistics', projectPath, fromDate, toDate] as const,
+  artifactTimeline: (projectPath: string, granularity?: string, fromDate?: string, toDate?: string) =>
+    [...analyticsKeys.artifacts(), 'timeline', projectPath, granularity, fromDate, toDate] as const,
 };
 
 // =============================================================================
@@ -283,6 +297,11 @@ export function useAnalyticsInvalidation() {
      * Invalidate all usage data
      */
     invalidateUsage: () => queryClient.invalidateQueries({ queryKey: analyticsKeys.usage() }),
+
+    /**
+     * Invalidate all artifact data
+     */
+    invalidateArtifacts: () => queryClient.invalidateQueries({ queryKey: analyticsKeys.artifacts() }),
   };
 }
 
@@ -398,5 +417,96 @@ export function useRecentActivity(limit: number = 10, options?: { enabled?: bool
     queryFn: () => analyticsApi.getRecentActivity(limit),
     staleTime: 30 * 1000, // 30 seconds
     ...options,
+  });
+}
+
+// =============================================================================
+// Artifact Hooks (Rich Artifact Data)
+// =============================================================================
+
+/**
+ * Hook to search artifacts with rich filtering
+ *
+ * Supports filtering by:
+ * - Full-text search across content
+ * - Artifact types (roadmap_feature, security_issue, etc.)
+ * - Priority levels (must, should, could, wont)
+ * - Quality flags (has_rationale, has_acceptance_criteria, etc.)
+ * - Value range (min_value, max_value)
+ * - Agent types
+ * - Date range
+ *
+ * @param projectPath - Path to the project
+ * @param params - Search and filter parameters
+ * @param options - React Query options
+ */
+export function useArtifactSearch(
+  projectPath: string | null,
+  params?: ArtifactSearchParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<LocalArtifactsResponse, Error>({
+    queryKey: analyticsKeys.artifactSearch(projectPath || '', params),
+    queryFn: () => analyticsApi.searchArtifacts(projectPath!, params),
+    enabled: !!projectPath && options?.enabled !== false,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+/**
+ * Hook to get artifact statistics with aggregations
+ *
+ * Returns:
+ * - Total count and value
+ * - Breakdown by type, agent, priority, tab
+ * - Quality metrics (with_rationale, with_acceptance_criteria, etc.)
+ * - Average value per artifact
+ * - Value distribution by type and priority
+ *
+ * @param projectPath - Path to the project
+ * @param fromDate - Optional start date (ISO format)
+ * @param toDate - Optional end date (ISO format)
+ * @param options - React Query options
+ */
+export function useArtifactStatistics(
+  projectPath: string | null,
+  fromDate?: string,
+  toDate?: string,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<ArtifactStatistics, Error>({
+    queryKey: analyticsKeys.artifactStatistics(projectPath || '', fromDate, toDate),
+    queryFn: () => analyticsApi.getArtifactStatistics(projectPath!, fromDate, toDate),
+    enabled: !!projectPath && options?.enabled !== false,
+    staleTime: 60 * 1000, // 1 minute (stats change less frequently)
+  });
+}
+
+/**
+ * Hook to get artifact timeline data for visualization
+ *
+ * Returns time-series data with:
+ * - Count and value per period
+ * - Breakdown by type and agent
+ * - Configurable granularity (hour, day, week)
+ *
+ * @param projectPath - Path to the project
+ * @param granularity - Time bucket size: 'hour' | 'day' | 'week'
+ * @param fromDate - Optional start date (ISO format)
+ * @param toDate - Optional end date (ISO format)
+ * @param options - React Query options
+ */
+export function useArtifactTimeline(
+  projectPath: string | null,
+  granularity: 'hour' | 'day' | 'week' = 'day',
+  fromDate?: string,
+  toDate?: string,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<ArtifactTimelineResponse, Error>({
+    queryKey: analyticsKeys.artifactTimeline(projectPath || '', granularity, fromDate, toDate),
+    queryFn: () => analyticsApi.getArtifactTimeline(projectPath!, granularity, fromDate, toDate),
+    enabled: !!projectPath && options?.enabled !== false,
+    staleTime: 60 * 1000, // 1 minute
   });
 }

@@ -347,5 +347,89 @@
     "formula": {
       "title": "ROI Formula"
     }
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "search": "Search",
+    "searchPlaceholder": "Search artifacts...",
+    "filters": "Filters",
+    "clearFilters": "Clear Filters",
+    "applyFilters": "Apply",
+    "noResults": "No artifacts found",
+    "noResultsHint": "Try adjusting your search or filters",
+    "total": "Total Artifacts",
+    "totalValue": "Total Value",
+    "avgValue": "Avg Value",
+    "type": "Type",
+    "types": {
+      "roadmap_feature": "Roadmap Feature",
+      "security_issue": "Security Issue",
+      "ideation_item": "Ideation Item",
+      "spec_requirement": "Spec Requirement",
+      "insight": "Insight"
+    },
+    "priority": "Priority",
+    "priorities": {
+      "must": "Must Have",
+      "should": "Should Have",
+      "could": "Could Have",
+      "wont": "Won't Have"
+    },
+    "complexity": "Complexity",
+    "complexities": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "very_high": "Very High"
+    },
+    "impact": "Impact",
+    "impacts": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "quality": {
+      "title": "Quality Indicators",
+      "hasRationale": "Has Rationale",
+      "hasAcceptanceCriteria": "Has Acceptance Criteria",
+      "hasUserStories": "Has User Stories",
+      "hasDependencies": "Has Dependencies",
+      "qualityScore": "Quality Score",
+      "withQuality": "With Quality Fields"
+    },
+    "metadata": {
+      "title": "Metadata",
+      "strategicRationale": "Strategic Rationale",
+      "acceptanceCriteria": "Acceptance Criteria",
+      "userStories": "User Stories",
+      "dependencies": "Dependencies",
+      "agent": "Agent",
+      "session": "Session",
+      "createdAt": "Created At",
+      "traceId": "Trace ID",
+      "specId": "Spec ID"
+    },
+    "timeline": {
+      "title": "Artifact Timeline",
+      "granularity": "Granularity",
+      "hour": "Hourly",
+      "day": "Daily",
+      "week": "Weekly",
+      "count": "Count",
+      "value": "Value ($)"
+    },
+    "statistics": {
+      "title": "Statistics",
+      "byType": "By Type",
+      "byAgent": "By Agent",
+      "byPriority": "By Priority",
+      "byTab": "By Tab",
+      "qualityMetrics": "Quality Metrics"
+    },
+    "tabs": {
+      "content": "Content",
+      "metadata": "Metadata",
+      "raw": "Raw JSON"
+    }
   }
 }

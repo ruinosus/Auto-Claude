@@ -347,5 +347,89 @@
     "formula": {
       "title": "Formule du ROI"
     }
+  },
+  "artifacts": {
+    "title": "Artefacts",
+    "search": "Rechercher",
+    "searchPlaceholder": "Rechercher des artefacts...",
+    "filters": "Filtres",
+    "clearFilters": "Effacer les filtres",
+    "applyFilters": "Appliquer",
+    "noResults": "Aucun artefact trouvé",
+    "noResultsHint": "Essayez d'ajuster votre recherche ou vos filtres",
+    "total": "Total des artefacts",
+    "totalValue": "Valeur totale",
+    "avgValue": "Valeur moyenne",
+    "type": "Type",
+    "types": {
+      "roadmap_feature": "Fonctionnalité Roadmap",
+      "security_issue": "Problème de sécurité",
+      "ideation_item": "Élément d'idéation",
+      "spec_requirement": "Exigence de spec",
+      "insight": "Insight"
+    },
+    "priority": "Priorité",
+    "priorities": {
+      "must": "Indispensable",
+      "should": "Souhaitable",
+      "could": "Possible",
+      "wont": "Exclu"
+    },
+    "complexity": "Complexité",
+    "complexities": {
+      "low": "Faible",
+      "medium": "Moyenne",
+      "high": "Élevée",
+      "very_high": "Très élevée"
+    },
+    "impact": "Impact",
+    "impacts": {
+      "low": "Faible",
+      "medium": "Moyen",
+      "high": "Élevé"
+    },
+    "quality": {
+      "title": "Indicateurs de qualité",
+      "hasRationale": "A une justification",
+      "hasAcceptanceCriteria": "A des critères d'acceptation",
+      "hasUserStories": "A des user stories",
+      "hasDependencies": "A des dépendances",
+      "qualityScore": "Score de qualité",
+      "withQuality": "Avec champs de qualité"
+    },
+    "metadata": {
+      "title": "Métadonnées",
+      "strategicRationale": "Justification stratégique",
+      "acceptanceCriteria": "Critères d'acceptation",
+      "userStories": "User Stories",
+      "dependencies": "Dépendances",
+      "agent": "Agent",
+      "session": "Session",
+      "createdAt": "Créé le",
+      "traceId": "ID de trace",
+      "specId": "ID de spec"
+    },
+    "timeline": {
+      "title": "Chronologie des artefacts",
+      "granularity": "Granularité",
+      "hour": "Horaire",
+      "day": "Quotidien",
+      "week": "Hebdomadaire",
+      "count": "Nombre",
+      "value": "Valeur ($)"
+    },
+    "statistics": {
+      "title": "Statistiques",
+      "byType": "Par type",
+      "byAgent": "Par agent",
+      "byPriority": "Par priorité",
+      "byTab": "Par onglet",
+      "qualityMetrics": "Métriques de qualité"
+    },
+    "tabs": {
+      "content": "Contenu",
+      "metadata": "Métadonnées",
+      "raw": "JSON brut"
+    }
   }
 }

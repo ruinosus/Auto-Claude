@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
+import { ArtifactTimeline } from '../artifacts/ArtifactTimeline';
 import { formatCurrency, formatTokens, formatHours, formatPercent } from '../utils/formatters';
+import { useArtifactTimeline } from '../../../hooks/useAnalyticsQuery';
 import {
   Zap,
   MessageCircle,
@@ -118,6 +121,16 @@ function getFeatureIcon(feature: string): React.ReactNode {
 
 export function OverviewTab({ data, loading, projectId, projectPath }: OverviewTabProps) {
   const { t } = useTranslation(['analytics']);
+  const [timelineGranularity, setTimelineGranularity] = useState<'hour' | 'day' | 'week'>('day');
+
+  // Fetch artifact timeline data
+  const { data: timelineData, isLoading: timelineLoading } = useArtifactTimeline(
+    projectPath || '',
+    timelineGranularity,
+    undefined, // fromDate
+    undefined, // toDate
+    { enabled: !!projectPath }
+  );
 
   if (loading) {
     return (
@@ -295,6 +308,16 @@ export function OverviewTab({ data, loading, projectId, projectPath }: OverviewT
           </div>
         )}
       </div>
+
+      {/* Artifact Timeline */}
+      {timelineData && (
+        <ArtifactTimeline
+          data={timelineData}
+          isLoading={timelineLoading}
+          onGranularityChange={setTimelineGranularity}
+          className="mb-6"
+        />
+      )}
 
       {/* Generated Artifacts */}
       <ArtifactsPanel filterByTab="overview" title="All Generated Artifacts" projectId={projectId} projectPath={projectPath} />

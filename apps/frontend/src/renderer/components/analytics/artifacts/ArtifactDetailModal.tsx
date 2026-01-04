@@ -10,14 +10,18 @@ import {
   FileText,
   AlertCircle,
   Loader2,
-  Download
+  Download,
+  Code,
+  Tag,
+  CheckCircle
 } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import type { LocalArtifact } from '../../../../shared/types/analytics-v2';
+import type { LocalArtifact, RichLocalArtifact } from '../../../../shared/types/analytics-v2';
 import { formatCurrency } from '../utils/formatters';
 import { MarkdownPreview } from './MarkdownPreview';
 import { MermaidPreview } from './MermaidPreview';
+import { ArtifactMetadataPanel } from './ArtifactMetadataPanel';
 
 // Custom dark theme matching the UI background (#0f0f1a)
 const customDarkTheme: { [key: string]: React.CSSProperties } = {
@@ -63,6 +67,8 @@ interface ArtifactDetailModalProps {
   initialArtifact?: Partial<LocalArtifact>;
 }
 
+type TabType = 'content' | 'metadata' | 'raw';
+
 export function ArtifactDetailModal({
   isOpen,
   onClose,
@@ -71,10 +77,11 @@ export function ArtifactDetailModal({
   initialArtifact
 }: ArtifactDetailModalProps) {
   const { t } = useTranslation(['analytics']);
-  const [artifact, setArtifact] = useState<LocalArtifact | null>(null);
+  const [artifact, setArtifact] = useState<RichLocalArtifact | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('content');
 
   useEffect(() => {
     if (!isOpen || !artifactId) return;
@@ -89,14 +96,24 @@ export function ArtifactDetailModal({
           const result = await window.electronAPI.artifact.get(projectId, artifactId);
 
           if (result.success && result.data) {
-            setArtifact(result.data);
+            // Convert to RichLocalArtifact format (data may have optional rich fields)
+            const data = result.data as RichLocalArtifact;
+            const richArtifact: RichLocalArtifact = {
+              ...data,
+              metadata: data.metadata || {},
+              rationale: data.rationale,
+              acceptance_criteria: data.acceptance_criteria || [],
+              user_stories: data.user_stories || [],
+              dependencies: data.dependencies || [],
+            };
+            setArtifact(richArtifact);
             return;
           }
         }
 
         // Fall back to initialArtifact (preview from API)
         if (initialArtifact) {
-          setArtifact({
+          const richArtifact: RichLocalArtifact = {
             id: artifactId,
             type: initialArtifact.type || 'unknown',
             content: initialArtifact.content || '(Content preview)',
@@ -107,7 +124,13 @@ export function ArtifactDetailModal({
             trace_id: initialArtifact.trace_id,
             spec_id: initialArtifact.spec_id,
             agent_type: initialArtifact.agent_type,
-          });
+            metadata: (initialArtifact as any).metadata || {},
+            rationale: (initialArtifact as any).rationale,
+            acceptance_criteria: (initialArtifact as any).acceptance_criteria || [],
+            user_stories: (initialArtifact as any).user_stories || [],
+            dependencies: (initialArtifact as any).dependencies || [],
+          };
+          setArtifact(richArtifact);
         } else {
           setError('No artifact data available');
         }
@@ -115,7 +138,7 @@ export function ArtifactDetailModal({
         console.error('[ArtifactDetailModal] Failed to load artifact:', err);
         // On error, still try to show initialArtifact
         if (initialArtifact) {
-          setArtifact({
+          const richArtifact: RichLocalArtifact = {
             id: artifactId,
             type: initialArtifact.type || 'unknown',
             content: initialArtifact.content || '(Content preview)',
@@ -126,7 +149,13 @@ export function ArtifactDetailModal({
             trace_id: initialArtifact.trace_id,
             spec_id: initialArtifact.spec_id,
             agent_type: initialArtifact.agent_type,
-          });
+            metadata: (initialArtifact as any).metadata || {},
+            rationale: (initialArtifact as any).rationale,
+            acceptance_criteria: (initialArtifact as any).acceptance_criteria || [],
+            user_stories: (initialArtifact as any).user_stories || [],
+            dependencies: (initialArtifact as any).dependencies || [],
+          };
+          setArtifact(richArtifact);
         } else {
           setError(err instanceof Error ? err.message : 'Failed to load artifact');
         }
@@ -288,14 +317,14 @@ export function ArtifactDetailModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
+        <div className="flex-1 overflow-auto">
           {loading ? (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex items-center justify-center h-64 p-4">
               <Loader2 className="h-8 w-8 text-purple-400 animate-spin" />
               <span className="ml-3 text-gray-400">Loading artifact...</span>
             </div>
           ) : error ? (
-            <div className="flex items-center gap-3 p-4 bg-red-500/10 rounded-lg">
+            <div className="flex items-center gap-3 p-4 bg-red-500/10 rounded-lg m-4">
               <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0" />
               <div>
                 <p className="text-red-400 font-medium">Failed to load artifact</p>
@@ -303,9 +332,9 @@ export function ArtifactDetailModal({
               </div>
             </div>
           ) : artifact ? (
-            <div className="space-y-4">
-              {/* Metadata bar */}
-              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400">
+            <div className="flex flex-col h-full">
+              {/* Top metadata bar */}
+              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-400 p-4 border-b border-gray-700">
                 {artifact.value_usd > 0 && (
                   <div className="flex items-center gap-1">
                     <DollarSign className="h-4 w-4 text-emerald-400" />
@@ -335,66 +364,126 @@ export function ArtifactDetailModal({
                   </div>
                 )}
 
-                {artifact.session_num !== undefined && (
-                  <div className="flex items-center gap-1 text-gray-500">
-                    Session #{artifact.session_num}
+                {/* Quality badges */}
+                {artifact.metadata?.has_rationale && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-green-500/10 rounded text-green-400 text-xs">
+                    <CheckCircle className="h-3 w-3" />
+                    Rationale
+                  </div>
+                )}
+                {artifact.metadata?.has_acceptance_criteria && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 rounded text-blue-400 text-xs">
+                    <CheckCircle className="h-3 w-3" />
+                    AC
+                  </div>
+                )}
+                {artifact.metadata?.priority && (
+                  <div className="flex items-center gap-1 px-2 py-0.5 bg-orange-500/10 rounded text-orange-400 text-xs">
+                    <Tag className="h-3 w-3" />
+                    {artifact.metadata.priority}
                   </div>
                 )}
               </div>
 
-              {/* Full content */}
-              <div className="bg-[#0f0f1a] rounded-lg overflow-hidden">
-                {isMermaidContent(artifact) ? (
-                  <MermaidPreview content={artifact.content} />
-                ) : isMarkdownContent(artifact) ? (
-                  <MarkdownPreview content={artifact.content} />
-                ) : isCodeContent(artifact) ? (
-                  <SyntaxHighlighter
-                    language={getLanguageFromFormat(artifact.format)}
-                    style={customDarkTheme}
-                    customStyle={{
-                      background: '#0f0f1a',
-                      margin: 0,
-                      borderRadius: '0.5rem',
-                    }}
-                    wrapLines={true}
-                    wrapLongLines={true}
-                  >
-                    {artifact.content}
-                  </SyntaxHighlighter>
-                ) : (
-                  <div className="p-4 text-gray-200 whitespace-pre-wrap break-words leading-relaxed">
-                    {artifact.content}
+              {/* Tabs */}
+              <div className="flex border-b border-gray-700">
+                <button
+                  onClick={() => setActiveTab('content')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === 'content'
+                      ? 'text-blue-400 border-b-2 border-blue-400 -mb-px'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <FileText className="h-4 w-4" />
+                  {t('analytics:artifacts.tabs.content')}
+                </button>
+                <button
+                  onClick={() => setActiveTab('metadata')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === 'metadata'
+                      ? 'text-blue-400 border-b-2 border-blue-400 -mb-px'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <Tag className="h-4 w-4" />
+                  {t('analytics:artifacts.tabs.metadata')}
+                </button>
+                <button
+                  onClick={() => setActiveTab('raw')}
+                  className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                    activeTab === 'raw'
+                      ? 'text-blue-400 border-b-2 border-blue-400 -mb-px'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <Code className="h-4 w-4" />
+                  {t('analytics:artifacts.tabs.raw')}
+                </button>
+              </div>
+
+              {/* Tab Content */}
+              <div className="flex-1 overflow-auto p-4">
+                {activeTab === 'content' && (
+                  <div className="space-y-4">
+                    {/* Full content */}
+                    <div className="bg-[#0f0f1a] rounded-lg overflow-hidden">
+                      {isMermaidContent(artifact) ? (
+                        <MermaidPreview content={artifact.content} />
+                      ) : isMarkdownContent(artifact) ? (
+                        <MarkdownPreview content={artifact.content} />
+                      ) : isCodeContent(artifact) ? (
+                        <SyntaxHighlighter
+                          language={getLanguageFromFormat(artifact.format)}
+                          style={customDarkTheme}
+                          customStyle={{
+                            background: '#0f0f1a',
+                            margin: 0,
+                            borderRadius: '0.5rem',
+                          }}
+                          wrapLines={true}
+                          wrapLongLines={true}
+                        >
+                          {artifact.content}
+                        </SyntaxHighlighter>
+                      ) : (
+                        <div className="p-4 text-gray-200 whitespace-pre-wrap break-words leading-relaxed">
+                          {artifact.content}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'metadata' && (
+                  <ArtifactMetadataPanel artifact={artifact} />
+                )}
+
+                {activeTab === 'raw' && (
+                  <div className="space-y-4">
+                    <pre className="text-xs text-gray-300 bg-gray-900 rounded p-4 overflow-x-auto">
+                      {JSON.stringify(artifact, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Trace link */}
+                {artifact.trace_id && (
+                  <div className="flex items-center justify-between text-xs text-gray-500 pt-4 mt-4 border-t border-gray-700">
+                    <span>
+                      Artifact ID: <code className="text-gray-400">{artifact.id}</code>
+                    </span>
+                    <a
+                      href={`http://localhost:3001/traces/${artifact.trace_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300"
+                    >
+                      View trace in Langfuse
+                    </a>
                   </div>
                 )}
               </div>
-
-              {/* Additional metadata */}
-              {artifact.metadata && Object.keys(artifact.metadata).length > 0 && (
-                <div className="border-t border-gray-700 pt-4">
-                  <h3 className="text-sm font-medium text-gray-400 mb-2">Additional Metadata</h3>
-                  <pre className="text-xs text-gray-500 bg-gray-900 rounded p-3 overflow-x-auto">
-                    {JSON.stringify(artifact.metadata, null, 2)}
-                  </pre>
-                </div>
-              )}
-
-              {/* Trace link */}
-              {artifact.trace_id && (
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-700">
-                  <span>
-                    Artifact ID: <code className="text-gray-400">{artifact.id}</code>
-                  </span>
-                  <a
-                    href={`http://localhost:3001/traces/${artifact.trace_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:text-blue-300"
-                  >
-                    View trace in Langfuse
-                  </a>
-                </div>
-              )}
             </div>
           ) : null}
         </div>

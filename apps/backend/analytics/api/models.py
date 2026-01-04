@@ -450,5 +450,106 @@ class DateRangeParams(BaseModel):
     to_date: Optional[datetime] = None
 
 
+# =============================================================================
+# Rich Artifact Models
+# =============================================================================
+
+
+class ArtifactMetadataModel(BaseModel):
+    """Rich metadata for artifacts."""
+    title: Optional[str] = None
+    priority: Optional[str] = None  # must, should, could, wont
+    complexity: Optional[str] = None  # low, medium, high, very_high
+    impact: Optional[str] = None  # low, medium, high
+    status: Optional[str] = None
+    phase: Optional[str] = None
+    phase_id: Optional[str] = None
+    feature_id: Optional[str] = None
+    feature_name: Optional[str] = None
+    feature_index: Optional[int] = None
+    has_acceptance_criteria: bool = False
+    has_user_stories: bool = False
+    has_rationale: bool = False
+    dependency_count: int = 0
+    ideation_type: Optional[str] = None
+    # Allow extra fields
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RichArtifactResponse(BaseModel):
+    """Enhanced artifact with all rich fields."""
+    id: str
+    type: str
+    format: str
+    content: str
+    value_usd: float = 0.0
+    description: Optional[str] = None
+    tab: Optional[str] = None
+    created_at: str
+    trace_id: Optional[str] = None
+    spec_id: Optional[str] = None
+    project_id: Optional[str] = None
+    agent_type: Optional[str] = None
+    session_num: Optional[int] = None
+    metadata: ArtifactMetadataModel = Field(default_factory=ArtifactMetadataModel)
+    # Extracted rich content (parsed from markdown content)
+    rationale: Optional[str] = None
+    acceptance_criteria: List[str] = Field(default_factory=list)
+    user_stories: List[str] = Field(default_factory=list)
+    dependencies: List[str] = Field(default_factory=list)
+
+
+class ArtifactQualityMetrics(BaseModel):
+    """Quality metrics for artifacts."""
+    with_rationale: int = 0
+    with_acceptance_criteria: int = 0
+    with_user_stories: int = 0
+    with_dependencies: int = 0
+    total_with_quality: int = 0  # artifacts with at least one quality field
+    quality_percentage: float = 0.0  # percentage with at least one quality field
+
+
+class ArtifactStatistics(BaseModel):
+    """Aggregate statistics for artifacts."""
+    total_count: int = 0
+    total_value_usd: float = 0.0
+    by_type: Dict[str, int] = Field(default_factory=dict)
+    by_agent: Dict[str, int] = Field(default_factory=dict)
+    by_priority: Dict[str, int] = Field(default_factory=dict)
+    by_tab: Dict[str, int] = Field(default_factory=dict)
+    quality_metrics: ArtifactQualityMetrics = Field(default_factory=ArtifactQualityMetrics)
+    avg_value_per_artifact: float = 0.0
+    # Value distribution
+    value_by_type: Dict[str, float] = Field(default_factory=dict)
+    value_by_priority: Dict[str, float] = Field(default_factory=dict)
+
+
+class ArtifactTimelineEntry(BaseModel):
+    """Single entry for artifact timeline."""
+    date: str  # ISO date string (YYYY-MM-DD or YYYY-MM-DD HH:00)
+    count: int = 0
+    value_usd: float = 0.0
+    by_type: Dict[str, int] = Field(default_factory=dict)
+    by_agent: Dict[str, int] = Field(default_factory=dict)
+
+
+class ArtifactTimelineResponse(BaseModel):
+    """Response for artifact timeline."""
+    timeline: List[ArtifactTimelineEntry] = Field(default_factory=list)
+    granularity: str = "day"  # hour, day, week
+    total_count: int = 0
+    total_value: float = 0.0
+
+
+class LocalArtifactsResponse(BaseModel):
+    """Response for local artifacts listing."""
+    artifacts: List[RichArtifactResponse] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 100
+    offset: int = 0
+    # Statistics for the filtered results
+    stats: Optional[ArtifactStatistics] = None
+
+
 # Update forward references
 TraceDetailResponse.model_rebuild()

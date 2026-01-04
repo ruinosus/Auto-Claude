@@ -772,3 +772,107 @@ export async function getLocalArtifact(
 
   return fetchApi(`/api/analytics/artifacts/local/${artifactId}?${searchParams.toString()}`);
 }
+
+// =============================================================================
+// Rich Artifact Search, Statistics, and Timeline Functions
+// =============================================================================
+
+// Re-export types from analytics-v2.ts for convenience
+export type {
+  ArtifactMetadata,
+  RichLocalArtifact,
+  ArtifactQualityMetrics,
+  ArtifactStatistics,
+  ArtifactTimelineEntry,
+  ArtifactTimelineResponse,
+  ArtifactSearchParams,
+  LocalArtifactsResponse as RichLocalArtifactsResponse,
+} from '../../shared/types/analytics-v2';
+
+import type {
+  ArtifactSearchParams,
+  ArtifactStatistics,
+  ArtifactTimelineResponse,
+  LocalArtifactsResponse as RichLocalArtifactsResponse,
+} from '../../shared/types/analytics-v2';
+
+/**
+ * Search artifacts with rich filtering and full-text search.
+ *
+ * Supports filtering by:
+ * - Full-text query across content, title, description
+ * - Artifact type (roadmap_feature, idea, security_finding, etc.)
+ * - Priority (must, should, could, wont)
+ * - Quality flags (has_rationale, has_acceptance_criteria, has_dependencies)
+ * - Value range (min_value, max_value)
+ * - Agent type (roadmap_generator, ideation, qa_reviewer, etc.)
+ * - Tab (dev, techlead, ops, business)
+ * - Date range
+ */
+export async function searchArtifacts(
+  projectPath: string,
+  params?: ArtifactSearchParams
+): Promise<RichLocalArtifactsResponse> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('project_path', projectPath);
+
+  if (params?.query) searchParams.set('query', params.query);
+  if (params?.types?.length) searchParams.set('types', params.types.join(','));
+  if (params?.priorities?.length) searchParams.set('priorities', params.priorities.join(','));
+  if (params?.has_rationale !== undefined) searchParams.set('has_rationale', String(params.has_rationale));
+  if (params?.has_acceptance_criteria !== undefined) searchParams.set('has_acceptance_criteria', String(params.has_acceptance_criteria));
+  if (params?.has_dependencies !== undefined) searchParams.set('has_dependencies', String(params.has_dependencies));
+  if (params?.min_value !== undefined) searchParams.set('min_value', String(params.min_value));
+  if (params?.max_value !== undefined) searchParams.set('max_value', String(params.max_value));
+  if (params?.agent_types?.length) searchParams.set('agent_types', params.agent_types.join(','));
+  if (params?.tabs?.length) searchParams.set('tabs', params.tabs.join(','));
+  if (params?.from_date) searchParams.set('from_date', params.from_date);
+  if (params?.to_date) searchParams.set('to_date', params.to_date);
+  if (params?.limit !== undefined) searchParams.set('limit', String(params.limit));
+  if (params?.offset !== undefined) searchParams.set('offset', String(params.offset));
+
+  return fetchApi(`/api/analytics/artifacts/search?${searchParams.toString()}`);
+}
+
+/**
+ * Get aggregate statistics for artifacts.
+ *
+ * Returns:
+ * - Total count and value
+ * - Breakdown by type, agent, priority, tab
+ * - Quality metrics (rationale, acceptance criteria, user stories, dependencies)
+ * - Value distribution by type and priority
+ */
+export async function getArtifactStatistics(
+  projectPath: string,
+  fromDate?: string,
+  toDate?: string
+): Promise<ArtifactStatistics> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('project_path', projectPath);
+  if (fromDate) searchParams.set('from_date', fromDate);
+  if (toDate) searchParams.set('to_date', toDate);
+
+  return fetchApi(`/api/analytics/artifacts/statistics?${searchParams.toString()}`);
+}
+
+/**
+ * Get artifact creation timeline for visualization.
+ *
+ * Returns time-series data showing artifact creation over time,
+ * grouped by the specified granularity (hour, day, or week).
+ */
+export async function getArtifactTimeline(
+  projectPath: string,
+  granularity: 'hour' | 'day' | 'week' = 'day',
+  fromDate?: string,
+  toDate?: string
+): Promise<ArtifactTimelineResponse> {
+  const searchParams = new URLSearchParams();
+  searchParams.set('project_path', projectPath);
+  searchParams.set('granularity', granularity);
+  if (fromDate) searchParams.set('from_date', fromDate);
+  if (toDate) searchParams.set('to_date', toDate);
+
+  return fetchApi(`/api/analytics/artifacts/timeline?${searchParams.toString()}`);
+}

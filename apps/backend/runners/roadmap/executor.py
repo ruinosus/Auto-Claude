@@ -73,13 +73,18 @@ def extract_roadmap_artifacts(
     agent_type: str = "roadmap",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """
-    Extract roadmap artifacts from response and roadmap data.
+    Extract HIGH-QUALITY roadmap artifacts from response and roadmap data.
 
     Stores FULL artifact content locally, returns lightweight references for Langfuse.
 
+    This function extracts RICH content including:
+    - Strategic rationale and justifications
+    - Acceptance criteria and user stories
+    - Dependencies and phase context
+
     Artifacts extracted:
-    - roadmap_item ($100 each) - each feature/item in the roadmap
-    - milestone ($50) - timeline milestones
+    - roadmap_item ($100-150 each) - each feature with full context
+    - milestone ($75 each) - phase milestones with feature details
     - priority_recommendation ($75) - priority recommendations
 
     Args:
@@ -96,83 +101,204 @@ def extract_roadmap_artifacts(
     """
     artifacts = []
 
+    # Build lookup maps for enrichment
+    if roadmap_data:
+        features_by_id = {f.get("id"): f for f in roadmap_data.get("features", []) if isinstance(f, dict) and f.get("id")}
+        phases_by_id = {p.get("id"): p for p in roadmap_data.get("phases", []) if isinstance(p, dict) and p.get("id")}
+    else:
+        features_by_id = {}
+        phases_by_id = {}
+
     # Extract roadmap_items from roadmap data
     if roadmap_data:
         features = roadmap_data.get("features", [])
         for i, feature in enumerate(features):
-            title = feature.get("title", "Unknown feature")
+            # Extract ALL available fields
+            title = feature.get("title", feature.get("name", "Unknown feature"))
             description = feature.get("description", "")
             priority = feature.get("priority", "medium")
             status = feature.get("status", "proposed")
-            phase = feature.get("phase", "")
+            phase_id = feature.get("phase_id", feature.get("phase", ""))
             effort = feature.get("effort", "")
             impact = feature.get("impact", "")
+            complexity = feature.get("complexity", "")
+            rationale = feature.get("rationale", "")
+            acceptance_criteria = feature.get("acceptance_criteria", [])
+            user_stories = feature.get("user_stories", [])
+            dependencies = feature.get("dependencies", [])
 
-            # Build FULL content - no truncation!
-            content = f"## {title}\n\n"
-            if description:
-                content += f"{description}\n\n"
-            content += f"**Priority:** {priority}\n"
-            content += f"**Status:** {status}\n"
-            if phase:
-                content += f"**Phase:** {phase}\n"
-            if effort:
-                content += f"**Effort:** {effort}\n"
+            # Calculate value based on content richness
+            base_value = 100
+            if acceptance_criteria:
+                base_value += 15
+            if user_stories:
+                base_value += 15
+            if rationale:
+                base_value += 10
+            if dependencies:
+                base_value += 10
+
+            # Build RICH content
+            content = f"# {title}\n\n"
+
+            # Priority and classification bar
+            content += f"**Priority:** {priority.upper() if priority else 'MEDIUM'}"
+            if complexity:
+                content += f" | **Complexity:** {complexity}"
             if impact:
-                content += f"**Impact:** {impact}\n"
+                content += f" | **Impact:** {impact}"
+            if status:
+                content += f" | **Status:** {status}"
+            content += "\n\n"
 
-            # Include full feature data as metadata
+            # Phase context
+            if phase_id:
+                phase = phases_by_id.get(phase_id, {})
+                phase_name = phase.get("name", phase_id) if isinstance(phase, dict) else phase_id
+                content += f"**Phase:** {phase_name}\n\n"
+
+            # Description
+            if description:
+                content += f"## Description\n\n{description}\n\n"
+
+            # Strategic Rationale - WHY this matters
+            if rationale:
+                content += f"## Strategic Rationale\n\n{rationale}\n\n"
+
+            # User Stories - WHO benefits
+            if user_stories:
+                content += "## User Stories\n\n"
+                for story in user_stories:
+                    content += f"- {story}\n"
+                content += "\n"
+
+            # Acceptance Criteria - WHAT success looks like
+            if acceptance_criteria:
+                content += "## Acceptance Criteria\n\n"
+                for j, criterion in enumerate(acceptance_criteria):
+                    content += f"{j+1}. {criterion}\n"
+                content += "\n"
+
+            # Dependencies - WHAT must come first
+            if dependencies:
+                content += "## Dependencies\n\n"
+                for dep_id in dependencies:
+                    dep_feat = features_by_id.get(dep_id, {})
+                    dep_name = dep_feat.get("title", dep_feat.get("name", dep_id)) if dep_feat else dep_id
+                    content += f"- Requires: **{dep_name}**\n"
+                content += "\n"
+
+            # Effort estimation
+            if effort:
+                content += f"**Estimated Effort:** {effort}\n"
+
+            # Determine appropriate tab based on priority
+            if priority and priority.lower() in ["must", "critical", "high"]:
+                tab = "business"
+            elif complexity and complexity.lower() in ["high", "very_high"]:
+                tab = "techlead"
+            else:
+                tab = "business"
+
             artifacts.append({
                 "type": "roadmap_item",
                 "format": "markdown",
-                "content": content,  # FULL CONTENT - no truncation
-                "value_usd": 100,
+                "content": content,
+                "value_usd": min(base_value, 150),
                 "description": f"Roadmap item #{i+1}: {title}",
                 "priority": priority,
-                "tab": "business",
+                "tab": tab,
                 "metadata": {
                     "feature_title": title,
                     "feature_priority": priority,
                     "feature_status": status,
-                    "feature_phase": phase,
+                    "feature_phase": phase_id,
                     "feature_effort": effort,
                     "feature_impact": impact,
+                    "has_acceptance_criteria": bool(acceptance_criteria),
+                    "has_user_stories": bool(user_stories),
+                    "has_rationale": bool(rationale),
+                    "dependency_count": len(dependencies),
                 },
             })
 
-        # Extract milestones from phases
+        # Extract milestones from phases with enriched content
         phases = roadmap_data.get("phases", [])
         for i, phase in enumerate(phases):
+            phase_id = phase.get("id", f"phase-{i+1}")
             phase_name = phase.get("name", f"Phase {i+1}")
             phase_description = phase.get("description", "")
-            phase_timeline = phase.get("timeline", "")
-            phase_features = phase.get("features", [])
+            phase_timeline = phase.get("timeline", phase.get("duration", ""))
+            phase_status = phase.get("status", "planned")
+            phase_order = phase.get("order", i + 1)
+            phase_feature_ids = phase.get("features", [])
+            milestones = phase.get("milestones", [])
 
-            # Build FULL content - no truncation!
-            content = f"## {phase_name}\n\n"
-            if phase_description:
-                content += f"{phase_description}\n\n"
+            # Build RICH phase content
+            content = f"# {phase_name}\n\n"
+            content += f"**Order:** {phase_order} | **Status:** {phase_status}\n"
             if phase_timeline:
                 content += f"**Timeline:** {phase_timeline}\n"
-            if phase_features:
-                content += "\n**Features:**\n"
-                for feat in phase_features:
-                    if isinstance(feat, str):
-                        content += f"- {feat}\n"
-                    elif isinstance(feat, dict):
-                        content += f"- {feat.get('title', feat.get('name', str(feat)))}\n"
+            content += "\n"
+
+            if phase_description:
+                content += f"## Overview\n\n{phase_description}\n\n"
+
+            # Add milestones with detail
+            if milestones:
+                content += "## Milestones\n\n"
+                for j, milestone in enumerate(milestones):
+                    if isinstance(milestone, dict):
+                        m_title = milestone.get("title", f"Milestone {j+1}")
+                        m_desc = milestone.get("description", "")
+                        m_status = milestone.get("status", "planned")
+                        content += f"### {m_title}\n"
+                        content += f"**Status:** {m_status}\n"
+                        if m_desc:
+                            content += f"\n{m_desc}\n"
+                        content += "\n"
+                    elif isinstance(milestone, str):
+                        content += f"- {milestone}\n"
+
+            # List features in this phase with priority
+            if phase_feature_ids:
+                content += "## Features in This Phase\n\n"
+                for feat_ref in phase_feature_ids:
+                    if isinstance(feat_ref, str):
+                        feat = features_by_id.get(feat_ref, {})
+                        f_title = feat.get("title", feat.get("name", feat_ref)) if feat else feat_ref
+                        f_priority = feat.get("priority", "") if feat else ""
+                        f_impact = feat.get("impact", "") if feat else ""
+                    elif isinstance(feat_ref, dict):
+                        f_title = feat_ref.get("title", feat_ref.get("name", str(feat_ref)))
+                        f_priority = feat_ref.get("priority", "")
+                        f_impact = feat_ref.get("impact", "")
+                    else:
+                        f_title = str(feat_ref)
+                        f_priority = ""
+                        f_impact = ""
+
+                    content += f"- **{f_title}**"
+                    if f_priority:
+                        content += f" [{f_priority.upper()}]"
+                    if f_impact:
+                        content += f" - Impact: {f_impact}"
+                    content += "\n"
 
             artifacts.append({
                 "type": "milestone",
                 "format": "markdown",
-                "content": content,  # FULL CONTENT - no truncation
-                "value_usd": 50,
-                "description": f"Milestone: {phase_name}",
-                "tab": "business",
+                "content": content,
+                "value_usd": 75,
+                "description": f"Phase {phase_order}: {phase_name}",
+                "tab": "ops",
                 "metadata": {
+                    "phase_id": phase_id,
                     "phase_name": phase_name,
+                    "phase_order": phase_order,
                     "phase_timeline": phase_timeline,
-                    "features_count": len(phase_features),
+                    "features_count": len(phase_feature_ids),
+                    "milestones_count": len(milestones),
                 },
             })
 
@@ -201,7 +327,7 @@ def extract_roadmap_artifacts(
                     artifacts.append({
                         "type": "priority_recommendation",
                         "format": "text",
-                        "content": clean_sentence,  # FULL CONTENT - no truncation
+                        "content": clean_sentence,
                         "value_usd": 75,
                         "description": "Priority recommendation",
                         "tab": "business",
