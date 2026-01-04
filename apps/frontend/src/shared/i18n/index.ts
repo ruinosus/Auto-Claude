@@ -12,6 +12,7 @@ import enDialogs from './locales/en/dialogs.json';
 import enAnalytics from './locales/en/analytics.json';
 import enGitlab from './locales/en/gitlab.json';
 import enTaskReview from './locales/en/taskReview.json';
+import enTerminal from './locales/en/terminal.json';
 
 // Import French translation resources
 import frCommon from './locales/fr/common.json';
@@ -24,6 +25,7 @@ import frDialogs from './locales/fr/dialogs.json';
 import frAnalytics from './locales/fr/analytics.json';
 import frGitlab from './locales/fr/gitlab.json';
 import frTaskReview from './locales/fr/taskReview.json';
+import frTerminal from './locales/fr/terminal.json';
 
 export const defaultNS = 'common';
 
@@ -38,7 +40,8 @@ export const resources = {
     dialogs: enDialogs,
     analytics: enAnalytics,
     gitlab: enGitlab,
-    taskReview: enTaskReview
+    taskReview: enTaskReview,
+    terminal: enTerminal
   },
   fr: {
     common: frCommon,
@@ -50,7 +53,8 @@ export const resources = {
     dialogs: frDialogs,
     analytics: frAnalytics,
     gitlab: frGitlab,
-    taskReview: frTaskReview
+    taskReview: frTaskReview,
+    terminal: frTerminal
   }
 } as const;
 
@@ -61,7 +65,7 @@ i18n
     lng: 'en', // Default language (will be overridden by settings)
     fallbackLng: 'en',
     defaultNS,
-    ns: ['common', 'navigation', 'settings', 'tasks', 'welcome', 'onboarding', 'dialogs', 'analytics', 'gitlab', 'taskReview'],
+    ns: ['common', 'navigation', 'settings', 'tasks', 'welcome', 'onboarding', 'dialogs', 'analytics', 'gitlab', 'taskReview', 'terminal'],
     interpolation: {
       escapeValue: false // React already escapes values
     },

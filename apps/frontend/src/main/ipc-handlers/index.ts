@@ -42,6 +42,7 @@ import { registerDebugHandlers } from './debug-handlers';
 import { registerClaudeCodeHandlers } from './claude-code-handlers';
 import { registerMcpHandlers } from './mcp-handlers';
 import { registerProfileHandlers } from './profile-handlers';
+import { registerTerminalWorktreeIpcHandlers } from './terminal';
 import { notificationService } from '../notification-service';
 import { setupNotificationHandlers } from './notification-handlers';
 
@@ -70,6 +71,9 @@ export function setupIpcHandlers(
 
   // Terminal and Claude profile handlers
   registerTerminalHandlers(terminalManager, getMainWindow);
+
+  // Terminal worktree handlers (isolated development in worktrees)
+  registerTerminalWorktreeIpcHandlers();
 
   // Agent event handlers (event forwarding from agent manager to renderer)
   registerAgenteventsHandlers(agentManager, getMainWindow);
@@ -160,6 +164,7 @@ export {
   registerProjectHandlers,
   registerTaskHandlers,
   registerTerminalHandlers,
+  registerTerminalWorktreeIpcHandlers,
   registerAgenteventsHandlers,
   registerSettingsHandlers,
   registerFileHandlers,

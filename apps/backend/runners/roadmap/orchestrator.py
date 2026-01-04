@@ -357,7 +357,7 @@ class RoadmapOrchestrator:
         self,
         project_dir: Path,
         output_dir: Path | None = None,
-        model: str = "opus",  # Shorthand - resolved via API Profile if configured
+        model: str = "sonnet",  # Changed from "opus" (fix #433)
         thinking_level: str = "medium",
         refresh: bool = False,
         enable_competitor_analysis: bool = False,
