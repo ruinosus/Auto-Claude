@@ -1,22 +1,66 @@
 /**
- * Memory Environment Variable Builder
+ * Memory & Auth Environment Variable Builder
  *
- * Converts app-wide memory settings from settings.json into environment variables
+ * Converts app-wide settings from settings.json into environment variables
  * that can be injected into Python agent processes.
  *
  * This bridges the gap between frontend settings storage and backend configuration.
+ *
+ * Handles:
+ * - Graphiti/Memory configuration
+ * - Azure Foundry authentication (Claude API)
  */
 
 import type { AppSettings } from '../shared/types/settings';
 
 /**
- * Build environment variables for memory/Graphiti configuration from app settings.
+ * Build environment variables for memory/Graphiti and auth configuration from app settings.
  *
  * @param settings - App-wide settings from settings.json
  * @returns Record of environment variables to inject into agent processes
  */
 export function buildMemoryEnvVars(settings: AppSettings): Record<string, string> {
   const env: Record<string, string> = {};
+
+  // =========================================================================
+  // AZURE FOUNDRY AUTHENTICATION (Claude API)
+  // =========================================================================
+  // These settings are configured in the Onboarding Wizard (AzureFoundryStep)
+  // and must be passed to Python agent processes for Claude SDK to work.
+
+  if (settings.defaultAuthMode === 'azure-foundry') {
+    env.CLAUDE_CODE_USE_FOUNDRY = '1';
+
+    if (settings.azureFoundryApiKey) {
+      env.ANTHROPIC_FOUNDRY_API_KEY = settings.azureFoundryApiKey;
+      env.ANTHROPIC_AUTH_TOKEN = settings.azureFoundryApiKey; // Fallback for some SDK versions
+    }
+
+    if (settings.azureFoundryBaseUrl) {
+      env.ANTHROPIC_FOUNDRY_BASE_URL = settings.azureFoundryBaseUrl;
+    }
+
+    if (settings.azureFoundryResourceName) {
+      env.ANTHROPIC_FOUNDRY_RESOURCE = settings.azureFoundryResourceName;
+    }
+
+    // Model deployment names
+    if (settings.azureFoundrySonnetModel) {
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = settings.azureFoundrySonnetModel;
+    }
+
+    if (settings.azureFoundryHaikuModel) {
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = settings.azureFoundryHaikuModel;
+    }
+
+    if (settings.azureFoundryOpusModel) {
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = settings.azureFoundryOpusModel;
+    }
+  }
+
+  // =========================================================================
+  // GRAPHITI/MEMORY CONFIGURATION
+  // =========================================================================
 
   // If memory is not enabled, return empty env
   if (!settings.memoryEnabled) {

@@ -105,7 +105,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Collects initial requirements from user',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
   spec_researcher: {
@@ -113,7 +113,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Validates external integrations and APIs',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: ['context7'],
+    mcp_servers: ['context7', 'auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
   spec_writer: {
@@ -121,7 +121,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Creates the spec.md document',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
   spec_critic: {
@@ -129,7 +129,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Self-critique using deep analysis',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
   spec_discovery: {
@@ -137,7 +137,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Initial project discovery and analysis',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
   spec_context: {
@@ -145,7 +145,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Builds context from existing codebase',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
   spec_validation: {
@@ -153,7 +153,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Validates spec completeness and quality',
     category: 'spec',
     tools: ['Read', 'Glob', 'Grep'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'phase', phase: 'spec' },
   },
 
@@ -203,7 +203,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Reviews GitHub pull requests',
     category: 'utility',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: ['context7'],
+    mcp_servers: ['context7', 'auto-claude'],
     settingsSource: { type: 'feature', feature: 'githubPrs' },
   },
   commit_message: {
@@ -211,7 +211,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Generates commit messages',
     category: 'utility',
     tools: [],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'feature', feature: 'utility' },
   },
   merge_resolver: {
@@ -219,32 +219,32 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'Resolves merge conflicts',
     category: 'utility',
     tools: [],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'feature', feature: 'utility' },
   },
   insights: {
     label: 'Insights',
-    description: 'Extracts code insights',
+    description: 'Extracts code insights and creates artifacts',
     category: 'utility',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'feature', feature: 'insights' },
   },
   analysis: {
     label: 'Analysis',
-    description: 'Codebase analysis with context lookup',
+    description: 'Codebase analysis with context lookup and artifacts',
     category: 'utility',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: ['context7'],
+    mcp_servers: ['context7', 'auto-claude'],
     // Analysis uses same as insights
     settingsSource: { type: 'feature', feature: 'insights' },
   },
   batch_analysis: {
     label: 'Batch Analysis',
-    description: 'Batch processing of issues or items',
+    description: 'Batch processing of issues with artifact tracking',
     category: 'utility',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     // Batch uses same as GitHub Issues
     settingsSource: { type: 'feature', feature: 'githubIssues' },
   },
@@ -252,18 +252,18 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
   // Ideation & Roadmap - use feature settings
   ideation: {
     label: 'Ideation',
-    description: 'Generates feature ideas',
+    description: 'Generates feature ideas and recommendations',
     category: 'ideation',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
+    mcp_servers: ['auto-claude'],
     settingsSource: { type: 'feature', feature: 'ideation' },
   },
   roadmap_discovery: {
     label: 'Roadmap Discovery',
-    description: 'Discovers roadmap items',
+    description: 'Discovers roadmap items with context',
     category: 'ideation',
     tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: ['context7'],
+    mcp_servers: ['context7', 'auto-claude'],
     settingsSource: { type: 'feature', feature: 'roadmap' },
   },
 };

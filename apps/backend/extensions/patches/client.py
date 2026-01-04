@@ -73,7 +73,6 @@ def _instrumented_create_client(wrapped: Callable, args: tuple, kwargs: dict) ->
         get_current_trace_id,
         is_tracing_enabled,
     )
-    from extensions.patches.hooks import get_tracking_hooks
 
     # Extract agent_type for trace naming
     agent_type = kwargs.get('agent_type', 'unknown')
@@ -84,32 +83,15 @@ def _instrumented_create_client(wrapped: Callable, args: tuple, kwargs: dict) ->
         trace_id = start_trace(agent_type)
         logger.debug(f"Started trace for {agent_type}: {trace_id}")
 
-    # 2. Inject trace_id into env for subprocesses
+    # 2. Inject trace_id into environment for subprocesses
+    # Note: We set os.environ directly since create_client doesn't accept 'env' parameter
     if trace_id:
-        env = kwargs.get('env')
-        if env is None:
-            # Get default env vars
-            try:
-                from core.auth import get_sdk_env_vars
-                env = get_sdk_env_vars()
-            except ImportError:
-                env = dict(os.environ)
-            kwargs['env'] = env
+        os.environ['LANGFUSE_TRACE_ID'] = trace_id
+        os.environ['AUTO_CLAUDE_INSTRUMENTED'] = '1'
 
-        env['LANGFUSE_TRACE_ID'] = trace_id
-        env['AUTO_CLAUDE_INSTRUMENTED'] = '1'
-
-    # 3. Add tracking hooks (merge with existing)
-    try:
-        existing_hooks = kwargs.get('hooks', {})
-        tracking_hooks = get_tracking_hooks()
-
-        # Deep merge hooks
-        merged_hooks = _merge_hooks(existing_hooks, tracking_hooks)
-        kwargs['hooks'] = merged_hooks
-        logger.debug(f"Added tracking hooks: {list(tracking_hooks.keys())}")
-    except Exception as e:
-        logger.warning(f"Could not add tracking hooks: {e}")
+    # 3. Note: Hooks are configured internally in create_client, not via kwargs
+    # The create_client function doesn't accept a 'hooks' parameter
+    # If tracking hooks are needed, they should be added to the client after creation
 
     # 4. Call original create_client
     client = wrapped(*args, **kwargs)

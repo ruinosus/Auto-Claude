@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getArtifacts, ArtifactTrace, Artifact } from '../../../services/analytics-api';
+import { getLocalArtifacts, Artifact } from '../../../services/analytics-api';
 import { formatCurrency } from '../utils/formatters';
+
+// Group artifacts by agent_type for display (similar to trace grouping)
+interface ArtifactGroup {
+  agent_type: string;
+  label: string;
+  timestamp: string;
+  artifacts: Artifact[];
+  total_value_usd: number;
+  artifact_count: number;
+}
 import { MermaidPreview } from './MermaidPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 import { ArtifactDetailModal } from './ArtifactDetailModal';
@@ -45,6 +55,17 @@ import { ArtifactTab, ArtifactType } from '../../../services/analytics-api';
 
 // Artifact type icons and colors
 const ARTIFACT_CONFIG: Record<string, { icon: React.ReactNode; color: string; bg: string; label: string }> = {
+  // Roadmap artifacts
+  roadmap_feature: { icon: <Target className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Feature' },
+  roadmap_item: { icon: <ListChecks className="h-4 w-4" />, color: 'text-cyan-400', bg: 'bg-cyan-500/10', label: 'Roadmap Item' },
+  roadmap_phase: { icon: <Layers className="h-4 w-4" />, color: 'text-indigo-400', bg: 'bg-indigo-500/10', label: 'Phase' },
+  milestone: { icon: <Target className="h-4 w-4" />, color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: 'Milestone' },
+  priority_decision: { icon: <Zap className="h-4 w-4" />, color: 'text-orange-400', bg: 'bg-orange-500/10', label: 'Priority' },
+  priority_recommendation: { icon: <Zap className="h-4 w-4" />, color: 'text-amber-400', bg: 'bg-amber-500/10', label: 'Priority Rec' },
+
+  // Ideation artifacts
+  idea: { icon: <Lightbulb className="h-4 w-4" />, color: 'text-yellow-400', bg: 'bg-yellow-500/10', label: 'Idea' },
+
   // Insights & General
   diagram: { icon: <GitBranch className="h-4 w-4" />, color: 'text-purple-400', bg: 'bg-purple-500/10', label: 'Diagram' },
   code_example: { icon: <Code className="h-4 w-4" />, color: 'text-blue-400', bg: 'bg-blue-500/10', label: 'Code' },
@@ -154,16 +175,32 @@ interface ArtifactsPanelProps {
 // Selected artifact state for modal
 interface SelectedArtifact {
   id: string;
-  traceId: string;
+  agentType: string;
   artifact: Artifact;
 }
 
+// Agent type labels for display
+const AGENT_TYPE_LABELS: Record<string, string> = {
+  roadmap_generator: 'Roadmap Generator',
+  roadmap_features: 'Roadmap Features',
+  ideation: 'Ideation',
+  insights: 'Insights',
+  insight_extractor: 'Insight Extractor',
+  spec_creation: 'Spec Creation',
+  competitor_analyzer: 'Competitor Analyzer',
+  qa_reviewer: 'QA Reviewer',
+  qa_fixer: 'QA Fixer',
+  coder: 'Coder Agent',
+  planner: 'Planner Agent',
+  unknown: 'Other',
+};
+
 export function ArtifactsPanel({ projectId, projectPath, className = '', filterByTab, title }: ArtifactsPanelProps) {
   const { t } = useTranslation(['analytics']);
-  const [traces, setTraces] = useState<ArtifactTrace[]>([]);
+  const [groups, setGroups] = useState<ArtifactGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedTraces, setExpandedTraces] = useState<Set<string>>(new Set());
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<SelectedArtifact | null>(null);
   const [startDate, setStartDate] = useState<string>('');
@@ -171,15 +208,59 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
 
   useEffect(() => {
     async function fetchArtifacts() {
+      // Require projectPath to load local artifacts
+      if (!projectPath) {
+        setGroups([]);
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
-        // Pass project_path to load full artifact content from local storage
-        const response = await getArtifacts({
-          project_id: projectId,
+        // Fetch directly from local storage - bypasses Langfuse trace_id requirement
+        const response = await getLocalArtifacts({
           project_path: projectPath,
-          limit: 20
+          from_date: startDate || undefined,
+          to_date: endDate || undefined,
+          limit: 200  // Higher limit since local storage
         });
-        setTraces(response.artifacts);
+
+        // Group artifacts by agent_type
+        const groupedByAgent = new Map<string, Artifact[]>();
+        for (const artifact of response.artifacts) {
+          const agentType = artifact.agent_type || 'unknown';
+          if (!groupedByAgent.has(agentType)) {
+            groupedByAgent.set(agentType, []);
+          }
+          groupedByAgent.get(agentType)!.push(artifact);
+        }
+
+        // Convert to ArtifactGroup format
+        const artifactGroups: ArtifactGroup[] = Array.from(groupedByAgent.entries())
+          .map(([agentType, artifacts]) => {
+            // Sort artifacts by created_at descending
+            artifacts.sort((a, b) => {
+              const dateA = a.created_at || '';
+              const dateB = b.created_at || '';
+              return dateB.localeCompare(dateA);
+            });
+
+            const latestTimestamp = artifacts[0]?.created_at || new Date().toISOString();
+            const totalValue = artifacts.reduce((sum, a) => sum + (a.value_usd || 0), 0);
+
+            return {
+              agent_type: agentType,
+              label: AGENT_TYPE_LABELS[agentType] || agentType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+              timestamp: latestTimestamp,
+              artifacts,
+              total_value_usd: totalValue,
+              artifact_count: artifacts.length,
+            };
+          })
+          // Sort groups by total value descending
+          .sort((a, b) => b.total_value_usd - a.total_value_usd);
+
+        setGroups(artifactGroups);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load artifacts');
@@ -189,31 +270,7 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
     }
 
     fetchArtifacts();
-  }, [projectId, projectPath]);
-
-  // Filter traces by date range
-  const filterByDateRange = (tracesToFilter: ArtifactTrace[]): ArtifactTrace[] => {
-    if (!startDate && !endDate) return tracesToFilter;
-
-    return tracesToFilter.filter(trace => {
-      const traceDate = new Date(trace.timestamp);
-      // Set time to start of day for comparison
-      const traceDateOnly = new Date(traceDate.getFullYear(), traceDate.getMonth(), traceDate.getDate());
-
-      if (startDate) {
-        const start = new Date(startDate);
-        if (traceDateOnly < start) return false;
-      }
-
-      if (endDate) {
-        const end = new Date(endDate);
-        // Include the end date by checking if trace is before end of day
-        if (traceDateOnly > end) return false;
-      }
-
-      return true;
-    });
-  };
+  }, [projectPath, startDate, endDate]);
 
   // Clear date filters
   const clearDateFilters = () => {
@@ -223,10 +280,10 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
 
   // Filter artifacts by tab if specified
   const allowedTypes = filterByTab ? TAB_ARTIFACT_TYPES[filterByTab] : [];
-  const tabFilteredTraces = traces.map(trace => {
-    if (allowedTypes.length === 0) return trace; // No filter, show all
+  const filteredGroups = groups.map(group => {
+    if (allowedTypes.length === 0) return group; // No filter, show all
 
-    const filteredArtifacts = trace.artifacts.filter(a =>
+    const filteredArtifacts = group.artifacts.filter(a =>
       allowedTypes.includes(a.type as ArtifactType) ||
       (a.tab && a.tab === filterByTab)
     );
@@ -234,30 +291,27 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
     if (filteredArtifacts.length === 0) return null;
 
     // Recalculate value for filtered artifacts
-    const filteredValue = filteredArtifacts.reduce((sum, a) => sum + a.value_usd, 0);
+    const filteredValue = filteredArtifacts.reduce((sum, a) => sum + (a.value_usd || 0), 0);
 
     return {
-      ...trace,
+      ...group,
       artifacts: filteredArtifacts,
       artifact_count: filteredArtifacts.length,
       total_value_usd: filteredValue,
     };
-  }).filter((trace): trace is ArtifactTrace => trace !== null);
-
-  // Apply date range filter after tab filter
-  const filteredTraces = filterByDateRange(tabFilteredTraces);
+  }).filter((group): group is ArtifactGroup => group !== null);
 
   const displayTitle = title || (filterByTab
     ? `${filterByTab.charAt(0).toUpperCase() + filterByTab.slice(1)} Artifacts`
     : 'Generated Artifacts');
 
-  const toggleTrace = (traceId: string) => {
-    setExpandedTraces(prev => {
+  const toggleGroup = (agentType: string) => {
+    setExpandedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(traceId)) {
-        next.delete(traceId);
+      if (next.has(agentType)) {
+        next.delete(agentType);
       } else {
-        next.add(traceId);
+        next.add(agentType);
       }
       return next;
     });
@@ -303,22 +357,24 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
     );
   }
 
-  if (filteredTraces.length === 0) {
+  if (filteredGroups.length === 0) {
     return (
       <div className={`bg-[#1e1e2e] rounded-lg p-6 ${className}`}>
         <h3 className="text-lg font-semibold text-white mb-2">{displayTitle}</h3>
         <p className="text-gray-400 text-sm">
-          {filterByTab
+          {!projectPath
+            ? 'Select a project to view artifacts.'
+            : filterByTab
             ? `No ${filterByTab} artifacts found yet.`
-            : 'No artifacts found. Run an Insights chat to generate diagrams, recommendations, and more.'}
+            : 'No artifacts found. Run Roadmap, Ideation, or Insights to generate artifacts.'}
         </p>
       </div>
     );
   }
 
   // Calculate totals
-  const totalValue = filteredTraces.reduce((sum, t) => sum + t.total_value_usd, 0);
-  const totalArtifacts = filteredTraces.reduce((sum, t) => sum + t.artifact_count, 0);
+  const totalValue = filteredGroups.reduce((sum, g) => sum + g.total_value_usd, 0);
+  const totalArtifacts = filteredGroups.reduce((sum, g) => sum + g.artifact_count, 0);
 
   return (
     <div className={`bg-[#1e1e2e] rounded-lg p-6 ${className}`}>
@@ -365,19 +421,28 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
         )}
       </div>
 
-      {/* Traces list */}
+      {/* Artifact groups list */}
       <div className="space-y-3">
-        {filteredTraces.map((trace) => {
-          const isExpanded = expandedTraces.has(trace.trace_id);
+        {filteredGroups.map((group) => {
+          const isExpanded = expandedGroups.has(group.agent_type);
+
+          // Calculate artifact type breakdown
+          const typeBreakdown = group.artifacts.reduce((acc, a) => {
+            const type = a.type || 'unknown';
+            if (!acc[type]) acc[type] = { count: 0, value: 0 };
+            acc[type].count++;
+            acc[type].value += a.value_usd || 0;
+            return acc;
+          }, {} as Record<string, { count: number; value: number }>);
 
           return (
             <div
-              key={trace.trace_id}
+              key={group.agent_type}
               className="border border-gray-700 rounded-lg overflow-hidden"
             >
-              {/* Trace header */}
+              {/* Group header */}
               <button
-                onClick={() => toggleTrace(trace.trace_id)}
+                onClick={() => toggleGroup(group.agent_type)}
                 className="w-full flex items-center justify-between p-4 hover:bg-gray-800/50 transition-colors"
               >
                 <div className="flex items-center gap-3">
@@ -388,83 +453,47 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
                   )}
                   <div className="text-left">
                     <p className="text-white font-medium truncate max-w-md">
-                      {trace.query}
+                      {group.label}
                     </p>
                     <p className="text-gray-500 text-xs mt-1">
-                      {formatTimestamp(trace.timestamp)} • {trace.artifact_count} artifacts
+                      {formatTimestamp(group.timestamp)} • {group.artifact_count} artifacts
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-4">
-                  {/* Value breakdown pills - dynamically generated for all artifact types */}
+                  {/* Type breakdown pills */}
                   <div className="flex gap-2 flex-wrap">
-                    {Object.entries(trace.value_breakdown)
-                      .filter(([_, value]) => value > 0)
-                      .slice(0, 4) // Limit to 4 pills to avoid overflow
-                      .map(([type, value]) => {
-                        // Map type to display label and colors
-                        const typeConfig: Record<string, { label: string; bgColor: string; textColor: string }> = {
-                          diagrams: { label: 'Diagrams', bgColor: 'bg-purple-500/10', textColor: 'text-purple-400' },
-                          diagram: { label: 'Diagram', bgColor: 'bg-purple-500/10', textColor: 'text-purple-400' },
-                          security: { label: 'Security', bgColor: 'bg-red-500/10', textColor: 'text-red-400' },
-                          security_finding: { label: 'Security', bgColor: 'bg-red-500/10', textColor: 'text-red-400' },
-                          recommendations: { label: 'Recs', bgColor: 'bg-yellow-500/10', textColor: 'text-yellow-400' },
-                          recommendation: { label: 'Rec', bgColor: 'bg-yellow-500/10', textColor: 'text-yellow-400' },
-                          code_explanations: { label: 'Code', bgColor: 'bg-blue-500/10', textColor: 'text-blue-400' },
-                          code_example: { label: 'Code', bgColor: 'bg-blue-500/10', textColor: 'text-blue-400' },
-                          architecture_insight: { label: 'Arch', bgColor: 'bg-indigo-500/10', textColor: 'text-indigo-400' },
-                          documentation: { label: 'Docs', bgColor: 'bg-cyan-500/10', textColor: 'text-cyan-400' },
-                          api_design: { label: 'API', bgColor: 'bg-indigo-500/10', textColor: 'text-indigo-400' },
-                          performance_insight: { label: 'Perf', bgColor: 'bg-pink-500/10', textColor: 'text-pink-400' },
-                          bug_fix: { label: 'Fix', bgColor: 'bg-orange-500/10', textColor: 'text-orange-400' },
-                          test_case: { label: 'Test', bgColor: 'bg-green-500/10', textColor: 'text-green-400' },
-                        };
-                        const config = typeConfig[type] || {
-                          label: type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-                          bgColor: 'bg-gray-500/10',
-                          textColor: 'text-gray-400'
-                        };
+                    {Object.entries(typeBreakdown)
+                      .filter(([_, data]) => data.value > 0)
+                      .sort((a, b) => b[1].value - a[1].value)
+                      .slice(0, 4)
+                      .map(([type, data]) => {
+                        const artifactConfig = ARTIFACT_CONFIG[type];
+                        const bgColor = artifactConfig?.bg || 'bg-gray-500/10';
+                        const textColor = artifactConfig?.color || 'text-gray-400';
+                        const label = artifactConfig?.label || type.replace(/_/g, ' ');
                         return (
-                          <span key={type} className={`px-2 py-1 text-xs rounded-full ${config.bgColor} ${config.textColor}`}>
-                            {config.label}: {formatCurrency(value as number)}
+                          <span key={type} className={`px-2 py-1 text-xs rounded-full ${bgColor} ${textColor}`}>
+                            {label}: {formatCurrency(data.value)}
                           </span>
                         );
                       })}
                   </div>
 
                   <span className="text-emerald-400 font-semibold">
-                    {formatCurrency(trace.total_value_usd)}
+                    {formatCurrency(group.total_value_usd)}
                   </span>
                 </div>
               </button>
 
               {/* Expanded content */}
-              {isExpanded && trace.artifacts.length > 0 && (
+              {isExpanded && group.artifacts.length > 0 && (
                 <div className="border-t border-gray-700 p-4 bg-gray-900/30">
-                  {/* Full query display */}
-                  <div className="mb-4 p-3 bg-gray-800/50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 uppercase tracking-wide">Request</span>
-                      <button
-                        onClick={() => copyToClipboard(trace.query, `query-${trace.trace_id}`)}
-                        className="p-1 hover:bg-gray-700 rounded transition-colors"
-                        title="Copy query"
-                      >
-                        {copiedId === `query-${trace.trace_id}` ? (
-                          <Check className="h-3 w-3 text-green-400" />
-                        ) : (
-                          <Copy className="h-3 w-3 text-gray-400" />
-                        )}
-                      </button>
-                    </div>
-                    <p className="text-sm text-gray-300 whitespace-pre-wrap">{trace.query}</p>
-                  </div>
-
                   <div className="space-y-3">
-                    {trace.artifacts.map((artifact, idx) => {
+                    {group.artifacts.map((artifact, idx) => {
                       const config = ARTIFACT_CONFIG[artifact.type] || ARTIFACT_CONFIG.code_example;
-                      const artifactId = `${trace.trace_id}-${idx}`;
+                      const artifactId = artifact.id || `${group.agent_type}-${idx}`;
 
                       return (
                         <div
@@ -474,17 +503,22 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <span className={config.color}>{config.icon}</span>
-                              <span className="text-white font-medium">{artifact.description}</span>
+                              <span className="text-white font-medium">{artifact.description || config.label}</span>
                               <span className="text-xs text-gray-500">({artifact.format})</span>
+                              {artifact.created_at && (
+                                <span className="text-xs text-gray-500">
+                                  • {formatTimestamp(artifact.created_at)}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               <span className={`text-sm font-medium ${config.color}`}>
-                                {formatCurrency(artifact.value_usd)}
+                                {formatCurrency(artifact.value_usd || 0)}
                               </span>
                               <button
                                 onClick={() => setSelectedArtifact({
-                                  id: artifact.id || artifactId,
-                                  traceId: trace.trace_id,
+                                  id: artifactId,
+                                  agentType: group.agent_type,
                                   artifact
                                 })}
                                 className="p-1 hover:bg-gray-700 rounded transition-colors"
@@ -542,19 +576,12 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
                     })}
                   </div>
 
-                  {/* Trace ID link */}
+                  {/* Agent type info */}
                   <div className="mt-4 pt-3 border-t border-gray-700 flex items-center justify-between">
                     <span className="text-xs text-gray-500">
-                      Trace ID: <code className="text-gray-400">{trace.trace_id}</code>
+                      Agent: <code className="text-gray-400">{group.agent_type}</code>
+                      {' • '}Source: <code className="text-gray-400">Local Storage</code>
                     </span>
-                    <a
-                      href={`http://localhost:3001/traces/${trace.trace_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
-                    >
-                      View in Langfuse <ExternalLink className="h-3 w-3" />
-                    </a>
                   </div>
                 </div>
               )}
@@ -573,10 +600,11 @@ export function ArtifactsPanel({ projectId, projectPath, className = '', filterB
           initialArtifact={{
             type: selectedArtifact.artifact.type,
             content: selectedArtifact.artifact.content,
-            value_usd: selectedArtifact.artifact.value_usd,
-            description: selectedArtifact.artifact.description,
+            value_usd: selectedArtifact.artifact.value_usd || 0,
+            description: selectedArtifact.artifact.description || '',
             format: selectedArtifact.artifact.format,
-            trace_id: selectedArtifact.traceId,
+            trace_id: selectedArtifact.artifact.trace_id,
+            agent_type: selectedArtifact.agentType,
           }}
         />
       )}

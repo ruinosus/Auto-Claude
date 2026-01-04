@@ -365,11 +365,11 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
           </TabsList>
 
           <TabsContent value="overview" className="mt-6">
-            <OverviewTab data={overviewData} loading={isLoading} projectPath={project?.path} />
+            <OverviewTab data={overviewData} loading={isLoading} projectId={projectName} projectPath={project?.path} />
           </TabsContent>
 
           <TabsContent value="dev" className="mt-6">
-            <DevTab data={devData} loading={isLoading} projectPath={project?.path} />
+            <DevTab data={devData} loading={isLoading} projectId={projectName} projectPath={project?.path} />
           </TabsContent>
 
           <TabsContent value="techlead" className="mt-6">
@@ -377,13 +377,14 @@ export function Analytics({ projectId, initialTab = 'overview' }: AnalyticsProps
           </TabsContent>
 
           <TabsContent value="ops" className="mt-6">
-            <OpsTab data={opsData} loading={isLoading} projectPath={project?.path} />
+            <OpsTab data={opsData} loading={isLoading} projectId={projectName} projectPath={project?.path} />
           </TabsContent>
 
           <TabsContent value="business" className="mt-6">
             <BusinessTab
               data={businessData}
               loading={isLoading}
+              projectId={projectName}
               onExportPDF={handleExportPDF}
               projectPath={project?.path}
             />

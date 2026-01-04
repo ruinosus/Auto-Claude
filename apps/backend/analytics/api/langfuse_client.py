@@ -153,6 +153,11 @@ class LangfuseAPIClient:
                 "limit": filter.limit,
             }
 
+            # Filter by project_id using user_id parameter
+            # trace_context() sets user_id=project_id at trace level for data isolation
+            if filter.project_id:
+                kwargs["user_id"] = filter.project_id
+
             # Add tag filter if specified (v3 uses 'tags' parameter)
             if filter.tags:
                 kwargs["tags"] = filter.tags

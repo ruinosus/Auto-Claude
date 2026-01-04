@@ -685,6 +685,8 @@ export interface ArtifactsParams {
   project_id?: string;
   trace_id?: string;
   project_path?: string;  // Project path to load full artifact content from local storage
+  from_date?: string;  // ISO format YYYY-MM-DD
+  to_date?: string;    // ISO format YYYY-MM-DD
   limit?: number;
 }
 
@@ -693,6 +695,8 @@ export interface LocalArtifactsParams {
   spec_id?: string;
   trace_id?: string;
   artifact_type?: string;
+  from_date?: string;  // ISO format YYYY-MM-DD
+  to_date?: string;    // ISO format YYYY-MM-DD
   limit?: number;
 }
 
@@ -729,6 +733,8 @@ export async function getArtifacts(params?: ArtifactsParams): Promise<ArtifactsR
   if (params?.project_id) searchParams.set('project_id', params.project_id);
   if (params?.trace_id) searchParams.set('trace_id', params.trace_id);
   if (params?.project_path) searchParams.set('project_path', params.project_path);
+  if (params?.from_date) searchParams.set('from_date', params.from_date);
+  if (params?.to_date) searchParams.set('to_date', params.to_date);
   if (params?.limit) searchParams.set('limit', params.limit.toString());
 
   const query = searchParams.toString();
@@ -747,6 +753,8 @@ export async function getLocalArtifacts(params: LocalArtifactsParams): Promise<L
   if (params.spec_id) searchParams.set('spec_id', params.spec_id);
   if (params.trace_id) searchParams.set('trace_id', params.trace_id);
   if (params.artifact_type) searchParams.set('artifact_type', params.artifact_type);
+  if (params.from_date) searchParams.set('from_date', params.from_date);
+  if (params.to_date) searchParams.set('to_date', params.to_date);
   if (params.limit) searchParams.set('limit', params.limit.toString());
 
   return fetchApi(`/api/analytics/artifacts/local?${searchParams.toString()}`);

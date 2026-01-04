@@ -36,11 +36,12 @@ interface BusinessTabProps {
     roiByFeature?: FeatureROI[];
   };
   loading?: boolean;
+  projectId?: string;
   projectPath?: string;
   onExportPDF?: () => void;
 }
 
-export function BusinessTab({ data, loading, projectPath, onExportPDF }: BusinessTabProps) {
+export function BusinessTab({ data, loading, projectId, projectPath, onExportPDF }: BusinessTabProps) {
   const { t } = useTranslation(['analytics']);
 
   const roiValue = data.investment > 0
@@ -240,7 +241,7 @@ export function BusinessTab({ data, loading, projectPath, onExportPDF }: Busines
       </div>
 
       {/* Business Artifacts - Recommendations, Cost Analysis */}
-      <ArtifactsPanel filterByTab="business" title="Strategic Recommendations" projectPath={projectPath} />
+      <ArtifactsPanel filterByTab="business" title="Strategic Recommendations" projectId={projectId} projectPath={projectPath} />
     </div>
   );
 }

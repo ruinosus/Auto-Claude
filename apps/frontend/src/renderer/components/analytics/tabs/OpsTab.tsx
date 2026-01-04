@@ -29,10 +29,11 @@ interface OpsTabProps {
     recentErrors: ErrorTrace[];
   };
   loading?: boolean;
+  projectId?: string;
   projectPath?: string;
 }
 
-export function OpsTab({ data, loading, projectPath }: OpsTabProps) {
+export function OpsTab({ data, loading, projectId, projectPath }: OpsTabProps) {
   const { t } = useTranslation(['analytics']);
 
   const healthColor = {
@@ -120,7 +121,7 @@ export function OpsTab({ data, loading, projectPath }: OpsTabProps) {
       </div>
 
       {/* Operations Artifacts - Security, Performance */}
-      <ArtifactsPanel filterByTab="ops" title="Security & Performance Insights" projectPath={projectPath} />
+      <ArtifactsPanel filterByTab="ops" title="Security & Performance Insights" projectId={projectId} projectPath={projectPath} />
     </div>
   );
 }
