@@ -37,6 +37,8 @@ interface LocalArtifact {
     tags?: string[];
     [key: string]: unknown;
   };
+  // Index signature for MCP SDK structuredContent compatibility
+  [key: string]: unknown;
 }
 
 function getArtifactsDir(projectPath: string): string {
