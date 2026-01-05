@@ -48,6 +48,30 @@ export function formatPercent(value: number): string {
 }
 
 /**
+ * Format percentage with compact notation for large values
+ * Uses K/M suffix for values >= 1000 to prevent layout overflow
+ * @param value - Percentage value (e.g., 150 for 150%, 12500 for 12500%)
+ * @returns Formatted string (e.g., "+150%", "+12.5K%", "+1.2M%")
+ */
+export function formatPercentCompact(value: number): string {
+  const sign = value >= 0 ? '+' : '';
+  const absValue = Math.abs(value);
+
+  if (absValue >= 1_000_000) {
+    return `${sign}${(value / 1_000_000).toFixed(1)}M%`;
+  }
+  if (absValue >= 10_000) {
+    // For very large values, use K with no decimal
+    return `${sign}${(value / 1_000).toFixed(0)}K%`;
+  }
+  if (absValue >= 1_000) {
+    // For moderately large values, use K with 1 decimal
+    return `${sign}${(value / 1_000).toFixed(1)}K%`;
+  }
+  return `${sign}${value.toFixed(0)}%`;
+}
+
+/**
  * Format duration in milliseconds to human readable
  */
 export function formatDuration(ms: number): string {

@@ -1,0 +1,763 @@
+{
+  "title": "Análises",
+  "header": {
+    "title": "Painel de Análises",
+    "subtitle": "Monitore o uso e custos do Auto-Claude"
+  },
+  "tabs": {
+    "usage": "Uso",
+    "roi": "ROI",
+    "overview": "Visão Geral",
+    "dev": "Dev",
+    "techLead": "Tech Lead",
+    "ops": "Ops",
+    "business": "Negócios"
+  },
+  "featureUsage": {
+    "title": "Uso de Funcionalidades",
+    "description": "Distribuição de tokens por funcionalidades de IA"
+  },
+  "filters": {
+    "title": "Filtros",
+    "dateRange": "Período",
+    "specs": "Specs",
+    "phases": "Fases",
+    "phasePrefix": "Fase",
+    "phaseNames": {
+      "planning": "Planejamento",
+      "coding": "Codificação",
+      "validation": "Validação"
+    },
+    "removePhaseFilter": "Remover filtro {{phase}}",
+    "models": "Modelos",
+    "costRange": "Faixa de Custo",
+    "clear": "Limpar Tudo",
+    "apply": "Aplicar Filtros"
+  },
+  "dateRanges": {
+    "7d": "Últimos 7 dias",
+    "30d": "Últimos 30 dias",
+    "90d": "Últimos 90 dias",
+    "all": "Todo o período"
+  },
+  "export": {
+    "title": "Exportar",
+    "csv": "Exportar CSV",
+    "json": "Exportar JSON",
+    "pdf": "Exportar PDF",
+    "options": "Opções de Exportação",
+    "selectMetrics": "Selecione as métricas a incluir",
+    "success": {
+      "title": "Exportação bem-sucedida",
+      "description": "Salvo em {{filePath}}"
+    },
+    "error": {
+      "title": "Falha na exportação",
+      "description": "{{error}}"
+    }
+  },
+  "budget": {
+    "title": "Orçamento",
+    "enforce": "Aplicar Bloqueio",
+    "warnThreshold": "Limite de Aviso",
+    "blockThreshold": "Limite de Bloqueio",
+    "override": "Substituir",
+    "blocked": "Orçamento Excedido",
+    "remaining": "Restante"
+  },
+  "anomalies": {
+    "title": "Anomalias",
+    "detected": "anomalias detectadas",
+    "dismiss": "Dispensar",
+    "investigate": "Investigar",
+    "costSpike": "Pico de Custo",
+    "tokenSpike": "Pico de Tokens",
+    "durationSpike": "Pico de Duração"
+  },
+  "comparison": {
+    "title": "Comparar Specs",
+    "select": "Selecione specs para comparar",
+    "vsAverage": "vs Média",
+    "bestIn": "Melhor em",
+    "close": "Fechar comparação",
+    "metric": "Métrica",
+    "time": "Tempo",
+    "qaAttempts": "Tentativas de QA",
+    "best": "Melhor"
+  },
+  "quality": {
+    "title": "Métricas de Qualidade",
+    "grade": "Nota",
+    "lintErrors": "Erros de Lint",
+    "lintWarnings": "Avisos de Lint",
+    "coverage": "Cobertura de Testes",
+    "complexity": "Complexidade",
+    "noData": "Nenhum dado de qualidade disponível",
+    "excellent": "Qualidade excelente",
+    "analyzedAt": "Analisado em {{date}}"
+  },
+  "benchmarks": {
+    "title": "Benchmarks de Mercado",
+    "description": "Compare seus custos de IA com taxas de desenvolvedores humanos",
+    "region": "Região",
+    "seniority": "Nível de Senioridade",
+    "comparison": "Você economizou {{percent}}% comparado a {{benchmark}}",
+    "regions": {
+      "us": "Estados Unidos",
+      "latam": "América Latina",
+      "eu": "União Europeia"
+    },
+    "seniorities": {
+      "junior": "Júnior",
+      "mid": "Pleno",
+      "senior": "Sênior"
+    },
+    "humanCost": "Custo Desenvolvedor Humano",
+    "aiCost": "Custo IA",
+    "savings": "Economia"
+  },
+  "notifications": {
+    "title": "Notificações",
+    "markAllRead": "Marcar todas como lidas",
+    "clearAll": "Limpar todas",
+    "noNotifications": "Sem notificações"
+  },
+  "drillDown": {
+    "close": "Fechar painel",
+    "selectItem": "Selecione um item para ver detalhes",
+    "specNotFound": "Spec não encontrada",
+    "specDetails": "Análises detalhadas desta spec",
+    "sessionDetails": "Detalhes da sessão em breve",
+    "messageDetails": "Detalhes da mensagem em breve",
+    "levels": {
+      "aggregate": "Agregado",
+      "spec": "Spec",
+      "session": "Sessão",
+      "message": "Mensagem"
+    },
+    "fields": {
+      "phase": "Fase",
+      "cost": "Custo",
+      "inputTokens": "Tokens de Entrada",
+      "outputTokens": "Tokens de Saída",
+      "model": "Modelo",
+      "duration": "Duração",
+      "sessionId": "ID da Sessão"
+    }
+  },
+  "intentBreakdown": {
+    "title": "Distribuição por Intenção",
+    "description": "Distribuição de tokens por tipo entre specs",
+    "noData": "Nenhum dado de tokens disponível",
+    "total": "Total",
+    "types": {
+      "prompt": "Tokens de Prompt",
+      "system": "Tokens de Sistema",
+      "context": "Tokens de Contexto"
+    }
+  },
+  "roi": {
+    "totalSavings": "Economia Total",
+    "hoursSaved": "Horas Economizadas",
+    "roiPercentage": "ROI",
+    "successRate": "Taxa de Sucesso",
+    "teamEfficiency": "Eficiência da Equipe",
+    "capacityGained": "Capacidade adicional ganha",
+    "hours": "hrs",
+    "specs": "specs",
+    "fteMonths": "meses FTE",
+    "workDays": "dias úteis",
+    "vsHumanCost": "vs {{cost}} custo humano",
+    "exceptionalROI": "ROI Excepcional!",
+    "aiCost": "Custo IA: {{cost}}",
+    "completedTasks": "{{count}} tarefas concluídas",
+    "chart": {
+      "title": "ROI por Spec",
+      "description": "Retorno sobre investimento das specs recentes",
+      "noData": "Nenhum dado de spec disponível",
+      "roiLabel": "ROI"
+    },
+    "costValue": {
+      "title": "Custo vs Valor",
+      "description": "Custo real de IA comparado ao custo estimado de desenvolvimento manual",
+      "noData": "Nenhum dado de spec disponível",
+      "actualCost": "Custo Real",
+      "estimatedCost": "Custo Manual Estimado",
+      "hint": "Pontos acima da linha diagonal representam ROI positivo"
+    },
+    "table": {
+      "title": "Detalhes das Specs",
+      "description": "Métricas detalhadas de ROI para cada spec",
+      "noData": "Nenhuma spec encontrada",
+      "spec": "Spec",
+      "hoursSaved": "Horas Economizadas",
+      "actualCost": "Custo IA",
+      "savings": "Economia",
+      "roi": "ROI",
+      "status": "Status",
+      "date": "Data"
+    },
+    "dashboard": {
+      "retry": "Tentar Novamente",
+      "loading": "Carregando dados de ROI...",
+      "error": "Falha ao carregar dados de ROI",
+      "notConfigured": "Langfuse Não Configurado",
+      "configureMessage": "Para visualizar análises de ROI, configure o Langfuse nas variáveis de ambiente:",
+      "dataSource": "Fonte de dados",
+      "refresh": "Atualizar",
+      "hourlyRate": "Taxa: ${{rate}}/hr"
+    }
+  },
+  "overview": {
+    "totalCost": "Custo Total",
+    "totalTokens": "Total de Tokens",
+    "hoursSaved": "Horas Economizadas",
+    "avgROI": "ROI Médio",
+    "netValue": "Valor Líquido",
+    "costVsValue": "Custo vs Valor",
+    "costByFeature": "Distribuição de Custo por Funcionalidade",
+    "statusQuick": "Status Rápido",
+    "recentActivity": "Atividade Recente",
+    "specsCompleted": "Specs Concluídas",
+    "inProgress": "Em Andamento",
+    "totalTraces": "Total de Traces",
+    "costTimeline": "Linha do Tempo de Custo (Últimas 24h)",
+    "noHourlyData": "Nenhum dado por hora disponível ainda",
+    "noFeatureData": "Nenhum dado de uso de funcionalidades ainda",
+    "runFeatures": "Execute algumas funcionalidades de IA para ver a distribuição de custos",
+    "featuresTracked": "funcionalidades rastreadas",
+    "calls": "chamadas"
+  },
+  "dev": {
+    "mySpecs": "Minhas Specs",
+    "myCost": "Meu Custo",
+    "timeSaved": "Tempo Economizado",
+    "successRate": "Taxa de Sucesso",
+    "costBySpec": "Custo por Spec",
+    "productivityMetrics": "Métricas de Produtividade",
+    "specName": "Nome da Spec",
+    "status": "Status",
+    "cost": "Custo",
+    "roi": "ROI",
+    "noSpecs": "Nenhuma spec encontrada"
+  },
+  "techLead": {
+    "budgetTracker": "Acompanhamento de Orçamento",
+    "projectOverview": "Visão Geral do Projeto",
+    "costOverTime": "Custo ao Longo do Tempo",
+    "agentDistribution": "Distribuição de Agentes",
+    "featureUsage": "Custo por Funcionalidade",
+    "noFeatureData": "Nenhum dado de uso de funcionalidades ainda. Execute algumas funcionalidades de IA para ver a distribuição de custos.",
+    "modelDistribution": "Custo por Modelo",
+    "noModelData": "Nenhum dado de uso de modelos ainda.",
+    "performanceTable": "Desempenho",
+    "roiTrend": "Tendência de ROI",
+    "weeklyComparison": "Comparação Semanal",
+    "specsCompleted": "Specs Concluídas",
+    "avgROI": "ROI Médio",
+    "efficiency": "Eficiência",
+    "projected": "Projetado",
+    "overBudget": "Acima do orçamento"
+  },
+  "ops": {
+    "healthStatus": "Saúde do Sistema",
+    "activeAlerts": "Alertas Ativos",
+    "requestsPerHour": "Requisições/Hora",
+    "errorRate": "Taxa de Erro",
+    "avgLatency": "Latência Média",
+    "modelUsage": "Uso de Modelo",
+    "tokensPerHour": "Tokens/Hora",
+    "latencyByAgent": "Latência por Agente",
+    "rateLimits": "Limites de Taxa",
+    "recentLogs": "Logs Recentes",
+    "recentErrors": "Erros Recentes",
+    "noErrors": "Nenhum erro recente",
+    "specId": "ID da Spec",
+    "agent": "Agente",
+    "error": "Erro",
+    "when": "Quando"
+  },
+  "business": {
+    "executiveSummary": "Resumo Executivo",
+    "investment": "Investimento",
+    "valueGenerated": "Valor Gerado",
+    "netSavings": "Economia Líquida",
+    "hoursImpact": "Impacto em Horas",
+    "roiByMonth": "ROI por Mês",
+    "valueByType": "Valor por Tipo de Tarefa",
+    "aiVsManual": "IA vs Manual",
+    "topSpecs": "Specs de Melhor Desempenho",
+    "annualProjection": "Projeção Anual",
+    "exportPdf": "Exportar PDF",
+    "specName": "Nome da Spec",
+    "value": "Valor",
+    "roi": "ROI",
+    "noSpecs": "Nenhuma spec disponível",
+    "valueBreakdown": "Distribuição de Valor por Tipo",
+    "executionValue": "Execução",
+    "executionDesc": "Trabalho direto de código",
+    "decisionValue": "Decisão",
+    "decisionDesc": "Escolhas estratégicas",
+    "preventionValue": "Prevenção",
+    "preventionDesc": "Problemas evitados",
+    "knowledgeValue": "Conhecimento",
+    "knowledgeDesc": "Insights adquiridos",
+    "roiByFeature": "ROI por Tipo de Funcionalidade"
+  },
+  "common": {
+    "loading": "Carregando...",
+    "noData": "Nenhum dado disponível",
+    "error": "Erro ao carregar dados",
+    "refresh": "Atualizar",
+    "period": "Período",
+    "last7Days": "Últimos 7 Dias",
+    "last30Days": "Últimos 30 Dias",
+    "thisMonth": "Este Mês",
+    "lastMonth": "Mês Passado"
+  },
+  "roiExplanation": {
+    "title": "Como o ROI é Calculado",
+    "button": "Como o ROI é calculado?",
+    "intro": "O Auto-Claude calcula o ROI medindo o valor gerado em 4 dimensões, comparado ao custo da IA.",
+    "formula": {
+      "title": "Fórmula do ROI",
+      "description": "A fórmula central que direciona todos os cálculos de ROI",
+      "equation": "ROI = (Valor Total - Custo IA) / Custo IA × 100%",
+      "totalValue": "Valor Total = Execução + Decisão + Prevenção + Conhecimento",
+      "aiCost": "Custo IA = Tokens usados × Preço da API Claude"
+    },
+    "valueTypes": {
+      "title": "4 Tipos de Valor",
+      "description": "Cada funcionalidade gera valor em uma ou mais dessas dimensões:",
+      "execution": {
+        "name": "Execução",
+        "desc": "Valor direto do código gerado e horas de dev economizadas",
+        "calculation": "(Linhas de código ÷ 20) × Taxa Horária × Multiplicador de Qualidade",
+        "examples": ["Linhas de código geradas", "Horas de dev economizadas", "Arquivos modificados", "Testes escritos"]
+      },
+      "decision": {
+        "name": "Decisão",
+        "desc": "Valor estratégico de priorização e escolhas de arquitetura",
+        "calculation": "$50-$250 por decisão estratégica tomada",
+        "examples": ["Funcionalidades priorizadas", "Ideias de alto impacto identificadas", "Decisões de arquitetura", "Escolhas de tecnologia"]
+      },
+      "prevention": {
+        "name": "Prevenção",
+        "desc": "Valor de problemas evitados antes de chegarem à produção",
+        "calculation": "$300-$10.000 por problema evitado (baseado na severidade)",
+        "examples": ["Vulnerabilidades de segurança encontradas", "Bugs capturados no QA", "Funcionalidades NÃO construídas (economia de custo)", "Retrabalho evitado"]
+      },
+      "knowledge": {
+        "name": "Conhecimento",
+        "desc": "Valor de aprendizado com exploração e documentação",
+        "calculation": "Tempo economizado × Taxa Horária × 0.4-0.5",
+        "examples": ["Exploração do código-base", "Diagramas gerados ($150 cada)", "Explicações de código ($25 cada)", "Insights descobertos"]
+      }
+    },
+    "qualityMultiplier": {
+      "title": "Multiplicador de Qualidade",
+      "description": "O ROI de Build é ajustado baseado em indicadores de qualidade do código:",
+      "factors": {
+        "qaFirstPass": "+30% se QA passa na primeira tentativa",
+        "qaFailed": "-30% se QA falha",
+        "hasTests": "+10% se código inclui testes",
+        "hasDocs": "+5% se código inclui documentação",
+        "hasTypes": "+5% se código inclui anotações de tipo",
+        "highCoverage": "+10% para cobertura de código > 80%",
+        "lintErrors": "-5% por erro de lint (máx -20%)",
+        "reworkNeeded": "-20% se retrabalho é sinalizado"
+      },
+      "range": "Multiplicador final varia de 0.5× a 1.5×"
+    },
+    "features": {
+      "title": "ROI por Tipo de Funcionalidade",
+      "description": "Cada funcionalidade do Auto-Claude contribui para o ROI de forma diferente:",
+      "ideation": {
+        "name": "Ideação",
+        "types": "Decisão + Prevenção + Conhecimento",
+        "factors": ["$50-$250 por ideia de alto impacto (×5 para segurança)", "$1.000+ por problema de segurança encontrado cedo", "1 hora de brainstorming economizada"]
+      },
+      "roadmap": {
+        "name": "Roadmap",
+        "types": "Decisão + Prevenção + Conhecimento",
+        "factors": ["$100 por funcionalidade priorizada", "30% do custo de funcionalidade evitada (~$1.500)", "2 horas de planejamento economizadas"]
+      },
+      "spec": {
+        "name": "Criação de Spec",
+        "types": "Execução + Decisão + Prevenção",
+        "factors": ["3 horas de escrita de spec economizadas", "$30 por requisito esclarecido", "$200 de bônus por sucesso na primeira passagem"]
+      },
+      "build": {
+        "name": "Build (Código)",
+        "types": "Execução + Prevenção",
+        "factors": ["(Linhas ÷ 20) × $150/hr × Multiplicador de Qualidade", "Bônus QA: até +30% para sucesso na primeira passagem", "$30 por arquivo (bugs prevenidos pelo QA)"]
+      },
+      "github": {
+        "name": "Automação GitHub",
+        "types": "Execução + Decisão + Prevenção",
+        "factors": ["Revisão de PR: 30 min economizados × $150/hr = $75", "Triagem de Issue: 10 min economizados = $25", "Auto-correção: $200 por issue resolvida"]
+      },
+      "insights": {
+        "name": "Chat de Insights",
+        "types": "Conhecimento + Decisão",
+        "factors": ["Arquivos explorados × 5 min × taxa horária", "$150 por diagrama gerado", "$100 por tarefa aceita"]
+      },
+      "merge": {
+        "name": "Resolvedor de Merge",
+        "types": "Execução + Decisão + Prevenção",
+        "factors": ["20 min economizados por conflito resolvido", "$75 por decisão de estratégia de merge", "$50 por escolha de código feita"]
+      }
+    },
+    "constants": {
+      "title": "Constantes Padrão",
+      "description": "Esses valores podem ser personalizados nas configurações do projeto:",
+      "hourlyRate": "Taxa Horária do Desenvolvedor: $150/hr (configurável)",
+      "timeSavings": {
+        "title": "Estimativas de Tempo Economizado",
+        "prReview": "Revisão de PR: 30 min",
+        "issueTriage": "Triagem de Issue: 10 min",
+        "ideaGeneration": "Geração de Ideias: 60 min",
+        "roadmapPlanning": "Planejamento de Roadmap: 120 min",
+        "specWriting": "Escrita de Spec: 180 min",
+        "codebaseExploration": "Exploração do Código-base: 45 min",
+        "conflictResolution": "Resolução de Conflitos: 20 min"
+      },
+      "preventionValues": {
+        "title": "Valores de Prevenção de Problemas",
+        "securityCritical": "Segurança (Crítico): $10.000",
+        "securityHigh": "Segurança (Alto): $5.000",
+        "securityMedium": "Segurança (Médio): $1.000",
+        "performanceCritical": "Performance (Crítico): $5.000",
+        "bugCritical": "Bug (Crítico): $3.000",
+        "bugHigh": "Bug (Alto): $1.000",
+        "bugMedium": "Bug (Médio): $300"
+      }
+    },
+    "confidence": {
+      "title": "Scores de Confiança",
+      "description": "Cada cálculo de ROI inclui um score de confiança (0.5-0.85) indicando a confiabilidade da estimativa:",
+      "high": "0.85: Build com QA aprovado (resultados mensuráveis)",
+      "medium": "0.75: Criação de Spec, Resolução de Merge",
+      "low": "0.60: Roadmap, Insights (estimativas estratégicas)"
+    },
+    "note": "Os cálculos de ROI são estimativas baseadas em benchmarks da indústria. O valor real pode variar baseado na complexidade do projeto, tamanho da equipe e experiência dos desenvolvedores."
+  },
+  "artifacts": {
+    "title": "Artefatos",
+    "search": "Buscar",
+    "searchPlaceholder": "Buscar artefatos...",
+    "filters": "Filtros",
+    "clearFilters": "Limpar Filtros",
+    "applyFilters": "Aplicar",
+    "noResults": "Nenhum artefato encontrado",
+    "noResultsHint": "Tente ajustar sua busca ou filtros",
+    "total": "Total de Artefatos",
+    "totalValue": "Valor Total",
+    "avgValue": "Valor Médio",
+    "type": "Tipo",
+    "types": {
+      "roadmap_feature": "Funcionalidade de Roadmap",
+      "security_issue": "Problema de Segurança",
+      "ideation_item": "Item de Ideação",
+      "spec_requirement": "Requisito de Spec",
+      "insight": "Insight"
+    },
+    "priority": "Prioridade",
+    "priorities": {
+      "must": "Deve Ter",
+      "should": "Deveria Ter",
+      "could": "Poderia Ter",
+      "wont": "Não Terá"
+    },
+    "complexity": "Complexidade",
+    "complexities": {
+      "low": "Baixa",
+      "medium": "Média",
+      "high": "Alta",
+      "very_high": "Muito Alta"
+    },
+    "impact": "Impacto",
+    "impacts": {
+      "low": "Baixo",
+      "medium": "Médio",
+      "high": "Alto"
+    },
+    "quality": {
+      "title": "Indicadores de Qualidade",
+      "hasRationale": "Tem Justificativa",
+      "hasAcceptanceCriteria": "Tem Critérios de Aceite",
+      "hasUserStories": "Tem User Stories",
+      "hasDependencies": "Tem Dependências",
+      "qualityScore": "Score de Qualidade",
+      "withQuality": "Com Campos de Qualidade"
+    },
+    "metadata": {
+      "title": "Metadados",
+      "strategicRationale": "Justificativa Estratégica",
+      "acceptanceCriteria": "Critérios de Aceite",
+      "userStories": "User Stories",
+      "dependencies": "Dependências",
+      "agent": "Agente",
+      "session": "Sessão",
+      "createdAt": "Criado Em",
+      "traceId": "ID do Trace",
+      "specId": "ID da Spec"
+    },
+    "timeline": {
+      "title": "Linha do Tempo de Artefatos",
+      "granularity": "Granularidade",
+      "hour": "Por Hora",
+      "day": "Diário",
+      "week": "Semanal",
+      "count": "Quantidade",
+      "value": "Valor ($)"
+    },
+    "statistics": {
+      "title": "Estatísticas",
+      "byType": "Por Tipo",
+      "byAgent": "Por Agente",
+      "byPriority": "Por Prioridade",
+      "byTab": "Por Aba",
+      "qualityMetrics": "Métricas de Qualidade"
+    },
+    "tabs": {
+      "content": "Conteúdo",
+      "metadata": "Metadados",
+      "raw": "JSON Bruto"
+    }
+  },
+  "forecast": {
+    "title": "Previsão de Impacto",
+    "preSpecDescription": "Previsão de ROI antes da execução baseada nas características da spec",
+    "postSpecDescription": "Comparação de ROI previsto vs resultados reais",
+    "prediction": "Previsão",
+    "modelAccuracy": "Modelo: {{accuracy}}% de precisão",
+    "predictedValue": "Valor Previsto",
+    "predictedCost": "Custo Previsto",
+    "predictedROI": "ROI Previsto",
+    "actualValue": "Valor Real",
+    "actualCost": "Custo Real",
+    "actualROI": "ROI Real",
+    "confidenceInterval": "Intervalo de Confiança 95%:",
+    "accuracy": "precisão",
+    "predictionError": "Erro de Previsão",
+    "accuratePrediction": "Previsão Precisa",
+    "inaccuratePrediction": "Previsão Imprecisa",
+    "withinConfidence": "Dentro do IC",
+    "outsideConfidence": "Fora do IC",
+    "noForecast": "Nenhuma previsão disponível para esta spec",
+    "noComparison": "Nenhum dado de comparação disponível ainda",
+    "factors": {
+      "complexity": "Complexidade",
+      "featureType": "Tipo de Funcionalidade",
+      "linesEstimate": "Estimativa de Linhas",
+      "similarSpecs": "Specs Similares"
+    },
+    "modelStats": {
+      "title": "Estatísticas do Modelo",
+      "totalPredictions": "Total de Previsões",
+      "meanAccuracy": "Precisão Média",
+      "meanError": "Erro Absoluto Médio",
+      "rmse": "RMSE",
+      "withinCIRate": "Taxa Dentro do IC",
+      "bias": "Viés",
+      "recentAccuracy": "Precisão Recente"
+    },
+    "history": {
+      "title": "Histórico de Previsões",
+      "specId": "ID da Spec",
+      "predicted": "Previsto",
+      "actual": "Real",
+      "error": "Erro",
+      "withinCI": "Dentro do IC",
+      "date": "Data"
+    }
+  },
+  "costAvoidance": {
+    "title": "Custos Evitados",
+    "subtitle": "Custos evitados através de prevenção e detecção precoce",
+    "totalAvoided": "Custo Total Evitado",
+    "bugsPrevented": "Bugs Prevenidos",
+    "productionBugs": "Bugs de produção",
+    "securityFixed": "Problemas de Segurança",
+    "vulnerabilities": "Vulnerabilidades corrigidas",
+    "reworkAvoided": "Retrabalho Evitado",
+    "reworkIssues": "Problemas capturados cedo",
+    "trendTitle": "Tendência de Custos Evitados",
+    "trendDescription": "Distribuição semanal de custos evitados",
+    "breakdownTitle": "Distribuição por Tipo",
+    "breakdownDescription": "Distribuição de custos evitados",
+    "recentEvents": "Eventos Recentes",
+    "recentEventsDescription": "Últimos eventos de custos evitados",
+    "byDetector": "Por Fonte de Detecção",
+    "bySeverity": "Por Severidade",
+    "noEvents": "Nenhum evento de custo evitado registrado ainda",
+    "noTrend": "Dados insuficientes para gráfico de tendência",
+    "noData": {
+      "title": "Nenhum Dado de Custo Evitado",
+      "description": "Eventos de custos evitados aparecerão aqui quando bugs forem prevenidos, problemas de segurança forem corrigidos, ou retrabalho for evitado durante revisões de QA."
+    },
+    "types": {
+      "bug_production": "Prevenção de Bug",
+      "security_breach": "Correção de Segurança",
+      "rework_avoided": "Retrabalho Evitado",
+      "duplicate_feature": "Duplicata Prevenida",
+      "wrong_architecture": "Correção de Arquitetura"
+    },
+    "severities": {
+      "critical": "Crítico",
+      "high": "Alto",
+      "medium": "Médio",
+      "low": "Baixo"
+    },
+    "detectors": {
+      "qa_reviewer": "Revisor de QA",
+      "qa_fixer": "Corretor de QA",
+      "security_scan": "Scan de Segurança",
+      "ideation": "Fase de Ideação",
+      "spec_creation": "Criação de Spec",
+      "manual": "Revisão Manual"
+    }
+  },
+  "satisfaction": {
+    "title": "Satisfação do Desenvolvedor",
+    "subtitle": "Acompanhe satisfação e scores NPS ao longo do tempo",
+    "error": {
+      "fetchFailed": "Falha ao carregar métricas de satisfação"
+    },
+    "nps": {
+      "title": "Net Promoter Score",
+      "description": "Baseado na pergunta 'Recomendaria' (-100 a +100)",
+      "excellent": "Excelente",
+      "great": "Ótimo",
+      "good": "Bom",
+      "okay": "OK",
+      "needsWork": "Precisa Melhorar",
+      "critical": "Crítico"
+    },
+    "breakdown": {
+      "title": "Distribuição de Respostas",
+      "description": "Distribuição de promotores, neutros e detratores",
+      "promoters": "Promotores (4-5)",
+      "passives": "Neutros (3)",
+      "detractors": "Detratores (1-2)"
+    },
+    "metrics": {
+      "overallSatisfaction": "Satisfação Geral",
+      "outputQuality": "Qualidade do Output",
+      "timeSaved": "Percepção de Tempo Economizado",
+      "responseRate": "Respostas",
+      "totalResponses": "total de respostas da pesquisa"
+    },
+    "themes": {
+      "title": "Principais Temas de Feedback",
+      "description": "Tópicos mais comuns mencionados no feedback",
+      "noThemes": "Nenhum tema de feedback identificado ainda",
+      "speed": "Velocidade",
+      "quality": "Qualidade",
+      "documentation": "Documentação",
+      "ui": "Interface",
+      "reliability": "Confiabilidade",
+      "ease_of_use": "Facilidade de Uso"
+    },
+    "survey": {
+      "title": "Como foi sua experiência?",
+      "description": "Ajude-nos a melhorar compartilhando seu feedback para a spec {{specId}}",
+      "skip": "Pular",
+      "submit": "Enviar",
+      "submitting": "Enviando...",
+      "submitError": "Falha ao enviar pesquisa. Por favor, tente novamente.",
+      "questions": {
+        "overall": "Satisfação Geral",
+        "quality": "Qualidade do Output",
+        "timeSaved": "Tempo Economizado",
+        "recommend": "Você recomendaria o Auto-Claude?",
+        "recommendHint": "Isso nos ajuda a calcular nosso Net Promoter Score",
+        "feedback": "Algum feedback? (opcional)",
+        "feedbackPlaceholder": "O que você gostou ou não gostou?",
+        "improvements": "Sugestões de melhoria? (opcional)",
+        "improvementsPlaceholder": "Como podemos melhorar?"
+      }
+    }
+  },
+  "roiComparison": {
+    "title": "Comparação de ROI",
+    "description": "Compare o ROI do projeto com benchmarks de mercado",
+    "noData": "Nenhum dado de ROI disponível para comparação",
+    "roi": "ROI",
+    "vsMarket": "vs Média do Mercado",
+    "percentile": "Percentil",
+    "top": "Top {{value}}%",
+    "netValue": "Valor Líquido",
+    "breakEven": "Ponto de Equilíbrio",
+    "profitable": "Lucrativo",
+    "days": "{{count}} dias",
+    "marketAverage": "Média do Mercado (370%)",
+    "topPerformers": "Top 5% (1030%)",
+    "aboveAverage": "Acima da Média",
+    "avgRoi": "ROI Médio",
+    "totalNetValue": "Valor Líquido Total",
+    "positions": {
+      "top_performer": "Top Performer",
+      "above_average": "Acima da Média",
+      "average": "Média",
+      "below_average": "Abaixo da Média",
+      "needs_improvement": "Precisa Melhorar"
+    },
+    "breakEvenAnalysis": {
+      "title": "Análise de Ponto de Equilíbrio",
+      "description": "Linha do tempo de recuperação de investimento e projeções",
+      "dailyValue": "Valor Diário",
+      "dailyCost": "Custo Diário",
+      "daysSinceStart": "Dias Ativos",
+      "projectedAnnualRoi": "ROI Anual Projetado",
+      "recommendation": "Recomendação",
+      "cumulativeValue": "Valor Acumulado",
+      "cumulativeCost": "Custo Acumulado"
+    }
+  },
+  "projectBenchmarks": {
+    "title": "Ranking de Projetos",
+    "error": "Falha ao carregar dados de benchmark",
+    "noData": "Nenhum dado de benchmark disponível",
+    "selectMetric": "Selecione métrica",
+    "selectPeriod": "Período",
+    "yourPosition": "Sua Posição vs Mediana",
+    "rank": "Posição",
+    "project": "Projeto",
+    "totalROI": "ROI Total",
+    "value": "Valor",
+    "successRate": "Sucesso",
+    "specs": "Specs",
+    "details": "Detalhes",
+    "you": "Você",
+    "avgROI": "ROI Médio/Spec",
+    "totalCost": "Custo Total",
+    "avgQAAttempts": "Tentativas QA Médias",
+    "bestFeature": "Melhor Funcionalidade",
+    "bestPractices": "Melhores Práticas dos Top Performers",
+    "bestPracticesDesc": "Padrões identificados analisando os {{count}} projetos de melhor desempenho",
+    "suggestions": "Sugestões de Melhoria",
+    "currentRank": "Posição #{{rank}} de {{total}}",
+    "adoptionRate": "{{rate}}% taxa de adoção",
+    "examples": "Exemplos: {{examples}}",
+    "metrics": {
+      "roi": "ROI Total",
+      "value": "Valor Gerado",
+      "successRate": "Taxa de Sucesso"
+    },
+    "impact": {
+      "high": "Alto Impacto",
+      "medium": "Médio Impacto",
+      "low": "Baixo Impacto"
+    },
+    "patterns": {
+      "low_qa_iterations": "Poucas Iterações de QA",
+      "high_success_rate": "Alta Taxa de Sucesso",
+      "feature_diversity": "Diversidade de Funcionalidades",
+      "build_focus": "Foco em Build",
+      "cost_efficiency": "Eficiência de Custo",
+      "consistent_delivery": "Entrega Consistente"
+    }
+  }
+}

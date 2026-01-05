@@ -1,3 +1,4 @@
 // Export all custom hooks
 export { useIpcListeners } from './useIpc';
 export { useVirtualizedTree } from './useVirtualizedTree';
+export { useProjectPath } from './useProjectPath';

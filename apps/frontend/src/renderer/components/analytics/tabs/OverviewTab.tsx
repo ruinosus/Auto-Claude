@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
 import { ArtifactTimeline } from '../artifacts/ArtifactTimeline';
-import { formatCurrency, formatTokens, formatHours, formatPercent } from '../utils/formatters';
+import { formatCurrency, formatTokens, formatHours, formatPercentCompact } from '../utils/formatters';
 import { useArtifactTimeline } from '../../../hooks/useAnalyticsQuery';
 import {
   Zap,
@@ -169,8 +169,8 @@ export function OverviewTab({ data, loading, projectId, projectPath }: OverviewT
         />
         <MetricCard
           title="overview.avgROI"
-          value={formatPercent(data.avgROI)}
-          trend={{ value: data.avgROI, isPositive: data.avgROI > 100 }}
+          value={formatPercentCompact(data.avgROI)}
+          trend={{ value: Math.min(data.avgROI, 999), isPositive: data.avgROI > 100 }}
         />
         <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
           <p className="text-sm text-gray-500 dark:text-gray-400">Net Value</p>

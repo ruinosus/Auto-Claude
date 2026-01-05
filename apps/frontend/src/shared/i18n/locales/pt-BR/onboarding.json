@@ -1,0 +1,211 @@
+{
+  "wizard": {
+    "title": "Assistente de Configuração",
+    "description": "Configure seu ambiente Auto Claude em alguns passos simples",
+    "helpText": "Este assistente ajudará você a configurar seu ambiente em poucos passos. Você pode configurar seu token OAuth do Claude, configurar recursos de memória e criar sua primeira tarefa."
+  },
+  "welcome": {
+    "title": "Bem-vindo ao Auto Claude",
+    "subtitle": "Construa software autonomamente com agentes alimentados por IA",
+    "getStarted": "Começar",
+    "skip": "Pular Configuração",
+    "features": {
+      "aiPowered": {
+        "title": "Desenvolvimento com IA",
+        "description": "Gere código e construa funcionalidades usando agentes Claude Code"
+      },
+      "specDriven": {
+        "title": "Fluxo Orientado por Specs",
+        "description": "Defina tarefas com especificações claras e deixe o Auto Claude cuidar da implementação"
+      },
+      "memory": {
+        "title": "Memória e Contexto",
+        "description": "Memória persistente entre sessões com Graphiti"
+      },
+      "parallel": {
+        "title": "Execução Paralela",
+        "description": "Execute múltiplos agentes em paralelo para ciclos de desenvolvimento mais rápidos"
+      }
+    }
+  },
+  "oauth": {
+    "title": "Autenticação Claude",
+    "description": "Conecte sua conta Claude para habilitar recursos de IA",
+    "keychainTitle": "Armazenamento Seguro",
+    "keychainDescription": "Seus tokens são criptografados usando o keychain do seu sistema. Você pode ver um prompt de senha do macOS — clique em \"Sempre Permitir\" para não ver novamente."
+  },
+  "memory": {
+    "title": "Memória",
+    "description": "A Memória do Auto Claude ajuda a lembrar o contexto entre suas sessões de codificação"
+  },
+  "completion": {
+    "title": "Tudo Pronto!",
+    "subtitle": "O Auto Claude está pronto para ajudá-lo a construir software incrível",
+    "setupComplete": "Configuração Completa",
+    "setupCompleteDescription": "Seu ambiente está configurado e pronto. Você pode começar a criar tarefas imediatamente ou explorar o aplicativo no seu ritmo.",
+    "whatsNext": "Próximos Passos",
+    "createTask": {
+      "title": "Criar uma Tarefa",
+      "description": "Comece criando sua primeira tarefa para ver o Auto Claude em ação.",
+      "action": "Abrir Criador de Tarefas"
+    },
+    "customizeSettings": {
+      "title": "Personalizar Configurações",
+      "description": "Ajuste suas preferências, configure integrações ou execute este assistente novamente.",
+      "action": "Abrir Configurações"
+    },
+    "exploreDocs": {
+      "title": "Explorar Documentação",
+      "description": "Saiba mais sobre recursos avançados, melhores práticas e solução de problemas."
+    },
+    "finish": "Finalizar e Começar a Construir",
+    "rerunHint": "Você sempre pode executar este assistente novamente em Configurações → Aplicativo"
+  },
+  "steps": {
+    "welcome": "Boas-vindas",
+    "authMode": "Modo Auth",
+    "authChoice": "Método Auth",
+    "auth": "OAuth",
+    "azureFoundry": "Azure",
+    "authToken": "Token",
+    "claudeCode": "CLI",
+    "devtools": "Ferramentas Dev",
+    "privacy": "Privacidade",
+    "memory": "Memória",
+    "done": "Concluído"
+  },
+  "authMode": {
+    "title": "Escolha o Método de Autenticação",
+    "description": "Selecione como você quer se autenticar com o Claude",
+    "options": {
+      "oauth": {
+        "title": "Claude OAuth",
+        "description": "Use sua conta Claude pessoal com autenticação OAuth. Suporta múltiplas contas com alternância automática de limite."
+      },
+      "azureFoundry": {
+        "title": "Azure Foundry",
+        "description": "Use Azure OpenAI com modelos Anthropic via Azure Foundry. Requer configuração de chave API e endpoint."
+      },
+      "authToken": {
+        "title": "Token de Auth",
+        "description": "Use um token API Anthropic direto ou autenticação proxy. Para CCR (Claude Code Router) ou configurações personalizadas."
+      }
+    },
+    "recommended": "Recomendado",
+    "enterprise": "Empresarial",
+    "changeHint": "Você pode alterar isso depois nas Configurações do Projeto para cada projeto individualmente."
+  },
+  "azureFoundry": {
+    "title": "Configurar Azure Foundry",
+    "description": "Insira suas credenciais Azure OpenAI para acesso ao modelo Anthropic",
+    "infoTitle": "Sobre o Azure Foundry",
+    "infoDescription": "O Azure Foundry fornece acesso aos modelos Claude através do Azure OpenAI Service. Você precisará do seu endpoint Azure OpenAI e chave API.",
+    "learnMore": "Saiba mais sobre Azure OpenAI",
+    "fields": {
+      "apiKey": "Chave API",
+      "apiKeyPlaceholder": "Insira sua chave API Azure OpenAI",
+      "baseUrl": "URL Base",
+      "baseUrlPlaceholder": "https://seu-recurso.openai.azure.com/anthropic",
+      "baseUrlHelp": "Seu endpoint Azure OpenAI. O sufixo /anthropic será adicionado automaticamente se necessário.",
+      "resourceName": "Nome do Recurso (opcional)",
+      "resourceNamePlaceholder": "nome-do-seu-recurso",
+      "resourceNameHelp": "O nome do seu recurso Azure OpenAI (extraído da URL se não fornecido)."
+    },
+    "validation": {
+      "validate": "Validar Conexão",
+      "validating": "Validando...",
+      "validated": "Validado",
+      "success": "Conexão bem-sucedida",
+      "successMessage": "Configuração do Azure Foundry validada. Você pode continuar.",
+      "invalidUrl": "A URL Base deve ser um endpoint Azure OpenAI (ex.: https://seu-recurso.openai.azure.com)",
+      "failed": "Validação falhou. Por favor, verifique suas credenciais."
+    }
+  },
+  "privacy": {
+    "title": "Ajude a Melhorar o Auto Claude",
+    "subtitle": "Relatórios de erro anônimos nos ajudam a corrigir bugs mais rápido",
+    "whatWeCollect": {
+      "title": "O que coletamos",
+      "crashReports": "Relatórios de crash e stack traces de erros",
+      "errorMessages": "Mensagens de erro (com caminhos de arquivo anonimizados)",
+      "appVersion": "Versão do app e informações da plataforma"
+    },
+    "whatWeNeverCollect": {
+      "title": "O que nunca coletamos",
+      "code": "Seu código ou arquivos de projeto",
+      "filenames": "Caminhos completos de arquivo (nomes de usuário são mascarados)",
+      "apiKeys": "Chaves API ou tokens",
+      "personalData": "Informações pessoais ou dados de uso"
+    },
+    "toggle": {
+      "label": "Enviar relatórios de erro anônimos",
+      "description": "Ajude-nos a identificar e corrigir problemas"
+    }
+  },
+  "claudeCode": {
+    "title": "CLI do Claude Code",
+    "description": "Instale ou atualize o CLI do Claude Code para habilitar recursos de IA",
+    "detecting": "Verificando instalação do Claude Code...",
+    "info": {
+      "title": "O que é o Claude Code?",
+      "description": "Claude Code é o CLI oficial da Anthropic que alimenta os recursos de IA do Auto Claude. Ele fornece autenticação segura e acesso direto aos modelos Claude."
+    },
+    "status": {
+      "installed": "Instalado",
+      "outdated": "Atualização Disponível",
+      "notFound": "Não Instalado"
+    },
+    "version": {
+      "current": "Versão Atual",
+      "latest": "Versão Mais Recente"
+    },
+    "install": {
+      "button": "Instalar Claude Code",
+      "updating": "Atualizar Claude Code",
+      "inProgress": "Instalando...",
+      "success": "Comando de instalação enviado ao terminal. Por favor, complete a instalação lá.",
+      "instructions": "O instalador abrirá no seu terminal. Siga as instruções para completar a instalação."
+    },
+    "learnMore": "Saiba mais sobre o Claude Code"
+  },
+  "devtools": {
+    "title": "Ferramentas de Desenvolvimento",
+    "description": "Escolha sua IDE e terminal preferidos para trabalhar com worktrees do Auto Claude",
+    "detecting": "Detectando ferramentas instaladas...",
+    "detectAgain": "Detectar Novamente",
+    "whyConfigure": "Por que configurar isso?",
+    "whyConfigureDescription": "Quando o Auto Claude constrói funcionalidades em worktrees isoladas, você pode abri-las diretamente na sua IDE ou terminal preferido para testar e revisar alterações.",
+    "ide": {
+      "label": "IDE Preferida",
+      "description": "O Auto Claude abrirá worktrees neste editor",
+      "customPath": "Caminho Personalizado da IDE"
+    },
+    "terminal": {
+      "label": "Terminal Preferido",
+      "description": "O Auto Claude abrirá sessões de terminal aqui",
+      "customPath": "Caminho Personalizado do Terminal"
+    },
+    "detectedSummary": "Detectado no seu sistema:",
+    "noToolsDetected": "Nenhuma ferramenta adicional detectada (VS Code e terminal do sistema serão usados)",
+    "custom": "Personalizado...",
+    "saveAndContinue": "Salvar e Continuar"
+  },
+  "ollama": {
+    "notInstalled": {
+      "title": "Ollama não instalado",
+      "description": "Ollama fornece modelos de embedding locais e gratuitos para busca semântica. Instale com um clique para habilitar este recurso.",
+      "installSuccess": "Instalação iniciada no seu terminal. Complete a instalação lá, depois clique em Tentar Novamente.",
+      "installButton": "Instalar Ollama",
+      "installing": "Instalando...",
+      "retry": "Tentar Novamente",
+      "learnMore": "Saiba mais",
+      "fallbackNote": "A memória ainda funcionará com busca por palavra-chave mesmo sem Ollama."
+    },
+    "notRunning": {
+      "title": "Ollama não está executando",
+      "description": "Ollama está instalado mas não está executando. Inicie o Ollama para usar modelos de embedding locais.",
+      "retry": "Tentar Novamente",
+      "fallbackNote": "A memória ainda funcionará com busca por palavra-chave mesmo sem embeddings."
+    }
+  }
+}

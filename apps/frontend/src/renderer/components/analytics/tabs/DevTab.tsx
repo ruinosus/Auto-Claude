@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { DataTable } from '../shared/DataTable';
 import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
-import { formatCurrency, formatHours, formatPercent } from '../utils/formatters';
+import { formatCurrency, formatHours, formatPercent, formatPercentCompact } from '../utils/formatters';
 import { BarChart3, TrendingUp, Clock, CheckCircle, XCircle, Activity } from 'lucide-react';
 
 interface Spec {
@@ -58,8 +58,8 @@ export function DevTab({ data, loading, projectId, projectPath, onSpecClick }: D
     { key: 'cost', header: 'dev.cost', render: (row: Spec) => formatCurrency(row.cost) },
     { key: 'timeSaved', header: 'dev.timeSaved', render: (row: Spec) => formatHours(row.timeSaved) },
     { key: 'roi', header: 'dev.roi', render: (row: Spec) => (
-      <span className={row.roi >= 0 ? 'text-green-600' : 'text-red-600'}>
-        {formatPercent(row.roi)}
+      <span className={`${row.roi >= 0 ? 'text-green-600' : 'text-red-600'} whitespace-nowrap`}>
+        {formatPercentCompact(row.roi)}
       </span>
     )},
   ];

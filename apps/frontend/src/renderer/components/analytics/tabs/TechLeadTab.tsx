@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
-import { formatCurrency, formatPercent, formatTokens } from '../utils/formatters';
+import { formatCurrency, formatPercentCompact, formatTokens } from '../utils/formatters';
 import { Sparkles, Zap, MessageCircle, GitPullRequest, Cpu, Code, CheckCircle, FileText } from 'lucide-react';
 import { ArtifactsPanel } from '../artifacts';
 
@@ -117,8 +117,8 @@ export function TechLeadTab({ data, loading, projectId, projectPath }: TechLeadT
         />
         <MetricCard
           title="techLead.avgROI"
-          value={formatPercent(data.teamMetrics.avgROI)}
-          trend={{ value: data.teamMetrics.avgROI, isPositive: data.teamMetrics.avgROI > 0 }}
+          value={formatPercentCompact(data.teamMetrics.avgROI)}
+          trend={{ value: Math.min(data.teamMetrics.avgROI, 999), isPositive: data.teamMetrics.avgROI > 0 }}
         />
         <MetricCard
           title="techLead.efficiency"

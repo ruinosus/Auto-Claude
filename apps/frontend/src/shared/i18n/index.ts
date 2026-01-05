@@ -27,6 +27,19 @@ import frGitlab from './locales/fr/gitlab.json';
 import frTaskReview from './locales/fr/taskReview.json';
 import frTerminal from './locales/fr/terminal.json';
 
+// Import Portuguese (Brazil) translation resources
+import ptBRCommon from './locales/pt-BR/common.json';
+import ptBRNavigation from './locales/pt-BR/navigation.json';
+import ptBRSettings from './locales/pt-BR/settings.json';
+import ptBRTasks from './locales/pt-BR/tasks.json';
+import ptBRWelcome from './locales/pt-BR/welcome.json';
+import ptBROnboarding from './locales/pt-BR/onboarding.json';
+import ptBRDialogs from './locales/pt-BR/dialogs.json';
+import ptBRAnalytics from './locales/pt-BR/analytics.json';
+import ptBRGitlab from './locales/pt-BR/gitlab.json';
+import ptBRTaskReview from './locales/pt-BR/taskReview.json';
+import ptBRTerminal from './locales/pt-BR/terminal.json';
+
 export const defaultNS = 'common';
 
 export const resources = {
@@ -55,6 +68,19 @@ export const resources = {
     gitlab: frGitlab,
     taskReview: frTaskReview,
     terminal: frTerminal
+  },
+  'pt-BR': {
+    common: ptBRCommon,
+    navigation: ptBRNavigation,
+    settings: ptBRSettings,
+    tasks: ptBRTasks,
+    welcome: ptBRWelcome,
+    onboarding: ptBROnboarding,
+    dialogs: ptBRDialogs,
+    analytics: ptBRAnalytics,
+    gitlab: ptBRGitlab,
+    taskReview: ptBRTaskReview,
+    terminal: ptBRTerminal
   }
 } as const;
 

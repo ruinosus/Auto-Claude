@@ -19,7 +19,7 @@ import type {
   BestPractice,
   ProjectRankingsParams,
 } from '../../../services/analytics-api';
-import { formatCurrency, formatPercent } from '../utils/formatters';
+import { formatCurrency, formatPercent, formatPercentCompact } from '../utils/formatters';
 import {
   Trophy,
   Medal,
@@ -343,8 +343,8 @@ function ProjectRow({ project, isCurrentProject, isExpanded, onToggle, t }: Proj
           </div>
         </td>
         <td className="px-4 py-4 text-right">
-          <span className={`font-semibold ${project.total_roi > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-            {formatPercent(project.total_roi)}
+          <span className={`font-semibold whitespace-nowrap ${project.total_roi > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={`${project.total_roi.toFixed(0)}%`}>
+            {formatPercentCompact(project.total_roi)}
           </span>
         </td>
         <td className="px-4 py-4 text-right">
@@ -379,7 +379,7 @@ function ProjectRow({ project, isCurrentProject, isExpanded, onToggle, t }: Proj
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <span className="text-gray-500 dark:text-gray-400">{t('projectBenchmarks.avgROI', 'Avg ROI/Spec')}</span>
-                <p className="font-medium text-gray-800 dark:text-gray-200">{formatPercent(project.avg_roi_per_spec)}</p>
+                <p className="font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap" title={`${project.avg_roi_per_spec.toFixed(0)}%`}>{formatPercentCompact(project.avg_roi_per_spec)}</p>
               </div>
               <div>
                 <span className="text-gray-500 dark:text-gray-400">{t('projectBenchmarks.totalCost', 'Total Cost')}</span>

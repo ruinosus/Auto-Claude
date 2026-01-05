@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { MetricCard } from '../shared/MetricCard';
 import { DataTable } from '../shared/DataTable';
 import { ArtifactsPanel } from '../artifacts/ArtifactsPanel';
-import { formatCurrency, formatHours, formatPercent } from '../utils/formatters';
+import { formatCurrency, formatHours, formatPercentCompact } from '../utils/formatters';
 
 interface TopSpec {
   name: string;
@@ -52,8 +52,8 @@ export function BusinessTab({ data, loading, projectId, projectPath, onExportPDF
     { key: 'name', header: 'business.specName' },
     { key: 'value', header: 'business.value', render: (row: TopSpec) => formatCurrency(row.value) },
     { key: 'roi', header: 'business.roi', render: (row: TopSpec) => (
-      <span className={row.roi >= 0 ? 'text-green-600' : 'text-red-600'}>
-        {formatPercent(row.roi)}
+      <span className={`${row.roi >= 0 ? 'text-green-600' : 'text-red-600'} whitespace-nowrap`}>
+        {formatPercentCompact(row.roi)}
       </span>
     )},
   ];
@@ -78,7 +78,7 @@ export function BusinessTab({ data, loading, projectId, projectPath, onExportPDF
         <div className="flex items-center justify-between">
           <div>
             <p className="text-blue-100 text-sm">{t('business.executiveSummary')}</p>
-            <p className="text-5xl font-bold mt-2">{formatPercent(roiValue)}</p>
+            <p className="text-4xl font-bold mt-2 truncate" title={`${roiValue.toFixed(0)}%`}>{formatPercentCompact(roiValue)}</p>
             <p className="text-blue-100 mt-1">Return on Investment</p>
           </div>
           {onExportPDF && (
@@ -191,8 +191,8 @@ export function BusinessTab({ data, loading, projectId, projectPath, onExportPDF
                 </div>
                 <div className="flex items-center gap-4">
                   <span className="text-sm text-gray-500">{formatCurrency(feature.value)}</span>
-                  <span className={`text-sm font-bold ${feature.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(feature.roi)}
+                  <span className={`text-sm font-bold whitespace-nowrap ${feature.roi >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatPercentCompact(feature.roi)}
                   </span>
                 </div>
               </div>
@@ -232,8 +232,8 @@ export function BusinessTab({ data, loading, projectId, projectPath, onExportPDF
             <p className="text-sm text-gray-500">Projected Value</p>
           </div>
           <div>
-            <p className="text-2xl font-bold text-blue-600">
-              {formatPercent(data.annualProjection.roi)}
+            <p className="text-2xl font-bold text-blue-600 truncate" title={`${data.annualProjection.roi.toFixed(0)}%`}>
+              {formatPercentCompact(data.annualProjection.roi)}
             </p>
             <p className="text-sm text-gray-500">Projected ROI</p>
           </div>

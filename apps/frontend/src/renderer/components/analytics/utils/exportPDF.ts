@@ -17,6 +17,14 @@ export function exportToPDF(data: ExportData): void {
   const formatCurrency = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
   const formatPercent = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(0)}%`;
+  const formatPercentCompact = (n: number) => {
+    const sign = n >= 0 ? '+' : '';
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000) return `${sign}${(n / 1_000_000).toFixed(1)}M%`;
+    if (abs >= 10_000) return `${sign}${(n / 1_000).toFixed(0)}K%`;
+    if (abs >= 1_000) return `${sign}${(n / 1_000).toFixed(1)}K%`;
+    return `${sign}${n.toFixed(0)}%`;
+  };
 
   const html = `
     <!DOCTYPE html>
@@ -46,7 +54,7 @@ export function exportToPDF(data: ExportData): void {
       <p class="generated">Generated: ${data.generatedAt.toLocaleString()}</p>
 
       <div class="roi-highlight">
-        <div class="roi-value">${formatPercent(data.roi)}</div>
+        <div class="roi-value" title="${formatPercent(data.roi)}">${formatPercentCompact(data.roi)}</div>
         <div>Return on Investment</div>
       </div>
 
@@ -82,7 +90,7 @@ export function exportToPDF(data: ExportData): void {
             <tr>
               <td>${spec.name}</td>
               <td>${formatCurrency(spec.value)}</td>
-              <td class="${spec.roi >= 0 ? 'positive' : 'negative'}">${formatPercent(spec.roi)}</td>
+              <td class="${spec.roi >= 0 ? 'positive' : 'negative'}" title="${formatPercent(spec.roi)}">${formatPercentCompact(spec.roi)}</td>
             </tr>
           `
             )

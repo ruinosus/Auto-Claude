@@ -318,35 +318,129 @@
   "roiExplanation": {
     "title": "How ROI is Calculated",
     "button": "How is ROI calculated?",
-    "intro": "Auto-Claude calculates ROI by measuring the value generated across 4 dimensions, compared to the AI cost. Value is estimated based on developer time saved, issues prevented, and strategic decisions made.",
+    "intro": "Auto-Claude calculates ROI by measuring the value generated across 4 dimensions, compared to the AI cost.",
+    "formula": {
+      "title": "ROI Formula",
+      "description": "The core formula that drives all ROI calculations",
+      "equation": "ROI = (Total Value - AI Cost) / AI Cost × 100%",
+      "totalValue": "Total Value = Execution + Decision + Prevention + Knowledge",
+      "aiCost": "AI Cost = Tokens used × Claude API pricing"
+    },
     "valueTypes": {
       "title": "4 Types of Value",
+      "description": "Each feature generates value in one or more of these dimensions:",
       "execution": {
         "name": "Execution",
-        "desc": "Hours × $150/hr × Quality Multiplier"
+        "desc": "Direct work value from code generated and dev hours saved",
+        "calculation": "(Lines of code ÷ 20) × Hourly Rate × Quality Multiplier",
+        "examples": ["Lines of code generated", "Dev hours saved", "Files modified", "Tests written"]
       },
       "decision": {
         "name": "Decision",
-        "desc": "$50-$250 per strategic decision"
+        "desc": "Strategic value from prioritization and architecture choices",
+        "calculation": "$50-$250 per strategic decision made",
+        "examples": ["Features prioritized", "High-impact ideas identified", "Architecture decisions", "Technology choices"]
       },
       "prevention": {
         "name": "Prevention",
-        "desc": "$300-$10,000 per issue prevented"
+        "desc": "Value from problems avoided before they reach production",
+        "calculation": "$300-$10,000 per issue prevented (based on severity)",
+        "examples": ["Security vulnerabilities found", "Bugs caught in QA", "Features NOT built (cost avoidance)", "Rework avoided"]
       },
       "knowledge": {
         "name": "Knowledge",
-        "desc": "Time saved × $150/hr × 0.4-0.5"
+        "desc": "Learning value from exploration and documentation",
+        "calculation": "Time saved × Hourly Rate × 0.4-0.5",
+        "examples": ["Codebase exploration", "Diagrams generated ($150 each)", "Code explanations ($25 each)", "Insights discovered"]
       }
     },
+    "qualityMultiplier": {
+      "title": "Quality Multiplier",
+      "description": "Build ROI is adjusted based on code quality indicators:",
+      "factors": {
+        "qaFirstPass": "+30% if QA passes on first attempt",
+        "qaFailed": "-30% if QA fails",
+        "hasTests": "+10% if code includes tests",
+        "hasDocs": "+5% if code includes documentation",
+        "hasTypes": "+5% if code includes type annotations",
+        "highCoverage": "+10% for code coverage > 80%",
+        "lintErrors": "-5% per lint error (max -20%)",
+        "reworkNeeded": "-20% if rework is flagged"
+      },
+      "range": "Final multiplier ranges from 0.5× to 1.5×"
+    },
     "features": {
-      "title": "ROI by Feature Type"
+      "title": "ROI by Feature Type",
+      "description": "Each Auto-Claude feature contributes to ROI differently:",
+      "ideation": {
+        "name": "Ideation",
+        "types": "Decision + Prevention + Knowledge",
+        "factors": ["$50-$250 per high-impact idea (×5 for security)", "$1,000+ per security issue found early", "1 hour brainstorming time saved"]
+      },
+      "roadmap": {
+        "name": "Roadmap",
+        "types": "Decision + Prevention + Knowledge",
+        "factors": ["$100 per feature prioritized", "30% of avoided feature cost (~$1,500)", "2 hours planning time saved"]
+      },
+      "spec": {
+        "name": "Spec Creation",
+        "types": "Execution + Decision + Prevention",
+        "factors": ["3 hours spec writing time saved", "$30 per requirement clarified", "$200 bonus for first-pass success"]
+      },
+      "build": {
+        "name": "Build (Code)",
+        "types": "Execution + Prevention",
+        "factors": ["(Lines ÷ 20) × $150/hr × Quality Multiplier", "QA bonus: up to +30% for first-pass success", "$30 per file (bugs prevented by QA)"]
+      },
+      "github": {
+        "name": "GitHub Automation",
+        "types": "Execution + Decision + Prevention",
+        "factors": ["PR Review: 30 min saved × $150/hr = $75", "Issue Triage: 10 min saved = $25", "Auto-fix: $200 per issue resolved"]
+      },
+      "insights": {
+        "name": "Insights Chat",
+        "types": "Knowledge + Decision",
+        "factors": ["Files explored × 5 min × hourly rate", "$150 per diagram generated", "$100 per task accepted"]
+      },
+      "merge": {
+        "name": "Merge Resolver",
+        "types": "Execution + Decision + Prevention",
+        "factors": ["20 min saved per conflict resolved", "$75 per merge strategy decision", "$50 per code choice made"]
+      }
     },
     "constants": {
-      "title": "Calculation Constants"
+      "title": "Default Constants",
+      "description": "These values can be customized in your project settings:",
+      "hourlyRate": "Developer Hourly Rate: $150/hr (configurable)",
+      "timeSavings": {
+        "title": "Time Savings Estimates",
+        "prReview": "PR Review: 30 min",
+        "issueTriage": "Issue Triage: 10 min",
+        "ideaGeneration": "Idea Generation: 60 min",
+        "roadmapPlanning": "Roadmap Planning: 120 min",
+        "specWriting": "Spec Writing: 180 min",
+        "codebaseExploration": "Codebase Exploration: 45 min",
+        "conflictResolution": "Conflict Resolution: 20 min"
+      },
+      "preventionValues": {
+        "title": "Issue Prevention Values",
+        "securityCritical": "Security (Critical): $10,000",
+        "securityHigh": "Security (High): $5,000",
+        "securityMedium": "Security (Medium): $1,000",
+        "performanceCritical": "Performance (Critical): $5,000",
+        "bugCritical": "Bug (Critical): $3,000",
+        "bugHigh": "Bug (High): $1,000",
+        "bugMedium": "Bug (Medium): $300"
+      }
     },
-    "formula": {
-      "title": "ROI Formula"
-    }
+    "confidence": {
+      "title": "Confidence Scores",
+      "description": "Each ROI calculation includes a confidence score (0.5-0.85) indicating estimation reliability:",
+      "high": "0.85: Build with QA passed (measurable outcomes)",
+      "medium": "0.75: Spec creation, Merge resolution",
+      "low": "0.60: Roadmap, Insights (strategic estimates)"
+    },
+    "note": "ROI calculations are estimates based on industry benchmarks. Actual value may vary based on project complexity, team size, and developer experience."
   },
   "artifacts": {
     "title": "Artifacts",

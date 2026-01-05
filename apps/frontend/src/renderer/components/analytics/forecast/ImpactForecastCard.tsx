@@ -64,6 +64,23 @@ function formatPercent(value: number): string {
 }
 
 /**
+ * Formats percentage with compact notation for large values
+ */
+function formatPercentCompact(value: number): string {
+  const absValue = Math.abs(value);
+  if (absValue >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M%`;
+  }
+  if (absValue >= 10_000) {
+    return `${(value / 1_000).toFixed(0)}K%`;
+  }
+  if (absValue >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}K%`;
+  }
+  return `${value.toFixed(0)}%`;
+}
+
+/**
  * Loading skeleton component
  */
 function LoadingSkeleton() {
@@ -161,7 +178,7 @@ function PreSpecView({
         {/* Predicted ROI */}
         <div className="text-center">
           <p className="text-sm text-muted-foreground">{t('analytics:forecast.predictedROI')}</p>
-          <p className="text-xl font-bold text-primary">{formatPercent(forecast.predicted_roi)}</p>
+          <p className="text-xl font-bold text-primary whitespace-nowrap" title={`${forecast.predicted_roi.toFixed(0)}%`}>{formatPercentCompact(forecast.predicted_roi)}</p>
         </div>
       </div>
 
@@ -288,13 +305,13 @@ function PostSpecView({
         {/* Predicted vs Actual ROI */}
         <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
           <p className="text-sm font-medium">{t('analytics:forecast.predictedROI')}</p>
-          <p className="text-2xl font-bold text-muted-foreground">
-            {formatPercent(comparison.predicted_roi)}
+          <p className="text-2xl font-bold text-muted-foreground truncate" title={`${comparison.predicted_roi.toFixed(0)}%`}>
+            {formatPercentCompact(comparison.predicted_roi)}
           </p>
         </div>
         <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
           <p className="text-sm font-medium">{t('analytics:forecast.actualROI')}</p>
-          <p className="text-2xl font-bold text-primary">{formatPercent(comparison.actual_roi)}</p>
+          <p className="text-2xl font-bold text-primary truncate" title={`${comparison.actual_roi.toFixed(0)}%`}>{formatPercentCompact(comparison.actual_roi)}</p>
         </div>
       </div>
 
