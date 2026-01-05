@@ -18,6 +18,7 @@ import { OAuthStep } from './OAuthStep';
 import { AzureFoundryStep } from './AzureFoundryStep';
 import { ClaudeCodeStep } from './ClaudeCodeStep';
 import { DevToolsStep } from './DevToolsStep';
+import { PrivacyStep } from './PrivacyStep';
 import { GraphitiStep } from './GraphitiStep';
 import { CompletionStep } from './CompletionStep';
 import { useSettingsStore } from '../../stores/settings-store';
@@ -30,7 +31,7 @@ interface OnboardingWizardProps {
 }
 
 // Wizard step identifiers
-type WizardStepId = 'welcome' | 'auth-mode' | 'auth-choice' | 'oauth' | 'azure-foundry' | 'auth-token' | 'claude-code' | 'devtools' | 'memory' | 'graphiti' | 'completion';
+type WizardStepId = 'welcome' | 'auth-mode' | 'auth-choice' | 'oauth' | 'azure-foundry' | 'auth-token' | 'claude-code' | 'devtools' | 'privacy' | 'memory' | 'graphiti' | 'completion';
 
 // Step configuration with translation keys
 interface WizardStepConfig {
@@ -58,6 +59,7 @@ const WIZARD_STEPS: WizardStepConfig[] = [
   { id: 'oauth', labelKey: 'steps.auth' },
   { id: 'claude-code', labelKey: 'steps.claudeCode' },
   { id: 'devtools', labelKey: 'steps.devtools' },
+  { id: 'privacy', labelKey: 'steps.privacy' },
   { id: 'graphiti', labelKey: 'steps.memory' },
   { id: 'completion', labelKey: 'steps.done' }
 ];
@@ -294,6 +296,13 @@ export function OnboardingWizard({
       case 'devtools':
         return (
           <DevToolsStep
+            onNext={goToNextStep}
+            onBack={goToPreviousStep}
+          />
+        );
+      case 'privacy':
+        return (
+          <PrivacyStep
             onNext={goToNextStep}
             onBack={goToPreviousStep}
           />

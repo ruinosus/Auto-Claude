@@ -9,6 +9,7 @@ export { AuthModeStep, type AuthMode } from './AuthModeStep';
 export { AuthChoiceStep } from './AuthChoiceStep';
 export { OAuthStep } from './OAuthStep';
 export { AzureFoundryStep } from './AzureFoundryStep';
+export { PrivacyStep } from './PrivacyStep';
 export { MemoryStep } from './MemoryStep';
 export { OllamaModelSelector } from './OllamaModelSelector';
 export { FirstSpecStep } from './FirstSpecStep';

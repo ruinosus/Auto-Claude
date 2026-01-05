@@ -42,6 +42,11 @@ export interface SettingsAPI {
 
   // Azure Foundry
   validateAzureFoundryConfig: (config: AzureFoundryConfig) => Promise<AzureFoundryValidationResult>;
+
+  // Sentry error reporting
+  notifySentryStateChanged: (enabled: boolean) => void;
+  getSentryDsn: () => Promise<string>;
+  getSentryConfig: () => Promise<{ dsn: string; tracesSampleRate: number; profilesSampleRate: number }>
 }
 
 export const createSettingsAPI = (): SettingsAPI => ({
@@ -77,5 +82,17 @@ export const createSettingsAPI = (): SettingsAPI => ({
 
   // Azure Foundry
   validateAzureFoundryConfig: (config: AzureFoundryConfig): Promise<AzureFoundryValidationResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_VALIDATE_AZURE_FOUNDRY, config)
+    ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_VALIDATE_AZURE_FOUNDRY, config),
+
+  // Sentry error reporting - notify main process when setting changes
+  notifySentryStateChanged: (enabled: boolean): void =>
+    ipcRenderer.send(IPC_CHANNELS.SENTRY_STATE_CHANGED, enabled),
+
+  // Get Sentry DSN from main process (loaded from environment variable)
+  getSentryDsn: (): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_SENTRY_DSN),
+
+  // Get full Sentry config from main process (DSN + sample rates)
+  getSentryConfig: (): Promise<{ dsn: string; tracesSampleRate: number; profilesSampleRate: number }> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_SENTRY_CONFIG)
 });

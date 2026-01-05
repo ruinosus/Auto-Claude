@@ -58,7 +58,9 @@ export const DEFAULT_APP_SETTINGS = {
     exchangeRateUpdatedAt: null,
     autoEstimateHours: true,
     minutesPerLine: 2.5
-  }
+  },
+  // Anonymous error reporting (Sentry) - enabled by default to help improve the app
+  sentryEnabled: true
 };
 
 // ============================================
