@@ -15,6 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routes import router
+from .satisfaction_routes import satisfaction_router
+from .time_saved_routes import router as time_saved_router
 from .langfuse_client import LangfuseAPIClient
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,8 @@ def create_app() -> FastAPI:
 
     # Include API routes
     app.include_router(router, prefix="/api/analytics")
+    app.include_router(satisfaction_router, prefix="/api/analytics")
+    app.include_router(time_saved_router, prefix="/api/analytics")
 
     @app.get("/health")
     async def health_check():

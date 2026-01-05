@@ -70,6 +70,24 @@ export const analyticsKeys = {
     [...analyticsKeys.artifacts(), 'statistics', projectPath, fromDate, toDate] as const,
   artifactTimeline: (projectPath: string, granularity?: string, fromDate?: string, toDate?: string) =>
     [...analyticsKeys.artifacts(), 'timeline', projectPath, granularity, fromDate, toDate] as const,
+  // Cost avoidance keys
+  costAvoidance: () => [...analyticsKeys.all, 'costAvoidance'] as const,
+  costAvoidanceSummary: (projectPath: string, days?: number, specId?: string) =>
+    [...analyticsKeys.costAvoidance(), 'summary', projectPath, days, specId] as const,
+  costAvoidanceEvents: (projectPath: string, params?: analyticsApi.CostAvoidanceEventsParams) =>
+    [...analyticsKeys.costAvoidance(), 'events', projectPath, params] as const,
+  costAvoidanceTrend: (projectPath: string, params?: analyticsApi.CostAvoidanceTrendParams) =>
+    [...analyticsKeys.costAvoidance(), 'trend', projectPath, params] as const,
+  // Benchmark keys (Module 6)
+  benchmarks: () => [...analyticsKeys.all, 'benchmarks'] as const,
+  projectRankings: (params?: analyticsApi.ProjectRankingsParams) =>
+    [...analyticsKeys.benchmarks(), 'rankings', params] as const,
+  bestPractices: (params?: analyticsApi.BestPracticesParams) =>
+    [...analyticsKeys.benchmarks(), 'best-practices', params] as const,
+  improvementSuggestions: (projectId: string) =>
+    [...analyticsKeys.benchmarks(), 'suggestions', projectId] as const,
+  percentileComparison: (projectId: string, params?: analyticsApi.PercentileComparisonParams) =>
+    [...analyticsKeys.benchmarks(), 'percentile', projectId, params] as const,
 };
 
 // =============================================================================
@@ -508,5 +526,209 @@ export function useArtifactTimeline(
     queryFn: () => analyticsApi.getArtifactTimeline(projectPath!, granularity, fromDate, toDate),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+// =============================================================================
+// Cost Avoidance Hooks
+// =============================================================================
+
+/**
+ * Hook to get cost avoidance summary with aggregations
+ *
+ * Returns:
+ * - Total cost avoided
+ * - Event count
+ * - Breakdown by type, severity, and detector
+ * - Average confidence
+ * - Recent events list
+ *
+ * @param projectPath - Path to the project
+ * @param params - Optional filter parameters (days, spec_id)
+ * @param options - React Query options
+ */
+export function useCostAvoidanceSummary(
+  projectPath: string | null,
+  params?: analyticsApi.CostAvoidanceSummaryParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.CostAvoidanceSummary, Error>({
+    queryKey: analyticsKeys.costAvoidanceSummary(projectPath || '', params?.days, params?.spec_id),
+    queryFn: () => analyticsApi.getCostAvoidanceSummary(projectPath!, params),
+    enabled: !!projectPath && options?.enabled !== false,
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to list cost avoidance events with filtering
+ *
+ * Supports filtering by:
+ * - Number of days
+ * - Event type
+ * - Severity level
+ * - Spec ID
+ *
+ * @param projectPath - Path to the project
+ * @param params - Filter parameters
+ * @param options - React Query options
+ */
+export function useCostAvoidanceEvents(
+  projectPath: string | null,
+  params?: analyticsApi.CostAvoidanceEventsParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.CostAvoidanceEventsListResponse, Error>({
+    queryKey: analyticsKeys.costAvoidanceEvents(projectPath || '', params),
+    queryFn: () => analyticsApi.getCostAvoidanceEvents(projectPath!, params),
+    enabled: !!projectPath && options?.enabled !== false,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+}
+
+/**
+ * Hook to get cost avoidance trend data for visualization
+ *
+ * Returns time-series data with:
+ * - Cost avoided per period
+ * - Event count per period
+ * - Breakdown by type
+ *
+ * @param projectPath - Path to the project
+ * @param params - Trend parameters (days, granularity)
+ * @param options - React Query options
+ */
+export function useCostAvoidanceTrend(
+  projectPath: string | null,
+  params?: analyticsApi.CostAvoidanceTrendParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.CostAvoidanceTrendResponse, Error>({
+    queryKey: analyticsKeys.costAvoidanceTrend(projectPath || '', params),
+    queryFn: () => analyticsApi.getCostAvoidanceTrend(projectPath!, params),
+    enabled: !!projectPath && options?.enabled !== false,
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+/**
+ * Hook to record a cost avoidance event
+ *
+ * Mutation hook for recording new events detected by external tools
+ * or manual review.
+ *
+ * @param projectPath - Path to the project
+ */
+export function useRecordCostAvoidanceEvent(projectPath: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: analyticsApi.RecordCostAvoidanceEventRequest) =>
+      analyticsApi.recordCostAvoidanceEvent(projectPath, request),
+    onSuccess: () => {
+      // Invalidate cost avoidance queries to refresh data
+      queryClient.invalidateQueries({ queryKey: analyticsKeys.costAvoidance() });
+    },
+  });
+}
+
+// =============================================================================
+// Project Benchmark Hooks (Module 6)
+// =============================================================================
+
+/**
+ * Hook to get project rankings/leaderboard
+ *
+ * Returns projects ranked by the specified metric:
+ * - roi: Total ROI percentage (default)
+ * - value: Total value generated in USD
+ * - success_rate: Percentage of specs with positive ROI
+ *
+ * @param params - Ranking parameters (metric, period, limit)
+ * @param options - React Query options
+ */
+export function useProjectRankings(
+  params?: analyticsApi.ProjectRankingsParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.ProjectRankingsResponse, Error>({
+    queryKey: analyticsKeys.projectRankings(params),
+    queryFn: () => analyticsApi.getProjectRankings(params),
+    enabled: options?.enabled !== false,
+    staleTime: 5 * 60 * 1000, // 5 minutes (rankings change less frequently)
+  });
+}
+
+/**
+ * Hook to get best practices identified from top performers
+ *
+ * Analyzes top-performing projects to identify success patterns:
+ * - Low QA iterations
+ * - High success rates
+ * - Feature type diversity
+ * - Cost efficiency
+ * - Consistent delivery
+ *
+ * @param params - Analysis parameters (top_n projects to analyze)
+ * @param options - React Query options
+ */
+export function useBestPractices(
+  params?: analyticsApi.BestPracticesParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.BestPracticesResponse, Error>({
+    queryKey: analyticsKeys.bestPractices(params),
+    queryFn: () => analyticsApi.getBestPractices(params),
+    enabled: options?.enabled !== false,
+    staleTime: 10 * 60 * 1000, // 10 minutes (practices change infrequently)
+  });
+}
+
+/**
+ * Hook to get improvement suggestions for a specific project
+ *
+ * Compares the project against top performers and identifies
+ * specific areas for improvement with actionable recommendations.
+ *
+ * @param projectId - The project to analyze
+ * @param options - React Query options
+ */
+export function useImprovementSuggestions(
+  projectId: string | null,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.ImprovementSuggestionsResponse, Error>({
+    queryKey: analyticsKeys.improvementSuggestions(projectId || ''),
+    queryFn: () => analyticsApi.getImprovementSuggestions(projectId!),
+    enabled: !!projectId && options?.enabled !== false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+}
+
+/**
+ * Hook to compare a project to a specific percentile
+ *
+ * Returns detailed metric comparisons showing how the project
+ * performs relative to the specified percentile of all projects.
+ *
+ * Common percentiles:
+ * - 50: Median (typical performance)
+ * - 75: Above average
+ * - 90: Top performer threshold
+ *
+ * @param projectId - The project to compare
+ * @param params - Percentile comparison parameters
+ * @param options - React Query options
+ */
+export function usePercentileComparison(
+  projectId: string | null,
+  params?: analyticsApi.PercentileComparisonParams,
+  options?: { enabled?: boolean }
+) {
+  return useQuery<analyticsApi.PercentileComparisonResponse, Error>({
+    queryKey: analyticsKeys.percentileComparison(projectId || '', params),
+    queryFn: () => analyticsApi.getPercentileComparison(projectId!, params),
+    enabled: !!projectId && options?.enabled !== false,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }

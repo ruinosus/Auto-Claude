@@ -431,5 +431,239 @@
       "metadata": "Metadata",
       "raw": "Raw JSON"
     }
+  },
+  "forecast": {
+    "title": "Impact Forecast",
+    "preSpecDescription": "ROI prediction before execution based on spec characteristics",
+    "postSpecDescription": "Comparison of predicted vs actual ROI results",
+    "prediction": "Prediction",
+    "modelAccuracy": "Model: {{accuracy}}% accurate",
+    "predictedValue": "Predicted Value",
+    "predictedCost": "Predicted Cost",
+    "predictedROI": "Predicted ROI",
+    "actualValue": "Actual Value",
+    "actualCost": "Actual Cost",
+    "actualROI": "Actual ROI",
+    "confidenceInterval": "95% Confidence Interval:",
+    "accuracy": "accuracy",
+    "predictionError": "Prediction Error",
+    "accuratePrediction": "Accurate Prediction",
+    "inaccuratePrediction": "Prediction Missed",
+    "withinConfidence": "Within CI",
+    "outsideConfidence": "Outside CI",
+    "noForecast": "No forecast available for this spec",
+    "noComparison": "No comparison data available yet",
+    "factors": {
+      "complexity": "Complexity",
+      "featureType": "Feature Type",
+      "linesEstimate": "Lines Estimate",
+      "similarSpecs": "Similar Specs"
+    },
+    "modelStats": {
+      "title": "Model Statistics",
+      "totalPredictions": "Total Predictions",
+      "meanAccuracy": "Mean Accuracy",
+      "meanError": "Mean Absolute Error",
+      "rmse": "RMSE",
+      "withinCIRate": "Within CI Rate",
+      "bias": "Bias",
+      "recentAccuracy": "Recent Accuracy"
+    },
+    "history": {
+      "title": "Prediction History",
+      "specId": "Spec ID",
+      "predicted": "Predicted",
+      "actual": "Actual",
+      "error": "Error",
+      "withinCI": "Within CI",
+      "date": "Date"
+    }
+  },
+  "costAvoidance": {
+    "title": "Cost Avoidance",
+    "subtitle": "Costs avoided through prevention and early detection",
+    "totalAvoided": "Total Cost Avoided",
+    "bugsPrevented": "Bugs Prevented",
+    "productionBugs": "Production bugs",
+    "securityFixed": "Security Issues",
+    "vulnerabilities": "Vulnerabilities fixed",
+    "reworkAvoided": "Rework Avoided",
+    "reworkIssues": "Issues caught early",
+    "trendTitle": "Cost Avoidance Trend",
+    "trendDescription": "Weekly breakdown of avoided costs",
+    "breakdownTitle": "Breakdown by Type",
+    "breakdownDescription": "Distribution of avoided costs",
+    "recentEvents": "Recent Events",
+    "recentEventsDescription": "Latest cost avoidance events",
+    "byDetector": "By Detection Source",
+    "bySeverity": "By Severity",
+    "noEvents": "No cost avoidance events recorded yet",
+    "noTrend": "Not enough data for trend chart",
+    "noData": {
+      "title": "No Cost Avoidance Data",
+      "description": "Cost avoidance events will appear here when bugs are prevented, security issues are fixed, or rework is avoided during QA reviews."
+    },
+    "types": {
+      "bug_production": "Bug Prevention",
+      "security_breach": "Security Fix",
+      "rework_avoided": "Rework Avoided",
+      "duplicate_feature": "Duplicate Prevented",
+      "wrong_architecture": "Architecture Fix"
+    },
+    "severities": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "detectors": {
+      "qa_reviewer": "QA Reviewer",
+      "qa_fixer": "QA Fixer",
+      "security_scan": "Security Scan",
+      "ideation": "Ideation Phase",
+      "spec_creation": "Spec Creation",
+      "manual": "Manual Review"
+    }
+  },
+  "satisfaction": {
+    "title": "Developer Satisfaction",
+    "subtitle": "Track satisfaction and NPS scores over time",
+    "error": {
+      "fetchFailed": "Failed to load satisfaction metrics"
+    },
+    "nps": {
+      "title": "Net Promoter Score",
+      "description": "Based on the 'Would Recommend' question (-100 to +100)",
+      "excellent": "Excellent",
+      "great": "Great",
+      "good": "Good",
+      "okay": "Okay",
+      "needsWork": "Needs Improvement",
+      "critical": "Critical"
+    },
+    "breakdown": {
+      "title": "Response Breakdown",
+      "description": "Distribution of promoters, passives, and detractors",
+      "promoters": "Promoters (4-5)",
+      "passives": "Passives (3)",
+      "detractors": "Detractors (1-2)"
+    },
+    "metrics": {
+      "overallSatisfaction": "Overall Satisfaction",
+      "outputQuality": "Output Quality",
+      "timeSaved": "Time Saved Perception",
+      "responseRate": "Responses",
+      "totalResponses": "total survey responses"
+    },
+    "themes": {
+      "title": "Top Feedback Themes",
+      "description": "Most common topics mentioned in feedback",
+      "noThemes": "No feedback themes identified yet",
+      "speed": "Speed",
+      "quality": "Quality",
+      "documentation": "Documentation",
+      "ui": "User Interface",
+      "reliability": "Reliability",
+      "ease_of_use": "Ease of Use"
+    },
+    "survey": {
+      "title": "How was your experience?",
+      "description": "Help us improve by sharing your feedback for spec {{specId}}",
+      "skip": "Skip",
+      "submit": "Submit",
+      "submitting": "Submitting...",
+      "submitError": "Failed to submit survey. Please try again.",
+      "questions": {
+        "overall": "Overall Satisfaction",
+        "quality": "Quality of Output",
+        "timeSaved": "Time Saved",
+        "recommend": "Would you recommend Auto-Claude?",
+        "recommendHint": "This helps us calculate our Net Promoter Score",
+        "feedback": "Any feedback? (optional)",
+        "feedbackPlaceholder": "What did you like or dislike?",
+        "improvements": "Suggestions for improvement? (optional)",
+        "improvementsPlaceholder": "How can we make this better?"
+      }
+    }
+  },
+  "roiComparison": {
+    "title": "ROI Comparison",
+    "description": "Compare project ROI against market benchmarks",
+    "noData": "No ROI data available for comparison",
+    "roi": "ROI",
+    "vsMarket": "vs Market Avg",
+    "percentile": "Percentile",
+    "top": "Top {{value}}%",
+    "netValue": "Net Value",
+    "breakEven": "Break-even",
+    "profitable": "Profitable",
+    "days": "{{count}} days",
+    "marketAverage": "Market Avg (370%)",
+    "topPerformers": "Top 5% (1030%)",
+    "aboveAverage": "Above Average",
+    "avgRoi": "Avg ROI",
+    "totalNetValue": "Total Net Value",
+    "positions": {
+      "top_performer": "Top Performer",
+      "above_average": "Above Average",
+      "average": "Average",
+      "below_average": "Below Average",
+      "needs_improvement": "Needs Improvement"
+    },
+    "breakEvenAnalysis": {
+      "title": "Break-even Analysis",
+      "description": "Investment recovery timeline and projections",
+      "dailyValue": "Daily Value",
+      "dailyCost": "Daily Cost",
+      "daysSinceStart": "Days Active",
+      "projectedAnnualRoi": "Projected Annual ROI",
+      "recommendation": "Recommendation",
+      "cumulativeValue": "Cumulative Value",
+      "cumulativeCost": "Cumulative Cost"
+    }
+  },
+  "projectBenchmarks": {
+    "title": "Project Leaderboard",
+    "error": "Failed to load benchmark data",
+    "noData": "No benchmark data available",
+    "selectMetric": "Select metric",
+    "selectPeriod": "Period",
+    "yourPosition": "Your Position vs Median",
+    "rank": "Rank",
+    "project": "Project",
+    "totalROI": "Total ROI",
+    "value": "Value",
+    "successRate": "Success",
+    "specs": "Specs",
+    "details": "Details",
+    "you": "You",
+    "avgROI": "Avg ROI/Spec",
+    "totalCost": "Total Cost",
+    "avgQAAttempts": "Avg QA Attempts",
+    "bestFeature": "Best Feature",
+    "bestPractices": "Best Practices from Top Performers",
+    "bestPracticesDesc": "Patterns identified from analyzing the top {{count}} performing projects",
+    "suggestions": "Improvement Suggestions",
+    "currentRank": "Rank #{{rank}} of {{total}}",
+    "adoptionRate": "{{rate}}% adoption rate",
+    "examples": "Examples: {{examples}}",
+    "metrics": {
+      "roi": "Total ROI",
+      "value": "Value Generated",
+      "successRate": "Success Rate"
+    },
+    "impact": {
+      "high": "High Impact",
+      "medium": "Medium Impact",
+      "low": "Low Impact"
+    },
+    "patterns": {
+      "low_qa_iterations": "Low QA Iterations",
+      "high_success_rate": "High Success Rate",
+      "feature_diversity": "Feature Diversity",
+      "build_focus": "Build Focus",
+      "cost_efficiency": "Cost Efficiency",
+      "consistent_delivery": "Consistent Delivery"
+    }
   }
 }

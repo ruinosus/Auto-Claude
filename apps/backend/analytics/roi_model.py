@@ -32,6 +32,168 @@ class ValueType(Enum):
     KNOWLEDGE = "knowledge"      # Learning value (insights, exploration)
 
 
+class ValueSubcategory(Enum):
+    """
+    Granular value subcategories for detailed attribution.
+    Maps to parent ValueType categories.
+    """
+    # Execution subcategories
+    CODE_GENERATED = "code_generated"
+    BOILERPLATE_SAVED = "boilerplate_saved"
+    REFACTORING_DONE = "refactoring_done"
+    TESTS_WRITTEN = "tests_written"
+    BUG_FIXED = "bug_fixed"
+
+    # Decision subcategories
+    FEATURE_PRIORITIZED = "feature_prioritized"
+    ARCHITECTURE_DECISION = "architecture_decision"
+    TECHNOLOGY_CHOICE = "technology_choice"
+    SCOPE_DECISION = "scope_decision"
+    RISK_ASSESSMENT = "risk_assessment"
+
+    # Prevention subcategories
+    BUG_PREVENTED = "bug_prevented"
+    SECURITY_ISSUE_FOUND = "security_issue_found"
+    PERFORMANCE_ISSUE_FOUND = "performance_issue_found"
+    REWORK_AVOIDED = "rework_avoided"
+    TECH_DEBT_PREVENTED = "tech_debt_prevented"
+
+    # Knowledge subcategories
+    DOCUMENTATION_CREATED = "documentation_created"
+    DIAGRAM_GENERATED = "diagram_generated"
+    ONBOARDING_ACCELERATED = "onboarding_accelerated"
+    PATTERN_DOCUMENTED = "pattern_documented"
+    CODE_EXPLAINED = "code_explained"
+    INSIGHT_DISCOVERED = "insight_discovered"
+
+
+# Mapping from subcategory to parent ValueType
+SUBCATEGORY_TO_PARENT: Dict[ValueSubcategory, ValueType] = {
+    # Execution
+    ValueSubcategory.CODE_GENERATED: ValueType.EXECUTION,
+    ValueSubcategory.BOILERPLATE_SAVED: ValueType.EXECUTION,
+    ValueSubcategory.REFACTORING_DONE: ValueType.EXECUTION,
+    ValueSubcategory.TESTS_WRITTEN: ValueType.EXECUTION,
+    ValueSubcategory.BUG_FIXED: ValueType.EXECUTION,
+
+    # Decision
+    ValueSubcategory.FEATURE_PRIORITIZED: ValueType.DECISION,
+    ValueSubcategory.ARCHITECTURE_DECISION: ValueType.DECISION,
+    ValueSubcategory.TECHNOLOGY_CHOICE: ValueType.DECISION,
+    ValueSubcategory.SCOPE_DECISION: ValueType.DECISION,
+    ValueSubcategory.RISK_ASSESSMENT: ValueType.DECISION,
+
+    # Prevention
+    ValueSubcategory.BUG_PREVENTED: ValueType.PREVENTION,
+    ValueSubcategory.SECURITY_ISSUE_FOUND: ValueType.PREVENTION,
+    ValueSubcategory.PERFORMANCE_ISSUE_FOUND: ValueType.PREVENTION,
+    ValueSubcategory.REWORK_AVOIDED: ValueType.PREVENTION,
+    ValueSubcategory.TECH_DEBT_PREVENTED: ValueType.PREVENTION,
+
+    # Knowledge
+    ValueSubcategory.DOCUMENTATION_CREATED: ValueType.KNOWLEDGE,
+    ValueSubcategory.DIAGRAM_GENERATED: ValueType.KNOWLEDGE,
+    ValueSubcategory.ONBOARDING_ACCELERATED: ValueType.KNOWLEDGE,
+    ValueSubcategory.PATTERN_DOCUMENTED: ValueType.KNOWLEDGE,
+    ValueSubcategory.CODE_EXPLAINED: ValueType.KNOWLEDGE,
+    ValueSubcategory.INSIGHT_DISCOVERED: ValueType.KNOWLEDGE,
+}
+
+
+@dataclass
+class SubcategoryValue:
+    """Value for a specific subcategory with confidence and evidence."""
+    subcategory: ValueSubcategory
+    value_usd: float
+    confidence: float = 0.8
+    count: int = 1  # Number of attributions for this subcategory
+    evidence: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ValueBreakdownExpanded:
+    """
+    Expanded value breakdown with subcategory details.
+
+    Extends the basic ValueBreakdown with granular subcategory tracking.
+    """
+    # Parent type totals
+    execution_value: float = 0.0
+    decision_value: float = 0.0
+    prevention_value: float = 0.0
+    knowledge_value: float = 0.0
+
+    # Subcategory details
+    by_subcategory: Dict[str, SubcategoryValue] = field(default_factory=dict)
+
+    @property
+    def total_value(self) -> float:
+        """Calculate total value across all categories."""
+        return (
+            self.execution_value +
+            self.decision_value +
+            self.prevention_value +
+            self.knowledge_value
+        )
+
+    def add_subcategory_value(
+        self,
+        subcategory: ValueSubcategory,
+        value_usd: float,
+        confidence: float = 0.8,
+        evidence: Optional[List[str]] = None,
+    ) -> None:
+        """Add value for a specific subcategory."""
+        key = subcategory.value
+        evidence = evidence or []
+
+        if key in self.by_subcategory:
+            existing = self.by_subcategory[key]
+            existing.value_usd += value_usd
+            existing.count += 1
+            existing.confidence = (existing.confidence + confidence) / 2
+            existing.evidence.extend(evidence)
+        else:
+            self.by_subcategory[key] = SubcategoryValue(
+                subcategory=subcategory,
+                value_usd=value_usd,
+                confidence=confidence,
+                count=1,
+                evidence=evidence,
+            )
+
+        # Update parent totals
+        parent = SUBCATEGORY_TO_PARENT.get(subcategory)
+        if parent == ValueType.EXECUTION:
+            self.execution_value += value_usd
+        elif parent == ValueType.DECISION:
+            self.decision_value += value_usd
+        elif parent == ValueType.PREVENTION:
+            self.prevention_value += value_usd
+        elif parent == ValueType.KNOWLEDGE:
+            self.knowledge_value += value_usd
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API response."""
+        return {
+            "execution_value": self.execution_value,
+            "decision_value": self.decision_value,
+            "prevention_value": self.prevention_value,
+            "knowledge_value": self.knowledge_value,
+            "total_value": self.total_value,
+            "by_subcategory": {
+                key: {
+                    "subcategory": val.subcategory.value,
+                    "value_usd": val.value_usd,
+                    "confidence": val.confidence,
+                    "count": val.count,
+                    "evidence_count": len(val.evidence),
+                }
+                for key, val in self.by_subcategory.items()
+            },
+        }
+
+
 class FeatureType(Enum):
     """Types of features that generate ROI."""
     # Ideation

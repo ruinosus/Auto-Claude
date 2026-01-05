@@ -57,6 +57,7 @@ from .roi_model import (
     estimate_roadmap_value,
     estimate_github_value,
 )
+from .quality_multipliers import QualityMultiplierCalculator, QualityMultiplier
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ class UnifiedROICalculator:
         """
         self.hourly_rate = hourly_rate
         self.avg_feature_cost = avg_feature_cost
+        self.quality_calculator = QualityMultiplierCalculator()
 
     def calculate_ideation_roi(
         self,
@@ -300,6 +302,13 @@ class UnifiedROICalculator:
         spec_id: Optional[str] = None,
         project_id: Optional[str] = None,
         trace_id: Optional[str] = None,
+        # Quality multiplier parameters
+        has_tests: bool = False,
+        has_docs: bool = False,
+        has_types: bool = False,
+        code_coverage: Optional[float] = None,
+        lint_errors: int = 0,
+        rework_needed: bool = False,
     ) -> UnifiedROI:
         """
         Calculate ROI for build (code generation).
@@ -307,6 +316,12 @@ class UnifiedROICalculator:
         Build generates value through:
         - EXECUTION: Code written, dev hours saved
         - PREVENTION: QA catches bugs before production
+
+        The final ROI is adjusted by a quality multiplier based on:
+        - QA outcomes (first-pass success = +30%, failure = -30%)
+        - Professional practices (tests, docs, types)
+        - Code quality (coverage, lint errors)
+        - Rework needs
         """
         value_breakdown = {}
 
@@ -315,17 +330,18 @@ class UnifiedROICalculator:
         total_lines = lines_added + lines_removed
         estimated_dev_hours = total_lines / 20.0
 
-        # Quality multiplier based on QA success
-        quality_multiplier = 1.0
-        if qa_passed:
-            if qa_attempts <= 1:
-                quality_multiplier = 1.2  # First-pass success bonus
-            elif qa_attempts <= 3:
-                quality_multiplier = 1.0
-            else:
-                quality_multiplier = 0.8  # Many attempts = lower quality
-        else:
-            quality_multiplier = 0.5  # QA failed
+        # Calculate quality multiplier using the calculator
+        quality_result = self.quality_calculator.calculate(
+            qa_passed=qa_passed,
+            qa_attempts=qa_attempts,
+            has_tests=has_tests,
+            has_docs=has_docs,
+            has_types=has_types,
+            code_coverage=code_coverage,
+            lint_errors=lint_errors,
+            rework_needed=rework_needed,
+        )
+        quality_multiplier = quality_result.final_multiplier
 
         value_breakdown[ValueType.EXECUTION] = (
             estimated_dev_hours * self.hourly_rate * quality_multiplier
@@ -366,12 +382,59 @@ class UnifiedROICalculator:
             build_metrics=build_metrics,
             confidence_score=0.85 if qa_passed else 0.5,
             tags=["build", "coder"],
+            metadata={
+                "quality_multiplier": quality_multiplier,
+                "quality_adjustments": [
+                    {"reason": r, "delta": d}
+                    for r, d in quality_result.adjustments
+                ],
+            },
         )
 
         roi.calculate_total_value()
         roi.calculate_roi()
 
         return roi
+
+    def get_quality_multiplier(
+        self,
+        qa_passed: bool,
+        qa_attempts: int = 1,
+        has_tests: bool = False,
+        has_docs: bool = False,
+        has_types: bool = False,
+        code_coverage: Optional[float] = None,
+        lint_errors: int = 0,
+        rework_needed: bool = False,
+    ) -> QualityMultiplier:
+        """
+        Calculate quality multiplier without computing full ROI.
+
+        Useful for retrieving just the quality multiplier for a spec.
+
+        Args:
+            qa_passed: Whether QA passed
+            qa_attempts: Number of QA attempts
+            has_tests: Whether code includes tests
+            has_docs: Whether code includes documentation
+            has_types: Whether code includes type annotations
+            code_coverage: Code coverage percentage (0-100)
+            lint_errors: Number of lint errors
+            rework_needed: Whether rework was flagged
+
+        Returns:
+            QualityMultiplier with adjustments and final value
+        """
+        return self.quality_calculator.calculate(
+            qa_passed=qa_passed,
+            qa_attempts=qa_attempts,
+            has_tests=has_tests,
+            has_docs=has_docs,
+            has_types=has_types,
+            code_coverage=code_coverage,
+            lint_errors=lint_errors,
+            rework_needed=rework_needed,
+        )
 
     def calculate_github_roi(
         self,

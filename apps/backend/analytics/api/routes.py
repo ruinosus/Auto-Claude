@@ -55,6 +55,43 @@ from .models import (
     ArtifactTimelineEntry,
     ArtifactTimelineResponse,
     LocalArtifactsResponse,
+    # Satisfaction models
+    SatisfactionSurveyRequest,
+    SatisfactionSurveyResponse,
+    SatisfactionMetricsResponse,
+    NPSResponse,
+    FeedbackEntryResponse,
+    FeedbackListResponse,
+    SurveySubmitResponse,
+    # Time Saved models
+    TaskBenchmarkResponse,
+    TimeSavedSummaryResponse,
+    TimeSavedByTaskResponse,
+    TimeSavedByTaskListResponse,
+    TimeSavedTrendPoint,
+    TimeSavedTrendResponse,
+    TimeSavedComparisonResponse,
+    TimeSavedDashboardResponse,
+    # ROI Comparison models
+    ROIComparisonResult,
+    MarketBenchmarks,
+    PercentileThreshold,
+    ROIComparisonResponse,
+    MultiProjectComparisonResponse,
+    BreakEvenAnalysisResult,
+    BreakEvenResponse,
+    # Value Attribution Breakdown models
+    SubcategoryValueResponse,
+    ValueBreakdownByCategory,
+    ValueBreakdownExpandedResponse,
+    ValueBreakdownResponse,
+    # Quality Multiplier models
+    QualityAdjustment,
+    QualityMultiplierResponse,
+    QualityMultiplierRequest,
+    SpecQualityResponse,
+    QualityLeaderboardEntry,
+    QualityLeaderboardResponse,
 )
 from .langfuse_client import TraceFilter
 from pathlib import Path
@@ -2069,3 +2106,1776 @@ async def get_artifact_timeline(
     except Exception as e:
         logger.error(f"Failed to get artifact timeline: {e}")
         return ArtifactTimelineResponse(granularity=granularity)
+
+
+# =============================================================================
+# Impact Forecast Endpoints
+# =============================================================================
+
+# Import forecast models
+from .models import (
+    ForecastPredictRequest,
+    ImpactForecastResponse,
+    ForecastComparisonResponse,
+    ModelAccuracyResponse,
+    ForecastHistoryEntry,
+    ForecastHistoryResponse,
+    RecordActualRequest,
+)
+
+# Lazy import forecast model to avoid circular imports
+_forecast_model = None
+
+
+def _get_forecast_model():
+    """Get the forecast model singleton with lazy initialization."""
+    global _forecast_model
+    if _forecast_model is None:
+        try:
+            from analytics.impact_forecast import get_forecast_model
+            # Use .auto-claude directory for storage if available
+            storage_path = Path(".auto-claude/analytics")
+            _forecast_model = get_forecast_model(storage_path)
+        except ImportError:
+            logger.warning("Impact forecast module not available")
+            return None
+    return _forecast_model
+
+
+@router.post("/forecast/predict", response_model=ImpactForecastResponse)
+async def predict_roi(request: ForecastPredictRequest):
+    """
+    Predict ROI before running a spec.
+
+    Uses historical data and spec characteristics to forecast:
+    - Predicted value (USD)
+    - Predicted cost (USD)
+    - Predicted ROI percentage
+    - 95% confidence interval
+
+    Call this before executing a spec to set expectations.
+    """
+    model = _get_forecast_model()
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail="Forecast model not available"
+        )
+
+    try:
+        forecast = model.predict(
+            spec_id=request.spec_id,
+            spec_complexity=request.spec_complexity,
+            estimated_lines=request.estimated_lines,
+            feature_type=request.feature_type,
+            historical_similar=request.historical_similar,
+        )
+
+        return ImpactForecastResponse(
+            spec_id=forecast.spec_id,
+            predicted_value_usd=forecast.predicted_value_usd,
+            predicted_cost_usd=forecast.predicted_cost_usd,
+            predicted_roi=forecast.predicted_roi,
+            confidence_interval=list(forecast.confidence_interval),
+            prediction_factors=forecast.prediction_factors,
+            created_at=forecast.created_at,
+        )
+    except Exception as e:
+        logger.error(f"Failed to predict ROI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/forecast/{spec_id}", response_model=ImpactForecastResponse)
+async def get_forecast(spec_id: str):
+    """
+    Get existing forecast for a spec.
+
+    Returns the prediction made before execution.
+    """
+    model = _get_forecast_model()
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail="Forecast model not available"
+        )
+
+    forecast = model.get_forecast(spec_id)
+    if not forecast:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No forecast found for spec {spec_id}"
+        )
+
+    return ImpactForecastResponse(
+        spec_id=forecast.spec_id,
+        predicted_value_usd=forecast.predicted_value_usd,
+        predicted_cost_usd=forecast.predicted_cost_usd,
+        predicted_roi=forecast.predicted_roi,
+        confidence_interval=list(forecast.confidence_interval),
+        prediction_factors=forecast.prediction_factors,
+        created_at=forecast.created_at,
+    )
+
+
+@router.post("/forecast/{spec_id}/record-actual", response_model=ForecastComparisonResponse)
+async def record_actual_roi(spec_id: str, request: RecordActualRequest):
+    """
+    Record actual ROI and compare with prediction.
+
+    Call this after spec execution to:
+    - Compare predicted vs actual ROI
+    - Track prediction accuracy
+    - Improve future predictions
+    """
+    model = _get_forecast_model()
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail="Forecast model not available"
+        )
+
+    comparison = model.compare_with_actual(
+        spec_id=spec_id,
+        actual_roi=request.actual_roi,
+        actual_value_usd=request.actual_value_usd,
+        actual_cost_usd=request.actual_cost_usd,
+    )
+
+    if not comparison:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No forecast found for spec {spec_id}"
+        )
+
+    return ForecastComparisonResponse(
+        spec_id=comparison.spec_id,
+        predicted_roi=comparison.predicted_roi,
+        actual_roi=comparison.actual_roi,
+        predicted_value_usd=comparison.predicted_value_usd,
+        actual_value_usd=comparison.actual_value_usd,
+        predicted_cost_usd=comparison.predicted_cost_usd,
+        actual_cost_usd=comparison.actual_cost_usd,
+        accuracy_percentage=comparison.accuracy_percentage,
+        prediction_error=comparison.prediction_error,
+        within_confidence=comparison.within_confidence,
+    )
+
+
+@router.get("/forecast/{spec_id}/comparison", response_model=ForecastComparisonResponse)
+async def get_forecast_comparison(spec_id: str):
+    """
+    Get prediction vs actual comparison for a spec.
+
+    Returns the comparison if actual ROI has been recorded.
+    """
+    model = _get_forecast_model()
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail="Forecast model not available"
+        )
+
+    # Search history for this spec
+    for forecast, actual_roi in model.history:
+        if forecast.spec_id == spec_id:
+            # Reconstruct comparison
+            error = forecast.predicted_roi - actual_roi
+            if forecast.predicted_roi != 0:
+                relative_error = abs(error) / abs(forecast.predicted_roi)
+            else:
+                relative_error = abs(error) / 100 if actual_roi != 0 else 0
+            accuracy = max(0, 100 - (relative_error * 100))
+
+            ci_low, ci_high = forecast.confidence_interval
+            within_ci = ci_low <= actual_roi <= ci_high
+
+            return ForecastComparisonResponse(
+                spec_id=spec_id,
+                predicted_roi=forecast.predicted_roi,
+                actual_roi=actual_roi,
+                predicted_value_usd=forecast.predicted_value_usd,
+                actual_value_usd=0.0,  # Not stored in history
+                predicted_cost_usd=forecast.predicted_cost_usd,
+                actual_cost_usd=0.0,  # Not stored in history
+                accuracy_percentage=round(accuracy, 2),
+                prediction_error=round(error, 2),
+                within_confidence=within_ci,
+            )
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"No comparison data found for spec {spec_id}"
+    )
+
+
+@router.get("/forecast/accuracy", response_model=ModelAccuracyResponse)
+async def get_forecast_accuracy():
+    """
+    Get overall model accuracy metrics.
+
+    Returns statistics on prediction performance:
+    - Mean accuracy percentage
+    - Mean absolute error
+    - RMSE
+    - Within confidence rate
+    - Bias (over/under estimation tendency)
+    """
+    model = _get_forecast_model()
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail="Forecast model not available"
+        )
+
+    metrics = model.get_model_accuracy()
+
+    return ModelAccuracyResponse(
+        total_predictions=metrics.total_predictions,
+        mean_accuracy=metrics.mean_accuracy,
+        mean_absolute_error=metrics.mean_absolute_error,
+        root_mean_square_error=metrics.root_mean_square_error,
+        within_confidence_rate=metrics.within_confidence_rate,
+        bias=metrics.bias,
+        recent_accuracy=metrics.recent_accuracy,
+    )
+
+
+@router.get("/forecast/history", response_model=ForecastHistoryResponse)
+async def get_forecast_history(
+    limit: int = Query(default=20, ge=1, le=100, description="Max entries to return")
+):
+    """
+    Get recent forecast history with comparisons.
+
+    Returns list of past predictions and their actual outcomes.
+    """
+    model = _get_forecast_model()
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail="Forecast model not available"
+        )
+
+    history_data = model.get_history_summary(limit=limit)
+
+    history_entries = [
+        ForecastHistoryEntry(
+            spec_id=entry["spec_id"],
+            predicted_roi=entry["predicted_roi"],
+            actual_roi=entry["actual_roi"],
+            error=entry["error"],
+            within_ci=entry["within_ci"],
+            created_at=entry["created_at"],
+        )
+        for entry in history_data
+    ]
+
+    return ForecastHistoryResponse(
+        history=history_entries,
+        total=len(history_entries),
+    )
+
+
+# =============================================================================
+# Cost Avoidance Endpoints
+# =============================================================================
+
+# Import cost avoidance models
+from .models import (
+    CostAvoidanceEventResponse,
+    CostAvoidanceSummaryResponse,
+    CostAvoidanceEventsListResponse,
+    CostAvoidanceTrendPoint,
+    CostAvoidanceTrendResponse,
+    RecordCostAvoidanceEventRequest,
+    RecordCostAvoidanceEventResponse,
+)
+
+# Lazy import cost avoidance tracker
+_cost_avoidance_tracker_cache = {}
+
+
+def _get_cost_avoidance_tracker(project_path: str):
+    """Get or create a cost avoidance tracker for a project."""
+    if project_path not in _cost_avoidance_tracker_cache:
+        try:
+            from analytics.cost_avoidance import CostAvoidanceTracker
+            _cost_avoidance_tracker_cache[project_path] = CostAvoidanceTracker(Path(project_path))
+        except ImportError:
+            logger.warning("Cost avoidance module not available")
+            return None
+    return _cost_avoidance_tracker_cache[project_path]
+
+
+@router.get("/cost-avoidance/summary", response_model=CostAvoidanceSummaryResponse)
+async def get_cost_avoidance_summary(
+    project_path: str = Query(..., description="Project path to get cost avoidance data"),
+    days: int = Query(default=30, ge=1, le=365, description="Number of days to include"),
+    spec_id: Optional[str] = Query(None, description="Filter by spec ID"),
+):
+    """
+    Get aggregated cost avoidance summary.
+
+    Returns totals by type, severity, and detector along with individual events.
+    """
+    tracker = _get_cost_avoidance_tracker(project_path)
+    if not tracker:
+        return CostAvoidanceSummaryResponse()
+
+    try:
+        summary = tracker.get_summary(days=days, spec_id=spec_id)
+
+        # Convert events to response models
+        events = [
+            CostAvoidanceEventResponse(
+                id=e.id,
+                type=e.type.value,
+                severity=e.severity.value,
+                estimated_cost_avoided=e.estimated_cost_avoided,
+                confidence=e.confidence,
+                detected_by=e.detected_by,
+                trace_id=e.trace_id,
+                artifact_id=e.artifact_id,
+                spec_id=e.spec_id,
+                project_id=e.project_id,
+                description=e.description,
+                evidence=e.evidence,
+                created_at=e.created_at.isoformat(),
+            )
+            for e in summary.events
+        ]
+
+        return CostAvoidanceSummaryResponse(
+            total_cost_avoided=round(summary.total_cost_avoided, 2),
+            event_count=summary.event_count,
+            by_type={k: round(v, 2) for k, v in summary.by_type.items()},
+            by_severity={k: round(v, 2) for k, v in summary.by_severity.items()},
+            by_detector={k: round(v, 2) for k, v in summary.by_detector.items()},
+            avg_confidence=round(summary.avg_confidence, 2),
+            period_start=summary.period_start.isoformat() if summary.period_start else None,
+            period_end=summary.period_end.isoformat() if summary.period_end else None,
+            events=events,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get cost avoidance summary: {e}")
+        return CostAvoidanceSummaryResponse()
+
+
+@router.get("/cost-avoidance/events", response_model=CostAvoidanceEventsListResponse)
+async def list_cost_avoidance_events(
+    project_path: str = Query(..., description="Project path to get events"),
+    days: int = Query(default=30, ge=1, le=365, description="Number of days to include"),
+    type: Optional[str] = Query(None, description="Filter by type"),
+    severity: Optional[str] = Query(None, description="Filter by severity"),
+    spec_id: Optional[str] = Query(None, description="Filter by spec ID"),
+):
+    """
+    List cost avoidance events with optional filtering.
+    """
+    tracker = _get_cost_avoidance_tracker(project_path)
+    if not tracker:
+        return CostAvoidanceEventsListResponse(days=days)
+
+    try:
+        from analytics.cost_avoidance import CostAvoidanceType, Severity as AvoidanceSeverity
+
+        # Convert string filters to enums
+        type_filter = CostAvoidanceType(type) if type else None
+        severity_filter = AvoidanceSeverity(severity.lower()) if severity else None
+
+        events = tracker.get_events(
+            days=days,
+            avoidance_type=type_filter,
+            severity=severity_filter,
+            spec_id=spec_id,
+        )
+
+        event_responses = [
+            CostAvoidanceEventResponse(
+                id=e.id,
+                type=e.type.value,
+                severity=e.severity.value,
+                estimated_cost_avoided=e.estimated_cost_avoided,
+                confidence=e.confidence,
+                detected_by=e.detected_by,
+                trace_id=e.trace_id,
+                artifact_id=e.artifact_id,
+                spec_id=e.spec_id,
+                project_id=e.project_id,
+                description=e.description,
+                evidence=e.evidence,
+                created_at=e.created_at.isoformat(),
+            )
+            for e in events
+        ]
+
+        return CostAvoidanceEventsListResponse(
+            events=event_responses,
+            total=len(event_responses),
+            days=days,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to list cost avoidance events: {e}")
+        return CostAvoidanceEventsListResponse(days=days)
+
+
+@router.post("/cost-avoidance/event", response_model=RecordCostAvoidanceEventResponse)
+async def record_cost_avoidance_event(
+    project_path: str = Query(..., description="Project path to record event in"),
+    request: RecordCostAvoidanceEventRequest = ...,
+):
+    """
+    Manually record a cost avoidance event.
+
+    Use this to record events detected by external tools or manual review.
+    """
+    tracker = _get_cost_avoidance_tracker(project_path)
+    if not tracker:
+        raise HTTPException(
+            status_code=503,
+            detail="Cost avoidance tracker not available"
+        )
+
+    try:
+        from analytics.cost_avoidance import (
+            CostAvoidanceType,
+            Severity as AvoidanceSeverity,
+            CostAvoidanceEvent,
+            calculate_avoidance_value,
+        )
+
+        # Parse type and severity
+        avoidance_type = CostAvoidanceType(request.type)
+        severity = AvoidanceSeverity(request.severity.lower())
+
+        # Calculate estimated cost avoided
+        estimated_cost = calculate_avoidance_value(
+            avoidance_type, severity, request.base_cost
+        )
+
+        # Create event
+        event = CostAvoidanceEvent(
+            type=avoidance_type,
+            severity=severity,
+            estimated_cost_avoided=estimated_cost,
+            confidence=request.confidence,
+            detected_by=request.detected_by,
+            trace_id=request.trace_id,
+            artifact_id=request.artifact_id,
+            spec_id=request.spec_id,
+            project_id=Path(project_path).name,
+            description=request.description,
+            evidence=request.evidence,
+        )
+
+        event_id = tracker.record_event(event)
+
+        return RecordCostAvoidanceEventResponse(
+            success=True,
+            event_id=event_id,
+            estimated_cost_avoided=round(estimated_cost, 2),
+            message=f"Cost avoidance event recorded: ${estimated_cost:.2f} saved",
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid type or severity: {e}"
+        )
+    except Exception as e:
+        logger.error(f"Failed to record cost avoidance event: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to record event: {e}"
+        )
+
+
+@router.get("/cost-avoidance/trend", response_model=CostAvoidanceTrendResponse)
+async def get_cost_avoidance_trend(
+    project_path: str = Query(..., description="Project path to get trend data"),
+    days: int = Query(default=90, ge=7, le=365, description="Number of days to include"),
+    granularity: str = Query(default="week", description="Aggregation granularity: day, week, month"),
+):
+    """
+    Get cost avoidance trend over time for visualization.
+
+    Returns time-series data showing cost avoided per period.
+    """
+    from collections import defaultdict
+
+    tracker = _get_cost_avoidance_tracker(project_path)
+    if not tracker:
+        return CostAvoidanceTrendResponse(granularity=granularity)
+
+    try:
+        events = tracker.get_events(days=days)
+
+        if not events:
+            return CostAvoidanceTrendResponse(granularity=granularity)
+
+        # Group by period
+        trend_data = defaultdict(lambda: {"cost_avoided": 0.0, "event_count": 0, "by_type": defaultdict(float)})
+
+        for event in events:
+            dt = event.created_at
+
+            if granularity == "day":
+                period_key = dt.strftime("%Y-%m-%d")
+            elif granularity == "month":
+                period_key = dt.strftime("%Y-%m-01")
+            else:  # week
+                week_start = dt - timedelta(days=dt.weekday())
+                period_key = week_start.strftime("%Y-%m-%d")
+
+            trend_data[period_key]["cost_avoided"] += event.estimated_cost_avoided
+            trend_data[period_key]["event_count"] += 1
+            trend_data[period_key]["by_type"][event.type.value] += event.estimated_cost_avoided
+
+        # Convert to response
+        total_cost = sum(d["cost_avoided"] for d in trend_data.values())
+
+        trend = [
+            CostAvoidanceTrendPoint(
+                date=date,
+                cost_avoided=round(data["cost_avoided"], 2),
+                event_count=data["event_count"],
+                by_type={k: round(v, 2) for k, v in data["by_type"].items()},
+            )
+            for date, data in sorted(trend_data.items())
+        ]
+
+        return CostAvoidanceTrendResponse(
+            trend=trend,
+            granularity=granularity,
+            total_cost_avoided=round(total_cost, 2),
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get cost avoidance trend: {e}")
+        return CostAvoidanceTrendResponse(granularity=granularity)
+
+
+# =============================================================================
+# ROI Comparison Endpoints
+# =============================================================================
+
+
+@router.get("/roi/compare", response_model=MultiProjectComparisonResponse)
+async def compare_project_roi(
+    project_ids: Optional[str] = Query(
+        None,
+        description="Comma-separated list of project IDs to compare"
+    ),
+    from_date: Optional[datetime] = Query(None, description="From timestamp"),
+    to_date: Optional[datetime] = Query(None, description="To timestamp"),
+):
+    """
+    Compare ROI across multiple projects.
+
+    Returns comparative ROI data including market positioning for each project.
+    If no project_ids provided, compares all available projects.
+    """
+    try:
+        from analytics.roi_comparison import ROIComparator, ProjectROIData
+
+        client = get_client()
+        comparator = ROIComparator()
+
+        # Parse project IDs
+        project_id_list = None
+        if project_ids:
+            project_id_list = [p.strip() for p in project_ids.split(",")]
+
+        # Get ROI data for each project
+        projects_data: List[ProjectROIData] = []
+
+        if project_id_list:
+            for project_id in project_id_list:
+                roi_scores = await client.get_scores(
+                    name="roi_percentage",
+                    project_id=project_id
+                )
+                if roi_scores:
+                    # Aggregate project data
+                    total_value = 0.0
+                    total_cost = 0.0
+                    first_date = None
+                    latest_date = None
+
+                    for score in roi_scores:
+                        trace = await client.get_trace(score.trace_id)
+                        if trace:
+                            trace_scores = await client.get_scores(trace_id=trace.id)
+                            score_dict = {s.name: s.value for s in trace_scores}
+                            total_value += score_dict.get(
+                                "total_value_usd",
+                                score_dict.get("business_value_usd", 0)
+                            )
+                            total_cost += score_dict.get(
+                                "total_cost_usd",
+                                score_dict.get("actual_cost_usd", 0)
+                            )
+                            if first_date is None or trace.timestamp < first_date:
+                                first_date = trace.timestamp
+                            if latest_date is None or trace.timestamp > latest_date:
+                                latest_date = trace.timestamp
+
+                    if total_cost > 0:
+                        roi_pct = ((total_value - total_cost) / total_cost) * 100
+                    else:
+                        roi_pct = 0.0
+
+                    projects_data.append(ProjectROIData(
+                        project_id=project_id,
+                        total_value_usd=total_value,
+                        total_cost_usd=total_cost,
+                        roi_percentage=roi_pct,
+                        trace_count=len(roi_scores),
+                        first_trace_date=first_date,
+                        latest_trace_date=latest_date,
+                    ))
+        else:
+            # Get all available projects from traces
+            all_scores = await client.get_scores(name="roi_percentage", limit=500)
+            project_aggregates: Dict[str, Dict] = {}
+
+            for score in all_scores:
+                trace = await client.get_trace(score.trace_id)
+                if not trace:
+                    continue
+
+                proj_id = trace.metadata.get("project_id", "default") if trace.metadata else "default"
+                if proj_id not in project_aggregates:
+                    project_aggregates[proj_id] = {
+                        "total_value": 0.0,
+                        "total_cost": 0.0,
+                        "trace_count": 0,
+                        "first_date": None,
+                        "latest_date": None,
+                    }
+
+                trace_scores = await client.get_scores(trace_id=trace.id)
+                score_dict = {s.name: s.value for s in trace_scores}
+
+                project_aggregates[proj_id]["total_value"] += score_dict.get(
+                    "total_value_usd",
+                    score_dict.get("business_value_usd", 0)
+                )
+                project_aggregates[proj_id]["total_cost"] += score_dict.get(
+                    "total_cost_usd",
+                    score_dict.get("actual_cost_usd", 0)
+                )
+                project_aggregates[proj_id]["trace_count"] += 1
+
+                if project_aggregates[proj_id]["first_date"] is None or \
+                   trace.timestamp < project_aggregates[proj_id]["first_date"]:
+                    project_aggregates[proj_id]["first_date"] = trace.timestamp
+                if project_aggregates[proj_id]["latest_date"] is None or \
+                   trace.timestamp > project_aggregates[proj_id]["latest_date"]:
+                    project_aggregates[proj_id]["latest_date"] = trace.timestamp
+
+            for proj_id, data in project_aggregates.items():
+                if data["total_cost"] > 0:
+                    roi_pct = ((data["total_value"] - data["total_cost"]) / data["total_cost"]) * 100
+                else:
+                    roi_pct = 0.0
+
+                projects_data.append(ProjectROIData(
+                    project_id=proj_id,
+                    total_value_usd=data["total_value"],
+                    total_cost_usd=data["total_cost"],
+                    roi_percentage=roi_pct,
+                    trace_count=data["trace_count"],
+                    first_trace_date=data["first_date"],
+                    latest_trace_date=data["latest_date"],
+                ))
+
+        # Compare projects
+        comparisons = comparator.compare_projects(projects_data)
+
+        # Convert to response models
+        comparison_results = [
+            ROIComparisonResult(
+                project_id=c.project_id,
+                roi_percentage=c.roi_percentage,
+                cost_per_dollar_value=c.cost_per_dollar_value if c.cost_per_dollar_value != float("inf") else 9999.99,
+                break_even_days=c.break_even_days,
+                vs_market_avg=c.vs_market_avg,
+                percentile=c.percentile,
+                market_position=c.market_position,
+                total_value_usd=c.total_value_usd,
+                total_cost_usd=c.total_cost_usd,
+                net_value_usd=c.net_value_usd,
+                calculated_at=c.calculated_at,
+            )
+            for c in comparisons
+        ]
+
+        # Calculate average ROI
+        avg_roi = sum(c.roi_percentage for c in comparisons) / len(comparisons) if comparisons else 0.0
+
+        # Determine best/worst performers
+        best_performer = comparisons[0].project_id if comparisons else None
+        worst_performer = comparisons[-1].project_id if comparisons else None
+
+        benchmarks = comparator.get_market_benchmarks()
+
+        return MultiProjectComparisonResponse(
+            comparisons=comparison_results,
+            benchmarks=MarketBenchmarks(
+                average_roi=benchmarks["average_roi"],
+                top_performers_roi=benchmarks["top_performers_roi"],
+                median_roi=benchmarks["median_roi"],
+                low_performers_roi=benchmarks["low_performers_roi"],
+                median_time_saved_percent=benchmarks["median_time_saved_percent"],
+            ),
+            best_performer=best_performer,
+            worst_performer=worst_performer,
+            average_roi=round(avg_roi, 1),
+            total_projects=len(comparisons),
+        )
+
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="ROI comparison module not available"
+        )
+    except Exception as e:
+        logger.error(f"Failed to compare project ROI: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/roi/benchmark", response_model=ROIComparisonResponse)
+async def get_roi_benchmark(
+    project_id: str = Query(..., description="Project ID to benchmark"),
+    from_date: Optional[datetime] = Query(None, description="From timestamp"),
+    to_date: Optional[datetime] = Query(None, description="To timestamp"),
+):
+    """
+    Get ROI benchmark position for a single project against market averages.
+
+    Returns detailed market positioning including:
+    - Percentile ranking
+    - Comparison to market average
+    - Break-even analysis (if applicable)
+    """
+    try:
+        from analytics.roi_comparison import ROIComparator
+
+        client = get_client()
+        comparator = ROIComparator()
+
+        # Get ROI data for the project
+        roi_scores = await client.get_scores(name="roi_percentage", project_id=project_id)
+
+        if not roi_scores:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No ROI data found for project {project_id}"
+            )
+
+        # Aggregate project data
+        total_value = 0.0
+        total_cost = 0.0
+        first_date = None
+        latest_date = None
+
+        for score in roi_scores:
+            trace = await client.get_trace(score.trace_id)
+            if trace:
+                trace_scores = await client.get_scores(trace_id=trace.id)
+                score_dict = {s.name: s.value for s in trace_scores}
+                total_value += score_dict.get(
+                    "total_value_usd",
+                    score_dict.get("business_value_usd", 0)
+                )
+                total_cost += score_dict.get(
+                    "total_cost_usd",
+                    score_dict.get("actual_cost_usd", 0)
+                )
+                if first_date is None or trace.timestamp < first_date:
+                    first_date = trace.timestamp
+                if latest_date is None or trace.timestamp > latest_date:
+                    latest_date = trace.timestamp
+
+        # Calculate ROI
+        if total_cost > 0:
+            roi_percentage = ((total_value - total_cost) / total_cost) * 100
+        else:
+            roi_percentage = 0.0
+
+        # Calculate days active
+        days_active = None
+        if first_date:
+            delta = (latest_date or datetime.utcnow()) - first_date
+            days_active = max(1, delta.days)
+
+        # Compare to market
+        comparison = comparator.compare_to_market(
+            project_id=project_id,
+            roi_percentage=roi_percentage,
+            total_value_usd=total_value,
+            total_cost_usd=total_cost,
+            days_active=days_active,
+        )
+
+        # Get percentile thresholds
+        thresholds = comparator.get_percentile_thresholds()
+        threshold_models = {
+            key: PercentileThreshold(min_roi=data["min_roi"], label=data["label"])
+            for key, data in thresholds.items()
+        }
+
+        benchmarks = comparator.get_market_benchmarks()
+
+        return ROIComparisonResponse(
+            comparison=ROIComparisonResult(
+                project_id=comparison.project_id,
+                roi_percentage=comparison.roi_percentage,
+                cost_per_dollar_value=comparison.cost_per_dollar_value if comparison.cost_per_dollar_value != float("inf") else 9999.99,
+                break_even_days=comparison.break_even_days,
+                vs_market_avg=comparison.vs_market_avg,
+                percentile=comparison.percentile,
+                market_position=comparison.market_position,
+                total_value_usd=comparison.total_value_usd,
+                total_cost_usd=comparison.total_cost_usd,
+                net_value_usd=comparison.net_value_usd,
+                calculated_at=comparison.calculated_at,
+            ),
+            benchmarks=MarketBenchmarks(
+                average_roi=benchmarks["average_roi"],
+                top_performers_roi=benchmarks["top_performers_roi"],
+                median_roi=benchmarks["median_roi"],
+                low_performers_roi=benchmarks["low_performers_roi"],
+                median_time_saved_percent=benchmarks["median_time_saved_percent"],
+            ),
+            percentile_thresholds=threshold_models,
+        )
+
+    except HTTPException:
+        raise
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="ROI comparison module not available"
+        )
+    except Exception as e:
+        logger.error(f"Failed to get ROI benchmark: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/roi/break-even/{project_id}", response_model=BreakEvenResponse)
+async def get_break_even_analysis(
+    project_id: str,
+):
+    """
+    Calculate break-even analysis for a project.
+
+    Returns:
+    - Days until break-even (if not yet profitable)
+    - Daily value and cost rates
+    - Projected annual ROI
+    - Human-readable recommendation
+    """
+    try:
+        from analytics.roi_comparison import ROIComparator, ProjectROIData
+
+        client = get_client()
+        comparator = ROIComparator()
+
+        # Get ROI data for the project
+        roi_scores = await client.get_scores(name="roi_percentage", project_id=project_id)
+
+        if not roi_scores:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No ROI data found for project {project_id}"
+            )
+
+        # Aggregate project data
+        total_value = 0.0
+        total_cost = 0.0
+        first_date = None
+        latest_date = None
+
+        for score in roi_scores:
+            trace = await client.get_trace(score.trace_id)
+            if trace:
+                trace_scores = await client.get_scores(trace_id=trace.id)
+                score_dict = {s.name: s.value for s in trace_scores}
+                total_value += score_dict.get(
+                    "total_value_usd",
+                    score_dict.get("business_value_usd", 0)
+                )
+                total_cost += score_dict.get(
+                    "total_cost_usd",
+                    score_dict.get("actual_cost_usd", 0)
+                )
+                if first_date is None or trace.timestamp < first_date:
+                    first_date = trace.timestamp
+                if latest_date is None or trace.timestamp > latest_date:
+                    latest_date = trace.timestamp
+
+        # Calculate ROI
+        if total_cost > 0:
+            roi_percentage = ((total_value - total_cost) / total_cost) * 100
+        else:
+            roi_percentage = 0.0
+
+        project_data = ProjectROIData(
+            project_id=project_id,
+            total_value_usd=total_value,
+            total_cost_usd=total_cost,
+            roi_percentage=roi_percentage,
+            trace_count=len(roi_scores),
+            first_trace_date=first_date,
+            latest_trace_date=latest_date,
+        )
+
+        # Calculate break-even
+        analysis = comparator.calculate_break_even(project_data)
+
+        # Generate recommendation
+        if analysis.is_profitable:
+            if analysis.projected_annual_roi and analysis.projected_annual_roi > 500:
+                recommendation = (
+                    f"Excellent! Project is generating ${analysis.daily_value_rate:.2f}/day "
+                    f"in value. Projected annual ROI: {analysis.projected_annual_roi:.0f}%."
+                )
+            else:
+                recommendation = (
+                    f"Project is profitable with ${analysis.cumulative_value - analysis.cumulative_cost:.2f} "
+                    f"net value. Continue current usage patterns."
+                )
+        elif analysis.break_even_days is not None:
+            if analysis.break_even_days <= 30:
+                recommendation = (
+                    f"Project should break even in approximately {analysis.break_even_days} days. "
+                    f"Consider increasing AI usage to accelerate value generation."
+                )
+            else:
+                recommendation = (
+                    f"Break-even estimated in {analysis.break_even_days} days. "
+                    f"Review usage patterns to optimize value extraction."
+                )
+        else:
+            recommendation = (
+                "Insufficient data for break-even analysis. "
+                "Continue using AI features to accumulate more data points."
+            )
+
+        return BreakEvenResponse(
+            analysis=BreakEvenAnalysisResult(
+                project_id=analysis.project_id,
+                break_even_days=analysis.break_even_days,
+                daily_value_rate=analysis.daily_value_rate,
+                daily_cost_rate=analysis.daily_cost_rate,
+                cumulative_value=analysis.cumulative_value,
+                cumulative_cost=analysis.cumulative_cost,
+                is_profitable=analysis.is_profitable,
+                days_since_start=analysis.days_since_start,
+                projected_annual_roi=analysis.projected_annual_roi,
+            ),
+            recommendation=recommendation,
+        )
+
+    except HTTPException:
+        raise
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="ROI comparison module not available"
+        )
+    except Exception as e:
+        logger.error(f"Failed to calculate break-even: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =============================================================================
+# Value Attribution Breakdown Endpoints
+# =============================================================================
+
+# Lazy import for value attribution service
+_value_attribution_service_cache = {}
+
+
+def _get_value_attribution_service(project_path: str):
+    """Get or create ValueAttributionService for a project."""
+    if project_path not in _value_attribution_service_cache:
+        try:
+            from analytics.value_attribution import ValueAttributionService
+            _value_attribution_service_cache[project_path] = ValueAttributionService()
+        except ImportError:
+            return None
+    return _value_attribution_service_cache.get(project_path)
+
+
+@router.get("/value/breakdown", response_model=ValueBreakdownResponse)
+async def get_value_breakdown(
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+    project_path: Optional[str] = Query(None, description="Project path to load artifacts from"),
+    from_date: Optional[str] = Query(None, description="From date (YYYY-MM-DD)"),
+    to_date: Optional[str] = Query(None, description="To date (YYYY-MM-DD)"),
+    feature_type: Optional[str] = Query(None, description="Filter by feature type"),
+    min_confidence: Optional[float] = Query(
+        None, ge=0, le=1,
+        description="Minimum confidence threshold"
+    ),
+):
+    """
+    Get value breakdown by category and subcategory.
+
+    Returns hierarchical value data suitable for:
+    - Treemap visualization (category -> subcategory)
+    - Sunburst chart (multi-level drill-down)
+    - Category comparison charts
+
+    Filters:
+    - project_id: Filter to specific project
+    - from_date/to_date: Date range filter
+    - feature_type: Filter by feature type (build, spec, insights, etc.)
+    - min_confidence: Only include attributions above this confidence threshold
+    """
+    from collections import defaultdict
+
+    # Try to get artifacts from local storage if project_path is provided
+    if project_path and ARTIFACT_STORAGE_AVAILABLE:
+        try:
+            artifacts = list_local_artifacts(
+                project_dir=Path(project_path),
+                date_from=from_date,
+                date_to=to_date,
+                limit=500,
+            )
+        except Exception as e:
+            logger.error(f"Failed to load local artifacts: {e}")
+            artifacts = []
+    else:
+        # Fall back to getting artifacts from Langfuse
+        try:
+            client = get_client()
+
+            # Parse date filters
+            from_timestamp = None
+            to_timestamp = None
+            if from_date:
+                try:
+                    from_timestamp = datetime.fromisoformat(from_date)
+                except ValueError:
+                    pass
+            if to_date:
+                try:
+                    to_timestamp = datetime.fromisoformat(to_date) + timedelta(days=1)
+                except ValueError:
+                    pass
+
+            filter_obj = TraceFilter(
+                project_id=project_id,
+                from_timestamp=from_timestamp,
+                to_timestamp=to_timestamp,
+                limit=100,
+            )
+            traces = await client.get_traces(filter_obj)
+
+            # Extract artifacts from traces
+            artifacts = []
+            for trace in traces:
+                full_trace = await client.get_trace(trace.id)
+                if not full_trace or not full_trace.output:
+                    continue
+
+                output = full_trace.output if isinstance(full_trace.output, dict) else {}
+                value_attr = output.get("value_attribution", {})
+                trace_artifacts = value_attr.get("artifacts", [])
+
+                for art in trace_artifacts:
+                    art["trace_id"] = trace.id
+                    art["project_id"] = project_id
+                    artifacts.append(art)
+
+        except Exception as e:
+            logger.error(f"Failed to get artifacts from Langfuse: {e}")
+            artifacts = []
+
+    # Filter by feature type if specified
+    if feature_type:
+        artifacts = [a for a in artifacts if a.get("feature_type") == feature_type]
+
+    # Use ValueAttributionService to calculate breakdown
+    service = _get_value_attribution_service(project_path or "default")
+
+    # Import value attribution modules
+    try:
+        from analytics.value_attribution import (
+            ValueCategory,
+            CATEGORY_PARENT_MAP,
+            ARTIFACT_TYPE_MAPPING,
+        )
+        VALUE_ATTRIBUTION_AVAILABLE = True
+    except ImportError:
+        VALUE_ATTRIBUTION_AVAILABLE = False
+        ARTIFACT_TYPE_MAPPING = {}
+        CATEGORY_PARENT_MAP = {}
+
+    # Aggregate by category and subcategory
+    subcategory_data = defaultdict(lambda: {
+        "value_usd": 0.0,
+        "confidence_sum": 0.0,
+        "count": 0,
+        "evidence_count": 0,
+        "parent_type": "other",
+    })
+
+    category_totals = defaultdict(float)
+    total_confidence_sum = 0.0
+    total_count = 0
+
+    for artifact in artifacts:
+        artifact_type = artifact.get("type", "unknown")
+        content = artifact.get("content", "")
+
+        # Get value attribution
+        if service and VALUE_ATTRIBUTION_AVAILABLE:
+            attribution = service.attribute_value(
+                artifact_type=artifact_type,
+                content=content,
+                metadata=artifact,
+            )
+
+            # Apply confidence filter
+            if min_confidence and attribution.confidence < min_confidence:
+                continue
+
+            subcategory = attribution.category.value
+            parent_type = attribution.parent_type
+            value = attribution.value_usd
+            confidence = attribution.confidence
+        else:
+            # Fallback: use artifact's pre-calculated value
+            value = artifact.get("value_usd", 0)
+            confidence = 0.8
+
+            # Map artifact type to category
+            mapped_category = ARTIFACT_TYPE_MAPPING.get(artifact_type) if VALUE_ATTRIBUTION_AVAILABLE else None
+            if mapped_category:
+                subcategory = mapped_category.value
+                parent_type = CATEGORY_PARENT_MAP.get(mapped_category, "other")
+            else:
+                subcategory = "insight_discovered"
+                parent_type = "knowledge"
+
+        # Aggregate
+        subcategory_data[subcategory]["value_usd"] += value
+        subcategory_data[subcategory]["confidence_sum"] += confidence
+        subcategory_data[subcategory]["count"] += 1
+        subcategory_data[subcategory]["evidence_count"] += len(artifact.get("evidence", []))
+        subcategory_data[subcategory]["parent_type"] = parent_type
+
+        category_totals[parent_type] += value
+        total_confidence_sum += confidence
+        total_count += 1
+
+    # Build response structures
+    # Create flat subcategory map
+    by_subcategory = {}
+    for subcat, data in subcategory_data.items():
+        avg_confidence = data["confidence_sum"] / data["count"] if data["count"] > 0 else 0
+        by_subcategory[subcat] = SubcategoryValueResponse(
+            subcategory=subcat,
+            parent_type=data.get("parent_type", "other"),
+            value_usd=round(data["value_usd"], 2),
+            confidence=round(avg_confidence, 2),
+            count=data["count"],
+            evidence_count=data["evidence_count"],
+        )
+
+    # Build hierarchical category structure
+    by_category = []
+    for cat_name in ["execution", "decision", "prevention", "knowledge"]:
+        cat_subcats = [
+            by_subcategory[k]
+            for k, v in subcategory_data.items()
+            if v.get("parent_type") == cat_name
+        ]
+        if cat_subcats or category_totals[cat_name] > 0:
+            by_category.append(ValueBreakdownByCategory(
+                category=cat_name,
+                total_value=round(category_totals[cat_name], 2),
+                subcategories=sorted(cat_subcats, key=lambda x: x.value_usd, reverse=True),
+            ))
+
+    # Calculate totals
+    total_value = sum(category_totals.values())
+    avg_confidence = total_confidence_sum / total_count if total_count > 0 else 0
+
+    breakdown = ValueBreakdownExpandedResponse(
+        execution_value=round(category_totals.get("execution", 0), 2),
+        decision_value=round(category_totals.get("decision", 0), 2),
+        prevention_value=round(category_totals.get("prevention", 0), 2),
+        knowledge_value=round(category_totals.get("knowledge", 0), 2),
+        total_value=round(total_value, 2),
+        by_category=sorted(by_category, key=lambda x: x.total_value, reverse=True),
+        by_subcategory=by_subcategory,
+        attribution_count=total_count,
+        average_confidence=round(avg_confidence, 2),
+    )
+
+    return ValueBreakdownResponse(
+        breakdown=breakdown,
+        period={
+            "from": from_date,
+            "to": to_date,
+        },
+        filters_applied={
+            "project_id": project_id,
+            "feature_type": feature_type,
+            "min_confidence": min_confidence,
+        },
+    )
+
+
+# =============================================================================
+# Project Benchmark Endpoints (Module 6)
+# =============================================================================
+
+# Import benchmark models
+from .models import (
+    ProjectBenchmarkResponse,
+    BestPracticeResponse,
+    ProjectRankingsResponse,
+    BestPracticesResponse,
+    ImprovementSuggestionsResponse,
+    PercentileMetricComparison,
+    PercentileComparisonResponse,
+)
+
+# Lazy import for benchmark service
+_benchmark_service = None
+
+
+def _get_benchmark_service():
+    """Get the benchmark service singleton with lazy initialization."""
+    global _benchmark_service
+    if _benchmark_service is None:
+        try:
+            from analytics.benchmarks import BenchmarkService
+            # Pass Langfuse client if available
+            client = get_client()
+            _benchmark_service = BenchmarkService(langfuse_client=client)
+        except ImportError:
+            logger.warning("Benchmark service module not available")
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to initialize benchmark service: {e}")
+            from analytics.benchmarks import BenchmarkService
+            _benchmark_service = BenchmarkService()  # Use mock data
+    return _benchmark_service
+
+
+@router.get("/benchmarks/projects", response_model=ProjectRankingsResponse)
+async def get_project_rankings(
+    metric: str = Query(
+        default="roi",
+        description="Ranking metric: 'roi', 'value', or 'success_rate'"
+    ),
+    period: str = Query(
+        default="30d",
+        description="Time period: '7d', '30d', '90d', or 'all'"
+    ),
+    limit: int = Query(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of projects to return"
+    ),
+):
+    """
+    Get projects ranked by specified metric.
+
+    Returns a leaderboard of projects with their benchmark data,
+    useful for comparing team/project performance.
+
+    Metrics:
+    - roi: Total ROI percentage (default)
+    - value: Total value generated in USD
+    - success_rate: Percentage of specs with positive ROI
+    """
+    service = _get_benchmark_service()
+    if not service:
+        return ProjectRankingsResponse(metric=metric, period=period)
+
+    try:
+        rankings = await service.get_project_rankings(
+            metric=metric,
+            period=period,
+            limit=limit,
+        )
+
+        # Convert to response models
+        ranking_responses = [
+            ProjectBenchmarkResponse(
+                project_id=r.project_id,
+                total_roi=round(r.total_roi, 2),
+                avg_roi_per_spec=round(r.avg_roi_per_spec, 2),
+                total_value_generated=round(r.total_value_generated, 2),
+                total_cost=round(r.total_cost, 2),
+                specs_count=r.specs_count,
+                success_rate=round(r.success_rate, 2),
+                best_feature_type=r.best_feature_type,
+                worst_feature_type=r.worst_feature_type,
+                rank=r.rank,
+                avg_qa_attempts=round(r.avg_qa_attempts, 2),
+                avg_iterations=round(r.avg_iterations, 2),
+                total_hours_saved=round(r.total_hours_saved, 2),
+                avg_complexity=r.avg_complexity,
+            )
+            for r in rankings
+        ]
+
+        return ProjectRankingsResponse(
+            rankings=ranking_responses,
+            total=len(ranking_responses),
+            metric=metric,
+            period=period,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get project rankings: {e}")
+        return ProjectRankingsResponse(metric=metric, period=period)
+
+
+@router.get("/benchmarks/best-practices", response_model=BestPracticesResponse)
+async def get_best_practices(
+    top_n: int = Query(
+        default=10,
+        ge=3,
+        le=50,
+        description="Number of top projects to analyze for patterns"
+    ),
+):
+    """
+    Identify best practices from top performers.
+
+    Analyzes top-performing projects to identify success patterns:
+    - Low QA iterations
+    - High success rates
+    - Feature type diversity
+    - Cost efficiency
+    - Consistent delivery
+
+    Returns actionable insights with adoption rates and examples.
+    """
+    service = _get_benchmark_service()
+    if not service:
+        return BestPracticesResponse()
+
+    try:
+        practices = await service.identify_best_practices(top_n=top_n)
+
+        # Convert to response models
+        practice_responses = [
+            BestPracticeResponse(
+                pattern=p.pattern,
+                description=p.description,
+                impact=p.impact,
+                adoption_rate=round(p.adoption_rate, 2),
+                examples=p.examples[:5],  # Limit examples
+                category=p.category,
+            )
+            for p in practices
+        ]
+
+        return BestPracticesResponse(
+            practices=practice_responses,
+            analyzed_projects=top_n,
+            analysis_period="30d",
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to identify best practices: {e}")
+        return BestPracticesResponse()
+
+
+@router.get("/benchmarks/{project_id}/suggestions", response_model=ImprovementSuggestionsResponse)
+async def get_improvement_suggestions(
+    project_id: str,
+):
+    """
+    Get improvement suggestions for a specific project.
+
+    Compares the project against top performers and identifies
+    specific areas for improvement with actionable recommendations.
+    """
+    service = _get_benchmark_service()
+    if not service:
+        return ImprovementSuggestionsResponse(
+            project_id=project_id,
+            suggestions=["Benchmark service not available"],
+        )
+
+    try:
+        suggestions = await service.get_improvement_suggestions(project_id=project_id)
+
+        # Get project rank
+        rankings = await service.get_project_rankings(limit=100)
+        project = next((r for r in rankings if r.project_id == project_id), None)
+        current_rank = project.rank if project else None
+
+        return ImprovementSuggestionsResponse(
+            project_id=project_id,
+            suggestions=suggestions,
+            current_rank=current_rank,
+            total_projects=len(rankings),
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get improvement suggestions: {e}")
+        return ImprovementSuggestionsResponse(
+            project_id=project_id,
+            suggestions=[f"Error generating suggestions: {str(e)}"],
+        )
+
+
+@router.get("/benchmarks/{project_id}/percentile", response_model=PercentileComparisonResponse)
+async def compare_to_percentile(
+    project_id: str,
+    percentile: int = Query(
+        default=50,
+        ge=1,
+        le=99,
+        description="Percentile to compare against (50 = median)"
+    ),
+):
+    """
+    Compare a project to a specific percentile.
+
+    Returns detailed metric comparisons showing how the project
+    performs relative to the specified percentile of all projects.
+
+    Common percentiles:
+    - 50: Median (typical performance)
+    - 75: Above average
+    - 90: Top performer threshold
+    """
+    service = _get_benchmark_service()
+    if not service:
+        return PercentileComparisonResponse(
+            project_id=project_id,
+            percentile=percentile,
+        )
+
+    try:
+        comparison = await service.compare_to_percentile(
+            project_id=project_id,
+            percentile=percentile,
+        )
+
+        # Convert metrics to response models
+        metrics_response = {}
+        for metric_name, metric_data in comparison.metrics.items():
+            metrics_response[metric_name] = PercentileMetricComparison(
+                project_value=round(metric_data["project_value"], 2),
+                percentile_value=round(metric_data["percentile_value"], 2),
+                delta=round(metric_data["delta"], 2),
+                status=metric_data["status"],
+            )
+
+        return PercentileComparisonResponse(
+            project_id=project_id,
+            percentile=percentile,
+            metrics=metrics_response,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to compare to percentile: {e}")
+        return PercentileComparisonResponse(
+            project_id=project_id,
+            percentile=percentile,
+        )
+
+
+# =============================================================================
+# Quality Multiplier Endpoints
+# =============================================================================
+
+
+def _get_quality_calculator():
+    """Get the QualityMultiplierCalculator instance."""
+    try:
+        from analytics.quality_multipliers import (
+            QualityMultiplierCalculator,
+            get_quality_tier,
+            get_quality_color,
+        )
+        return QualityMultiplierCalculator(), get_quality_tier, get_quality_color
+    except ImportError:
+        return None, None, None
+
+
+@router.get("/quality/{spec_id}", response_model=SpecQualityResponse)
+async def get_quality_for_spec(
+    spec_id: str,
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+):
+    """
+    Get quality multiplier for a specific spec.
+
+    Fetches QA metrics from Langfuse and calculates the quality multiplier.
+    """
+    calculator, get_tier, get_color = _get_quality_calculator()
+    if not calculator:
+        raise HTTPException(
+            status_code=503,
+            detail="Quality multiplier module not available"
+        )
+
+    client = get_client()
+
+    try:
+        # Get sessions for this spec
+        traces = await client.get_sessions_for_spec(spec_id)
+        if not traces:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No traces found for spec {spec_id}"
+            )
+
+        # Find QA metrics from traces
+        qa_passed = False
+        qa_attempts = 0
+        has_tests = False
+        has_docs = False
+        has_types = False
+        code_coverage = None
+        lint_errors = 0
+        rework_needed = False
+
+        for trace in sorted(traces, key=lambda t: t.timestamp, reverse=True):
+            # Get scores for this trace
+            scores = await client.get_scores(trace_id=trace.id)
+            score_dict = {s.name: s.value for s in scores}
+
+            if "qa_passed" in score_dict:
+                qa_passed = score_dict.get("qa_passed", 0) > 0.5
+                qa_attempts = int(score_dict.get("qa_attempts", 0))
+                break
+
+            # Check metadata for QA info
+            if trace.metadata:
+                if "qa_passed" in trace.metadata:
+                    qa_passed = trace.metadata.get("qa_passed", False)
+                if "qa_attempts" in trace.metadata:
+                    qa_attempts = trace.metadata.get("qa_attempts", 0)
+                if "has_tests" in trace.metadata:
+                    has_tests = trace.metadata.get("has_tests", False)
+                if "has_docs" in trace.metadata:
+                    has_docs = trace.metadata.get("has_docs", False)
+                if "has_types" in trace.metadata:
+                    has_types = trace.metadata.get("has_types", False)
+                if "code_coverage" in trace.metadata:
+                    code_coverage = trace.metadata.get("code_coverage")
+                if "lint_errors" in trace.metadata:
+                    lint_errors = trace.metadata.get("lint_errors", 0)
+                if "rework_needed" in trace.metadata:
+                    rework_needed = trace.metadata.get("rework_needed", False)
+
+        # Calculate quality multiplier
+        result = calculator.calculate(
+            qa_passed=qa_passed,
+            qa_attempts=qa_attempts,
+            has_tests=has_tests,
+            has_docs=has_docs,
+            has_types=has_types,
+            code_coverage=code_coverage,
+            lint_errors=lint_errors,
+            rework_needed=rework_needed,
+        )
+
+        return SpecQualityResponse(
+            spec_id=spec_id,
+            multiplier=QualityMultiplierResponse(
+                base_value=result.base_value,
+                adjustments=[
+                    QualityAdjustment(reason=r, delta=d)
+                    for r, d in result.adjustments
+                ],
+                final_multiplier=result.final_multiplier,
+                tier=get_tier(result.final_multiplier),
+                color=get_color(result.final_multiplier),
+            ),
+            qa_passed=qa_passed,
+            qa_attempts=qa_attempts,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get quality for spec {spec_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get quality metrics: {e}"
+        )
+
+
+@router.get("/quality/leaderboard", response_model=QualityLeaderboardResponse)
+async def get_quality_leaderboard(
+    project_id: Optional[str] = Query(None, description="Filter by project ID"),
+    limit: int = Query(default=20, ge=1, le=100, description="Max results"),
+):
+    """
+    Get specs ordered by quality multiplier (highest first).
+
+    Returns a leaderboard of specs ranked by their quality multipliers,
+    with summary statistics.
+    """
+    calculator, get_tier, get_color = _get_quality_calculator()
+    if not calculator:
+        raise HTTPException(
+            status_code=503,
+            detail="Quality multiplier module not available"
+        )
+
+    client = get_client()
+
+    try:
+        # Get ROI scores to find specs with QA data
+        roi_scores = await client.get_scores(name="roi_percentage", project_id=project_id)
+
+        # Deduplicate by spec
+        spec_ids = set()
+        for score in roi_scores:
+            trace = await client.get_trace(score.trace_id)
+            if trace:
+                spec_id = get_spec_id_from_trace(trace)
+                if spec_id and not spec_id.startswith("trace-"):
+                    spec_ids.add(spec_id)
+
+        # Calculate quality for each spec
+        entries = []
+        tier_counts = {"exceptional": 0, "good": 0, "neutral": 0, "low": 0, "poor": 0}
+        multiplier_sum = 0.0
+
+        for spec_id in list(spec_ids)[:limit * 2]:  # Get extra in case some fail
+            try:
+                traces = await client.get_sessions_for_spec(spec_id)
+                if not traces:
+                    continue
+
+                # Find QA metrics
+                qa_passed = False
+                qa_attempts = 0
+
+                for trace in sorted(traces, key=lambda t: t.timestamp, reverse=True):
+                    scores = await client.get_scores(trace_id=trace.id)
+                    score_dict = {s.name: s.value for s in scores}
+
+                    if "qa_passed" in score_dict:
+                        qa_passed = score_dict.get("qa_passed", 0) > 0.5
+                        qa_attempts = int(score_dict.get("qa_attempts", 0))
+                        break
+
+                    if trace.metadata and "qa_passed" in trace.metadata:
+                        qa_passed = trace.metadata.get("qa_passed", False)
+                        qa_attempts = trace.metadata.get("qa_attempts", 0)
+                        break
+
+                # Calculate quality
+                result = calculator.calculate(
+                    qa_passed=qa_passed,
+                    qa_attempts=qa_attempts,
+                )
+
+                tier = get_tier(result.final_multiplier)
+                color = get_color(result.final_multiplier)
+
+                entries.append(QualityLeaderboardEntry(
+                    spec_id=spec_id,
+                    final_multiplier=result.final_multiplier,
+                    tier=tier,
+                    color=color,
+                    qa_passed=qa_passed,
+                    qa_attempts=qa_attempts,
+                    adjustments_count=len(result.adjustments),
+                ))
+
+                tier_counts[tier] += 1
+                multiplier_sum += result.final_multiplier
+
+            except Exception as e:
+                logger.debug(f"Could not get quality for spec {spec_id}: {e}")
+                continue
+
+        # Sort by multiplier (highest first)
+        entries.sort(key=lambda e: e.final_multiplier, reverse=True)
+        entries = entries[:limit]
+
+        avg_multiplier = multiplier_sum / len(entries) if entries else 1.0
+
+        return QualityLeaderboardResponse(
+            entries=entries,
+            total=len(entries),
+            average_multiplier=round(avg_multiplier, 2),
+            exceptional_count=tier_counts["exceptional"],
+            good_count=tier_counts["good"],
+            neutral_count=tier_counts["neutral"],
+            low_count=tier_counts["low"],
+            poor_count=tier_counts["poor"],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get quality leaderboard: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get leaderboard: {e}"
+        )
+
+
+@router.post("/quality/calculate", response_model=QualityMultiplierResponse)
+async def calculate_quality_multiplier(
+    request: QualityMultiplierRequest,
+):
+    """
+    Calculate quality multiplier from provided metrics.
+
+    This endpoint allows calculating a quality multiplier without
+    needing a spec - useful for previewing or manual calculations.
+    """
+    calculator, get_tier, get_color = _get_quality_calculator()
+    if not calculator:
+        raise HTTPException(
+            status_code=503,
+            detail="Quality multiplier module not available"
+        )
+
+    try:
+        result = calculator.calculate(
+            qa_passed=request.qa_passed,
+            qa_attempts=request.qa_attempts,
+            has_tests=request.has_tests,
+            has_docs=request.has_docs,
+            has_types=request.has_types,
+            code_coverage=request.code_coverage,
+            lint_errors=request.lint_errors,
+            rework_needed=request.rework_needed,
+        )
+
+        return QualityMultiplierResponse(
+            base_value=result.base_value,
+            adjustments=[
+                QualityAdjustment(reason=r, delta=d)
+                for r, d in result.adjustments
+            ],
+            final_multiplier=result.final_multiplier,
+            tier=get_tier(result.final_multiplier),
+            color=get_color(result.final_multiplier),
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to calculate quality multiplier: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to calculate: {e}"
+        )

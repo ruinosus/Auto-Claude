@@ -431,5 +431,239 @@
       "metadata": "Métadonnées",
       "raw": "JSON brut"
     }
+  },
+  "forecast": {
+    "title": "Prévision d'impact",
+    "preSpecDescription": "Prédiction du ROI avant exécution basée sur les caractéristiques de la spec",
+    "postSpecDescription": "Comparaison des résultats ROI prédits vs réels",
+    "prediction": "Prédiction",
+    "modelAccuracy": "Modèle : {{accuracy}}% de précision",
+    "predictedValue": "Valeur prédite",
+    "predictedCost": "Coût prédit",
+    "predictedROI": "ROI prédit",
+    "actualValue": "Valeur réelle",
+    "actualCost": "Coût réel",
+    "actualROI": "ROI réel",
+    "confidenceInterval": "Intervalle de confiance à 95% :",
+    "accuracy": "précision",
+    "predictionError": "Erreur de prédiction",
+    "accuratePrediction": "Prédiction précise",
+    "inaccuratePrediction": "Prédiction manquée",
+    "withinConfidence": "Dans l'IC",
+    "outsideConfidence": "Hors IC",
+    "noForecast": "Aucune prévision disponible pour cette spec",
+    "noComparison": "Aucune donnée de comparaison disponible",
+    "factors": {
+      "complexity": "Complexité",
+      "featureType": "Type de fonctionnalité",
+      "linesEstimate": "Estimation des lignes",
+      "similarSpecs": "Specs similaires"
+    },
+    "modelStats": {
+      "title": "Statistiques du modèle",
+      "totalPredictions": "Total des prédictions",
+      "meanAccuracy": "Précision moyenne",
+      "meanError": "Erreur absolue moyenne",
+      "rmse": "RMSE",
+      "withinCIRate": "Taux dans l'IC",
+      "bias": "Biais",
+      "recentAccuracy": "Précision récente"
+    },
+    "history": {
+      "title": "Historique des prédictions",
+      "specId": "ID de Spec",
+      "predicted": "Prédit",
+      "actual": "Réel",
+      "error": "Erreur",
+      "withinCI": "Dans l'IC",
+      "date": "Date"
+    }
+  },
+  "costAvoidance": {
+    "title": "Coûts évités",
+    "subtitle": "Coûts évités grâce à la prévention et la détection précoce",
+    "totalAvoided": "Total des coûts évités",
+    "bugsPrevented": "Bugs évités",
+    "productionBugs": "Bugs de production",
+    "securityFixed": "Problèmes de sécurité",
+    "vulnerabilities": "Vulnérabilités corrigées",
+    "reworkAvoided": "Retravail évité",
+    "reworkIssues": "Problèmes détectés tôt",
+    "trendTitle": "Tendance des coûts évités",
+    "trendDescription": "Répartition hebdomadaire des coûts évités",
+    "breakdownTitle": "Répartition par type",
+    "breakdownDescription": "Distribution des coûts évités",
+    "recentEvents": "Événements récents",
+    "recentEventsDescription": "Derniers événements de coûts évités",
+    "byDetector": "Par source de détection",
+    "bySeverity": "Par sévérité",
+    "noEvents": "Aucun événement de coût évité enregistré",
+    "noTrend": "Données insuffisantes pour le graphique de tendance",
+    "noData": {
+      "title": "Aucune donnée de coûts évités",
+      "description": "Les événements de coûts évités apparaîtront ici lorsque des bugs sont évités, des problèmes de sécurité sont corrigés ou du retravail est évité lors des revues QA."
+    },
+    "types": {
+      "bug_production": "Prévention de bug",
+      "security_breach": "Correction de sécurité",
+      "rework_avoided": "Retravail évité",
+      "duplicate_feature": "Duplication évitée",
+      "wrong_architecture": "Correction d'architecture"
+    },
+    "severities": {
+      "critical": "Critique",
+      "high": "Élevé",
+      "medium": "Moyen",
+      "low": "Faible"
+    },
+    "detectors": {
+      "qa_reviewer": "Revue QA",
+      "qa_fixer": "Correcteur QA",
+      "security_scan": "Scan de sécurité",
+      "ideation": "Phase d'idéation",
+      "spec_creation": "Création de spec",
+      "manual": "Revue manuelle"
+    }
+  },
+  "satisfaction": {
+    "title": "Satisfaction développeur",
+    "subtitle": "Suivez la satisfaction et les scores NPS dans le temps",
+    "error": {
+      "fetchFailed": "Échec du chargement des métriques de satisfaction"
+    },
+    "nps": {
+      "title": "Net Promoter Score",
+      "description": "Basé sur la question 'Recommanderiez-vous' (-100 à +100)",
+      "excellent": "Excellent",
+      "great": "Très bien",
+      "good": "Bien",
+      "okay": "Correct",
+      "needsWork": "À améliorer",
+      "critical": "Critique"
+    },
+    "breakdown": {
+      "title": "Répartition des réponses",
+      "description": "Distribution des promoteurs, passifs et détracteurs",
+      "promoters": "Promoteurs (4-5)",
+      "passives": "Passifs (3)",
+      "detractors": "Détracteurs (1-2)"
+    },
+    "metrics": {
+      "overallSatisfaction": "Satisfaction globale",
+      "outputQuality": "Qualité du résultat",
+      "timeSaved": "Perception du temps gagné",
+      "responseRate": "Réponses",
+      "totalResponses": "réponses au sondage"
+    },
+    "themes": {
+      "title": "Thèmes de feedback principaux",
+      "description": "Sujets les plus mentionnés dans les retours",
+      "noThemes": "Aucun thème de feedback identifié",
+      "speed": "Rapidité",
+      "quality": "Qualité",
+      "documentation": "Documentation",
+      "ui": "Interface utilisateur",
+      "reliability": "Fiabilité",
+      "ease_of_use": "Facilité d'utilisation"
+    },
+    "survey": {
+      "title": "Comment était votre expérience ?",
+      "description": "Aidez-nous à nous améliorer en partageant votre feedback pour la spec {{specId}}",
+      "skip": "Passer",
+      "submit": "Envoyer",
+      "submitting": "Envoi...",
+      "submitError": "Échec de l'envoi du sondage. Veuillez réessayer.",
+      "questions": {
+        "overall": "Satisfaction globale",
+        "quality": "Qualité du résultat",
+        "timeSaved": "Temps gagné",
+        "recommend": "Recommanderiez-vous Auto-Claude ?",
+        "recommendHint": "Cela nous aide à calculer notre Net Promoter Score",
+        "feedback": "Un commentaire ? (optionnel)",
+        "feedbackPlaceholder": "Qu'avez-vous aimé ou pas aimé ?",
+        "improvements": "Suggestions d'amélioration ? (optionnel)",
+        "improvementsPlaceholder": "Comment pouvons-nous faire mieux ?"
+      }
+    }
+  },
+  "roiComparison": {
+    "title": "Comparaison du ROI",
+    "description": "Comparer le ROI du projet aux benchmarks du marché",
+    "noData": "Aucune donnée ROI disponible pour la comparaison",
+    "roi": "ROI",
+    "vsMarket": "vs Moy. Marché",
+    "percentile": "Percentile",
+    "top": "Top {{value}}%",
+    "netValue": "Valeur nette",
+    "breakEven": "Point mort",
+    "profitable": "Rentable",
+    "days": "{{count}} jours",
+    "marketAverage": "Moy. Marché (370%)",
+    "topPerformers": "Top 5% (1030%)",
+    "aboveAverage": "Au-dessus de la moyenne",
+    "avgRoi": "ROI Moy.",
+    "totalNetValue": "Valeur nette totale",
+    "positions": {
+      "top_performer": "Meilleur performeur",
+      "above_average": "Au-dessus de la moyenne",
+      "average": "Dans la moyenne",
+      "below_average": "En dessous de la moyenne",
+      "needs_improvement": "À améliorer"
+    },
+    "breakEvenAnalysis": {
+      "title": "Analyse du point mort",
+      "description": "Calendrier de récupération de l'investissement et projections",
+      "dailyValue": "Valeur quotidienne",
+      "dailyCost": "Coût quotidien",
+      "daysSinceStart": "Jours actifs",
+      "projectedAnnualRoi": "ROI annuel projeté",
+      "recommendation": "Recommandation",
+      "cumulativeValue": "Valeur cumulée",
+      "cumulativeCost": "Coût cumulé"
+    }
+  },
+  "projectBenchmarks": {
+    "title": "Classement des projets",
+    "error": "Échec du chargement des données de benchmark",
+    "noData": "Aucune donnée de benchmark disponible",
+    "selectMetric": "Sélectionner la métrique",
+    "selectPeriod": "Période",
+    "yourPosition": "Votre position vs médiane",
+    "rank": "Rang",
+    "project": "Projet",
+    "totalROI": "ROI total",
+    "value": "Valeur",
+    "successRate": "Succès",
+    "specs": "Specs",
+    "details": "Détails",
+    "you": "Vous",
+    "avgROI": "ROI moy./Spec",
+    "totalCost": "Coût total",
+    "avgQAAttempts": "Tentatives QA moy.",
+    "bestFeature": "Meilleure fonctionnalité",
+    "bestPractices": "Meilleures pratiques des top performeurs",
+    "bestPracticesDesc": "Patterns identifiés en analysant les {{count}} meilleurs projets",
+    "suggestions": "Suggestions d'amélioration",
+    "currentRank": "Rang #{{rank}} sur {{total}}",
+    "adoptionRate": "{{rate}}% taux d'adoption",
+    "examples": "Exemples : {{examples}}",
+    "metrics": {
+      "roi": "ROI total",
+      "value": "Valeur générée",
+      "successRate": "Taux de succès"
+    },
+    "impact": {
+      "high": "Impact élevé",
+      "medium": "Impact moyen",
+      "low": "Impact faible"
+    },
+    "patterns": {
+      "low_qa_iterations": "Peu d'itérations QA",
+      "high_success_rate": "Taux de succès élevé",
+      "feature_diversity": "Diversité des fonctionnalités",
+      "build_focus": "Focus sur le build",
+      "cost_efficiency": "Efficacité des coûts",
+      "consistent_delivery": "Livraison régulière"
+    }
   }
 }
