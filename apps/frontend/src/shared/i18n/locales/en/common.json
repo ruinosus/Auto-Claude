@@ -5,7 +5,10 @@
     "hideArchived": "Hide archived",
     "showArchivedTasks": "Show archived tasks",
     "hideArchivedTasks": "Hide archived tasks",
-    "closeTab": "Close tab"
+    "closeTab": "Close tab",
+    "addProject": "Add Project",
+    "moreProjects": "{{count}} more projects",
+    "otherProjects": "{{count}} other projects"
   },
   "buttons": {
     "save": "Save",

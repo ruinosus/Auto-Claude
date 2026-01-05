@@ -5,7 +5,10 @@
     "hideArchived": "Masquer archivés",
     "showArchivedTasks": "Afficher les tâches archivées",
     "hideArchivedTasks": "Masquer les tâches archivées",
-    "closeTab": "Fermer l'onglet"
+    "closeTab": "Fermer l'onglet",
+    "addProject": "Ajouter un projet",
+    "moreProjects": "{{count}} autres projets",
+    "otherProjects": "{{count}} autres projets"
   },
   "buttons": {
     "save": "Enregistrer",

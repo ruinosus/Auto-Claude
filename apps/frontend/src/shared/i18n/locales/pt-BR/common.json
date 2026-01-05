@@ -5,7 +5,10 @@
     "hideArchived": "Ocultar arquivadas",
     "showArchivedTasks": "Mostrar tarefas arquivadas",
     "hideArchivedTasks": "Ocultar tarefas arquivadas",
-    "closeTab": "Fechar aba"
+    "closeTab": "Fechar aba",
+    "addProject": "Adicionar Projeto",
+    "moreProjects": "{{count}} outros projetos",
+    "otherProjects": "{{count}} outros projetos"
   },
   "buttons": {
     "save": "Salvar",
