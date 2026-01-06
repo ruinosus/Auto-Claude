@@ -2,3 +2,4 @@
 export { useIpcListeners } from './useIpc';
 export { useVirtualizedTree } from './useVirtualizedTree';
 export { useProjectPath } from './useProjectPath';
+export { useClaudeLoginTerminal } from './useClaudeLoginTerminal';
