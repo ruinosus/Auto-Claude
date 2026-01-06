@@ -6,6 +6,7 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { app } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { getClaudeProfileManager } from '../claude-profile-manager';
@@ -15,12 +16,17 @@ import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, buildCdCommand } from '../../shared/utils/shell-escape';
 import { parseEnvFile } from '../ipc-handlers/utils';
 import { getProfileEnv } from '../rate-limit-detector';
+import { getClaudeCliInvocation } from '../claude-cli-utils';
 import type {
   TerminalProcess,
   WindowGetter,
   RateLimitEvent,
   OAuthTokenEvent
 } from './types';
+
+function normalizePathForBash(envPath: string): string {
+  return process.platform === 'win32' ? envPath.replace(/;/g, ':') : envPath;
+}
 
 /**
  * Handle rate limit detection and profile switching
@@ -569,6 +575,11 @@ export function invokeClaude(
 
   // Use safe shell escaping to prevent command injection
   const cwdCommand = buildCdCommand(cwd);
+  const { command: claudeCmd, env: claudeEnv } = getClaudeCliInvocation();
+  const escapedClaudeCmd = escapeShellArg(claudeCmd);
+  const pathPrefix = claudeEnv.PATH
+    ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
+    : '';
 
   // Export environment variables for:
   // 1. Proxy mode profiles (Azure Foundry) - ALWAYS, even if default
@@ -588,7 +599,9 @@ export function invokeClaude(
     });
 
     if (token || isProxyMode) {
-      const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}`);
+      const nonce = crypto.randomBytes(8).toString('hex');
+      const tempFile = path.join(os.tmpdir(), `.claude-token-${Date.now()}-${nonce}`);
+      const escapedTempFile = escapeShellArg(tempFile);
       debugLog('[ClaudeIntegration:invokeClaude] Writing environment variables to temp file:', tempFile);
 
       // Build env vars (Azure Foundry if configured via profile, otherwise OAuth token)
@@ -601,9 +614,10 @@ export function invokeClaude(
       // - Leading space ensures the command is ignored even if HISTCONTROL was already set
       // - Uses subshell (...) to isolate environment changes
       // This prevents temp file paths from appearing in shell history
-      const command = `clear && ${cwdCommand} HISTFILE= HISTCONTROL=ignorespace bash -c 'source "${tempFile}" && rm -f "${tempFile}" && exec claude'\r`;
-      debugLog('[ClaudeIntegration:invokeClaude] Executing command (env vars exported via temp file)');
+      const command = `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace ${pathPrefix}bash -c "source ${escapedTempFile} && rm -f ${escapedTempFile} && exec ${escapedClaudeCmd}"\r`;
+      debugLog('[ClaudeIntegration:invokeClaude] Executing command (temp file method, history-safe)');
       terminal.pty.write(command);
+      profileManager.markProfileUsed(activeProfile.id);
 
       // Update terminal title and persist session
       const title = `Claude (${activeProfile.name})`;
@@ -627,9 +641,10 @@ export function invokeClaude(
       // SECURITY: Use escapeShellArg for configDir to prevent command injection
       // Set CLAUDE_CONFIG_DIR as env var before bash -c to avoid embedding user input in the command string
       const escapedConfigDir = escapeShellArg(activeProfile.configDir);
-      const command = `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} bash -c 'exec claude'\r`;
+      const command = `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${escapedConfigDir} ${pathPrefix}bash -c "exec ${escapedClaudeCmd}"\r`;
       debugLog('[ClaudeIntegration:invokeClaude] Executing command (configDir method, history-safe)');
       terminal.pty.write(command);
+      profileManager.markProfileUsed(activeProfile.id);
 
       // Update terminal title and persist session
       const title = `Claude (${activeProfile.name})`;
@@ -652,9 +667,13 @@ export function invokeClaude(
     }
   }
 
-  // Default behavior (no env vars needed)
-  const command = `${cwdCommand}claude\r`;
-  debugLog('[ClaudeIntegration:invokeClaude] Executing command (default, no env vars):', command);
+  if (activeProfile && !activeProfile.isDefault) {
+    debugLog('[ClaudeIntegration:invokeClaude] Using terminal environment for non-default profile:', activeProfile.name);
+  }
+
+  // Default behavior (uses centralized CLI invocation path)
+  const command = `${cwdCommand}${pathPrefix}${escapedClaudeCmd}\r`;
+  debugLog('[ClaudeIntegration:invokeClaude] Executing command (default method):', command);
   terminal.pty.write(command);
 
   if (activeProfile) {
@@ -692,14 +711,21 @@ export function resumeClaude(
   getWindow: WindowGetter
 ): void {
   terminal.isClaudeMode = true;
+  SessionHandler.releaseSessionId(terminal.id);
+
+  const { command: claudeCmd, env: claudeEnv } = getClaudeCliInvocation();
+  const escapedClaudeCmd = escapeShellArg(claudeCmd);
+  const pathPrefix = claudeEnv.PATH
+    ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
+    : '';
 
   let command: string;
   if (sessionId) {
     // SECURITY: Escape sessionId to prevent command injection
-    command = `claude --resume ${escapeShellArg(sessionId)}`;
+    command = `${pathPrefix}${escapedClaudeCmd} --resume ${escapeShellArg(sessionId)}`;
     terminal.claudeSessionId = sessionId;
   } else {
-    command = 'claude --continue';
+    command = `${pathPrefix}${escapedClaudeCmd} --continue`;
   }
 
   terminal.pty.write(`${command}\r`);
