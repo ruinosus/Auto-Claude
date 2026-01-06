@@ -490,9 +490,12 @@ async def run_insight_extraction(
             response_text = ""
             total_input_tokens = 0
             total_output_tokens = 0
+            message_count = 0
+            text_blocks_found = 0
 
             async for msg in client.receive_response():
                 msg_type = type(msg).__name__
+                message_count += 1
 
                 # Track message for analytics
                 if tracker and msg_type in ("AssistantMessage", "ResultMessage"):
@@ -503,8 +506,16 @@ async def run_insight_extraction(
 
                 if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                     for block in msg.content:
-                        if hasattr(block, "text"):
-                            response_text += block.text
+                        # Must check block type - only TextBlock has .text attribute
+                        block_type = type(block).__name__
+                        if block_type == "TextBlock" and hasattr(block, "text"):
+                            text_blocks_found += 1
+                            if block.text:  # Only add non-empty text
+                                response_text += block.text
+                            else:
+                                logger.debug(
+                                    f"Found empty TextBlock in response (block #{text_blocks_found})"
+                                )
 
                 # Extract usage for Langfuse
                 if msg_type == "ResultMessage" and hasattr(msg, "usage") and msg.usage:
@@ -513,6 +524,21 @@ async def run_insight_extraction(
                         total_input_tokens = usage.input_tokens
                     if hasattr(usage, "output_tokens"):
                         total_output_tokens = usage.output_tokens
+
+            # Log response collection summary
+            logger.debug(
+                f"Insight extraction response: {message_count} messages, "
+                f"{text_blocks_found} text blocks, {len(response_text)} chars collected"
+            )
+
+            # Validate we received content before parsing
+            if not response_text.strip():
+                logger.warning(
+                    f"Insight extraction returned empty response. "
+                    f"Messages received: {message_count}, TextBlocks found: {text_blocks_found}. "
+                    f"This may indicate the AI model did not respond with text content."
+                )
+                return None, langfuse_trace_id
 
         # Log to Langfuse if enabled
         if use_langfuse and LANGFUSE_AVAILABLE:
@@ -585,6 +611,11 @@ def parse_insights(response_text: str) -> dict | None:
     # Try to extract JSON from the response
     text = response_text.strip()
 
+    # Early validation - check for empty response
+    if not text:
+        logger.warning("Cannot parse insights: response text is empty")
+        return None
+
     # Handle markdown code blocks
     if text.startswith("```"):
         # Remove code block markers
@@ -592,17 +623,26 @@ def parse_insights(response_text: str) -> dict | None:
         # Remove first line (```json or ```)
         if lines[0].startswith("```"):
             lines = lines[1:]
-        # Remove last line if it's ``
+        # Remove last line if it's ```
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
-        text = "\n".join(lines)
+        text = "\n".join(lines).strip()
+
+        # Check again after removing code blocks
+        if not text:
+            logger.warning(
+                "Cannot parse insights: response contained only markdown code block markers with no content"
+            )
+            return None
 
     try:
         insights = json.loads(text)
 
         # Validate structure
         if not isinstance(insights, dict):
-            logger.warning("Insights is not a dict")
+            logger.warning(
+                f"Insights is not a dict, got type: {type(insights).__name__}"
+            )
             return None
 
         # Ensure required keys exist with defaults
@@ -616,7 +656,13 @@ def parse_insights(response_text: str) -> dict | None:
 
     except json.JSONDecodeError as e:
         logger.warning(f"Failed to parse insights JSON: {e}")
-        logger.debug(f"Response text was: {text[:500]}")
+        # Show more context in the error message
+        preview_length = min(500, len(text))
+        logger.warning(
+            f"Response text preview (first {preview_length} chars): {text[:preview_length]}"
+        )
+        if len(text) > preview_length:
+            logger.warning(f"... (total length: {len(text)} chars)")
         return None
 
 

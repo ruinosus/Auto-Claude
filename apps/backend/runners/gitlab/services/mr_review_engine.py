@@ -489,7 +489,9 @@ Provide your review in the following JSON format:
                     msg_type = type(msg).__name__
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
-                            if hasattr(block, "text"):
+                            # Must check block type - only TextBlock has .text attribute
+                            block_type = type(block).__name__
+                            if block_type == "TextBlock" and hasattr(block, "text"):
                                 result_text += block.text
                                 # Log generation to Langfuse
                                 if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:

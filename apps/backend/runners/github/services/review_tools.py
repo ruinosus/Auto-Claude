@@ -229,7 +229,9 @@ async def spawn_security_review(
                         await _track_session(tracker, msg)
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
-                            if hasattr(block, "text"):
+                            # Must check block type - only TextBlock has .text attribute
+                            block_type = type(block).__name__
+                            if block_type == "TextBlock" and hasattr(block, "text"):
                                 result_text += block.text
                                 # Log generation to Langfuse
                                 if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
@@ -373,7 +375,9 @@ async def spawn_quality_review(
                         await _track_session(tracker, msg)
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
-                            if hasattr(block, "text"):
+                            # Must check block type - only TextBlock has .text attribute
+                            block_type = type(block).__name__
+                            if block_type == "TextBlock" and hasattr(block, "text"):
                                 result_text += block.text
                                 # Log generation to Langfuse
                                 if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
@@ -527,7 +531,9 @@ Output findings in JSON format:
                         await _track_session(tracker, msg)
                     if msg_type == "AssistantMessage" and hasattr(msg, "content"):
                         for block in msg.content:
-                            if hasattr(block, "text"):
+                            # Must check block type - only TextBlock has .text attribute
+                            block_type = type(block).__name__
+                            if block_type == "TextBlock" and hasattr(block, "text"):
                                 result_text += block.text
                                 # Log generation to Langfuse
                                 if LANGFUSE_AVAILABLE and is_langfuse_ready() and langfuse_trace_id:
