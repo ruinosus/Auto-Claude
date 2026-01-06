@@ -10,7 +10,7 @@ import type {
 } from '../../shared/types';
 import { DEFAULT_IDEATION_CONFIG } from '../../shared/constants';
 
-const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
+const GENERATION_TIMEOUT_MS = 15 * 60 * 1000;
 
 const generationTimeoutIds = new Map<string, ReturnType<typeof setTimeout>>();
 
