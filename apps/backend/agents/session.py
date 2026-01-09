@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from claude_agent_sdk import ClaudeSDKClient
+from phase_config import resolve_model_id
 from debug import debug, debug_detailed, debug_error, debug_section, debug_success
 from insight_extractor import extract_session_insights
 from linear_updater import (
@@ -763,7 +764,7 @@ async def run_agent_session(
                     try:
                         generation_count += 1
                         usage = msg.usage
-                        model = getattr(msg, "model", "claude-sonnet-4-5")
+                        model = getattr(msg, "model", None) or resolve_model_id("sonnet")
 
                         # Extract usage data
                         if isinstance(usage, dict):

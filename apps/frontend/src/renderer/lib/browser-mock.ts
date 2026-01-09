@@ -293,6 +293,20 @@ const browserMockAPI: ElectronAPI = {
     deleteSpec: async () => ({ success: true })
   },
 
+  // Squad API
+  squad: {
+    getAll: async () => [],
+    get: async () => null,
+    create: async () => ({ success: false, error: 'Browser mock: squad creation not available' }),
+    update: async () => ({ success: false, error: 'Browser mock: squad update not available' }),
+    delete: async () => ({ success: false, error: 'Browser mock: squad delete not available' }),
+    getProjectSquad: async () => null,
+    setProjectSquad: async () => ({ success: false, error: 'Browser mock: project squad not available' }),
+    writeConfigToProject: async () => ({ success: false, error: 'Browser mock: write config not available' }),
+    export: async () => ({ success: false, error: 'Browser mock: export not available' }),
+    import: async () => ({ success: false, error: 'Browser mock: import not available' })
+  },
+
   // Notification operations
   getNotificationHistory: async () => [],
   markNotificationRead: async () => {},

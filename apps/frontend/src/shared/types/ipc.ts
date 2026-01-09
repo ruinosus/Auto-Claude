@@ -833,6 +833,9 @@ export interface ElectronAPI {
     deleteSpec: (specId: string) => Promise<{ success: boolean }>;
   };
 
+  // Squad API (nested for organized access)
+  squad: import('../../preload/api/modules/squad-api').SquadAPI['squad'];
+
   // Notification operations
   getNotificationHistory: () => Promise<import('./notification').Notification[]>;
   markNotificationRead: (id: string) => Promise<void>;

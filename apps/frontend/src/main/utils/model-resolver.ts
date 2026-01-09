@@ -8,6 +8,8 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { MODEL_ID_MAP, AZURE_FOUNDRY_MODEL_MAP } from '../../shared/constants/models';
+import { readSettingsFile } from '../settings-utils';
+import type { AppSettings } from '../../shared/types/settings';
 
 /**
  * Check if auto-claude .env has Azure Foundry mode enabled
@@ -44,10 +46,10 @@ function isFoundryModeInEnv(): boolean {
 
 /**
  * Check if the active profile is using Azure Foundry mode
- * Checks both profile settings AND auto-claude .env file
+ * Checks profile settings, global settings (settings.json), AND auto-claude .env file
  */
 export function isAzureFoundryMode(): boolean {
-  // First check profile settings (UI-configured)
+  // 1. Check profile settings (UI-configured profiles)
   const profileManager = getClaudeProfileManager();
   const profile = profileManager.getActiveProfile();
 
@@ -56,11 +58,31 @@ export function isAzureFoundryMode(): boolean {
                            profile.proxyBaseUrl.includes('azure') ||
                            profile.proxyBaseUrl.includes('foundry');
     if (isAzureProfile) {
+      console.warn('[ModelResolver] Azure Foundry mode detected from API profile');
       return true;
     }
   }
 
-  // Also check .env file for CLI-configured Foundry mode
+  // 2. Check global settings (Azure Foundry configured via Settings > Integration or Onboarding)
+  try {
+    const settings = readSettingsFile() as AppSettings | undefined;
+    if (settings) {
+      // Check if Azure Foundry is the default auth mode
+      if (settings.defaultAuthMode === 'azure-foundry') {
+        console.warn('[ModelResolver] Azure Foundry mode detected from settings (defaultAuthMode)');
+        return true;
+      }
+      // Also check if Azure Foundry credentials are configured (even without explicit auth mode)
+      if (settings.azureFoundryApiKey && settings.azureFoundryBaseUrl) {
+        console.warn('[ModelResolver] Azure Foundry mode detected from settings (credentials configured)');
+        return true;
+      }
+    }
+  } catch {
+    // Ignore errors reading settings
+  }
+
+  // 3. Check .env file for CLI-configured Foundry mode
   return isFoundryModeInEnv();
 }
 
@@ -69,18 +91,43 @@ export function isAzureFoundryMode(): boolean {
  * Returns Azure Foundry deployment name if Azure Foundry mode is active,
  * otherwise returns the full Anthropic model ID.
  *
+ * Priority for Azure Foundry mode:
+ * 1. Custom model names from settings.json (user-configured deployment names)
+ * 2. Default Azure Foundry model map (AZURE_FOUNDRY_MODEL_MAP)
+ *
  * @param modelShort - Model shorthand ('opus', 'sonnet', 'haiku')
  * @param defaultModel - Default model shorthand if modelShort is not found
  * @returns The resolved model ID
  */
 export function resolveModelId(modelShort: string, defaultModel: string = 'opus'): string {
   const isAzure = isAzureFoundryMode();
-  const modelMap = isAzure ? AZURE_FOUNDRY_MODEL_MAP : MODEL_ID_MAP;
 
+  // If Azure Foundry mode, first check for custom model names in settings
+  if (isAzure) {
+    try {
+      const settings = readSettingsFile() as AppSettings | undefined;
+      if (settings) {
+        const customModelMap: Record<string, string | undefined> = {
+          opus: settings.azureFoundryOpusModel,
+          sonnet: settings.azureFoundrySonnetModel,
+          haiku: settings.azureFoundryHaikuModel
+        };
+        const customModel = customModelMap[modelShort] || customModelMap[defaultModel];
+        if (customModel) {
+          console.warn('[ModelResolver] Azure Foundry mode - using custom deployment name:', customModel);
+          return customModel;
+        }
+      }
+    } catch {
+      // Ignore errors reading settings
+    }
+  }
+
+  const modelMap = isAzure ? AZURE_FOUNDRY_MODEL_MAP : MODEL_ID_MAP;
   const resolvedModel = modelMap[modelShort] ?? modelMap[defaultModel] ?? modelMap['opus'];
 
   if (isAzure) {
-    console.warn('[ModelResolver] Azure Foundry mode - using deployment name:', resolvedModel);
+    console.warn('[ModelResolver] Azure Foundry mode - using default deployment name:', resolvedModel);
   }
 
   return resolvedModel;

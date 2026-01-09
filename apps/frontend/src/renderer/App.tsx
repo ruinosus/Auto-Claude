@@ -116,6 +116,20 @@ export function App() {
   const settings = useSettingsStore((state) => state.settings);
   const settingsLoading = useSettingsStore((state) => state.isLoading);
 
+  // Debug logging for activeProjectId - helps trace wrong project issues
+  useEffect(() => {
+    const activeProject = projects.find(p => p.id === activeProjectId);
+    const selectedProject = projects.find(p => p.id === selectedProjectId);
+    console.log('[App] ========================================');
+    console.log('[App] Project IDs changed:');
+    console.log('[App]   activeProjectId:', activeProjectId);
+    console.log('[App]   activeProject name:', activeProject?.name || 'NOT FOUND');
+    console.log('[App]   selectedProjectId:', selectedProjectId);
+    console.log('[App]   selectedProject name:', selectedProject?.name || 'NOT FOUND');
+    console.log('[App]   Will pass to Insights:', activeProjectId || selectedProjectId);
+    console.log('[App] ========================================');
+  }, [activeProjectId, selectedProjectId, projects]);
+
   // API Profile state
   const profiles = useSettingsStore((state) => state.profiles);
   const activeProfileId = useSettingsStore((state) => state.activeProfileId);
@@ -213,12 +227,23 @@ export function App() {
         return;
       }
       console.log('[App] Tabs already persisted, checking active project');
-      // If there's an active project but no tabs open for it, open a tab
+      // If there's an active project but it's not in the open tabs, we have a mismatch
+      // This fixes the bug where activeProjectId could point to wrong project (e.g. Insights using wrong project)
       // Note: Use openProjectIds instead of projectTabs to avoid re-render loop
       // (projectTabs creates a new array on every render)
       if (activeProjectId && !openProjectIds.includes(activeProjectId)) {
-        console.log('[App] Active project has no tab, opening:', activeProjectId);
-        openProjectTab(activeProjectId);
+        // Check if the activeProjectId exists in projects (just not open as tab)
+        const activeProjectExists = projects.some(p => p.id === activeProjectId);
+        if (activeProjectExists) {
+          // Project exists but has no tab - open one for it
+          console.log('[App] Active project has no tab, opening:', activeProjectId);
+          openProjectTab(activeProjectId);
+        } else {
+          // activeProjectId points to non-existent project - correct to first open project
+          const correctedActiveId = openProjectIds[0];
+          console.warn('[App] activeProjectId mismatch detected! Correcting from', activeProjectId, 'to', correctedActiveId);
+          setActiveProject(correctedActiveId);
+        }
       }
       // If there's a selected project but no active project, make it active
       else if (selectedProjectId && !activeProjectId) {

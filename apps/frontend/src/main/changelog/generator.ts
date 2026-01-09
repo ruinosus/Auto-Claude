@@ -14,6 +14,9 @@ import { getCommits, getBranchDiffCommits } from './git-integration';
 import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from '../rate-limit-detector';
 import { parsePythonCommand } from '../python-detector';
 import { getAugmentedEnv } from '../env-utils';
+import { buildMemoryEnvVars } from '../memory-env-builder';
+import { readSettingsFile } from '../settings-utils';
+import type { AppSettings } from '../../shared/types/settings';
 
 /**
  * Core changelog generation logic
@@ -259,9 +262,15 @@ export class ChangelogGenerator extends EventEmitter {
       authMethod: profileEnv.CLAUDE_CODE_OAUTH_TOKEN ? 'oauth-token' : (profileEnv.CLAUDE_CONFIG_DIR ? 'config-dir' : 'default')
     });
 
+    // Load Azure Foundry settings from settings.json (if configured)
+    // This ensures Azure Foundry deployment names are passed to Python processes
+    const appSettings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
+    const memoryEnv = buildMemoryEnvVars(appSettings as AppSettings);
+
     const spawnEnv: Record<string, string> = {
       ...augmentedEnv,
       ...this.autoBuildEnv,
+      ...memoryEnv, // Azure Foundry and Graphiti settings from settings.json
       ...profileEnv, // Include active Claude profile config
       // Ensure critical env vars are set for claude CLI
       // Use USERPROFILE on Windows, HOME on Unix

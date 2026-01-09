@@ -57,6 +57,10 @@
       "title": "ROI Settings",
       "description": "Configure ROI calculation parameters"
     },
+    "squads": {
+      "title": "Squads",
+      "description": "Configure team compositions with custom ROI values"
+    },
     "debug": {
       "title": "Debug & Logs",
       "description": "Troubleshooting tools"
@@ -477,6 +481,99 @@
     "minutesPerLine": "Minutes per Line",
     "minPerLine": "min/line",
     "minutesPerLineHint": "Average time to manually write or modify a line of code"
+  },
+  "squads": {
+    "title": "Squads",
+    "description": "Configure team compositions with custom ROI calculation values",
+    "emptyState": "No squads configured yet. Create your first squad to customize ROI calculations for your team.",
+    "createFirst": "Create First Squad",
+    "addSquad": "Add Squad",
+    "createSquad": "Create Squad",
+    "editSquad": "Edit Squad",
+    "formDescription": "Configure team-specific values for ROI calculations",
+    "deleteConfirmTitle": "Delete Squad",
+    "deleteConfirmDescription": "Are you sure you want to delete \"{{name}}\"? This will remove the squad configuration but won't affect any existing ROI calculations.",
+    "name": "Squad Name",
+    "namePlaceholder": "e.g., Backend Team",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Optional description of this squad",
+    "defaultRate": "Default Rate",
+    "defaultHourlyRate": "Default Hourly Rate",
+    "defaultRateHint": "Fallback hourly rate when no specific stakeholder rate is defined",
+    "stakeholders": "Stakeholders",
+    "updated": "Updated",
+    "tabs": {
+      "general": "General",
+      "stakeholders": "Stakeholders",
+      "timeSavings": "Time Savings",
+      "prevention": "Prevention",
+      "quality": "Quality"
+    },
+    "stakeholderRatesDescription": "Configure hourly rates for each seniority level and role combination",
+    "stakeholderRatesHint": "These rates are used to calculate the value of time saved by AI assistance",
+    "seniorityRole": "Seniority / Role",
+    "seniority": {
+      "junior": "Junior",
+      "mid": "Mid-Level",
+      "senior": "Senior",
+      "staff": "Staff",
+      "principal": "Principal"
+    },
+    "roles": {
+      "developer": "Developer",
+      "qa": "QA",
+      "devops": "DevOps",
+      "pm": "PM",
+      "architect": "Architect",
+      "techLead": "Tech Lead"
+    },
+    "timeSavingsDescription": "Estimated time saved (in minutes) for each type of AI-assisted activity",
+    "timeSavings": {
+      "prReview": "PR Review",
+      "issueTriage": "Issue Triage",
+      "ideaGeneration": "Idea Generation",
+      "roadmapPlanning": "Roadmap Planning",
+      "specWriting": "Spec Writing",
+      "codebaseExploration": "Codebase Exploration",
+      "conflictResolution": "Conflict Resolution"
+    },
+    "preventionDescription": "Estimated cost (in USD) of issues that could reach production if not caught",
+    "prevention": {
+      "securityCritical": "Security (Critical)",
+      "securityHigh": "Security (High)",
+      "securityMedium": "Security (Medium)",
+      "performanceCritical": "Performance (Critical)",
+      "performanceHigh": "Performance (High)",
+      "bugCritical": "Bug (Critical)",
+      "bugHigh": "Bug (High)",
+      "bugMedium": "Bug (Medium)"
+    },
+    "qualityDescription": "ROI adjustment multipliers based on code quality indicators (as percentages)",
+    "quality": {
+      "firstPassQaBonus": "First-Pass QA Bonus",
+      "secondPassQaBonus": "Second-Pass QA Bonus",
+      "qaFailedPenalty": "QA Failed Penalty",
+      "hasTestsBonus": "Has Tests Bonus",
+      "hasDocsBonus": "Has Documentation Bonus",
+      "hasTypesBonus": "Has Types Bonus",
+      "highCoverageBonus": "High Coverage Bonus",
+      "mediumCoverageBonus": "Medium Coverage Bonus",
+      "manyLintErrorsPenalty": "Many Lint Errors Penalty",
+      "reworkPenalty": "Rework Penalty"
+    },
+    "projectSquad": "Project Squad",
+    "selectSquad": "Select a squad...",
+    "noSquad": "No squad (use defaults)",
+    "projectSquadHint": "Associate this project with a squad for customized ROI calculations",
+    "export": "Export",
+    "import": "Import",
+    "importResultTitle": "Import Complete",
+    "importResultDescription": "Your squad import has been processed.",
+    "importedCount": "{{count}} squad imported",
+    "importedCount_plural": "{{count}} squads imported",
+    "skippedTitle": "Skipped",
+    "errorsTitle": "Errors",
+    "noChanges": "No squads were imported."
   },
   "otel": {
     "title": "OpenTelemetry Settings",

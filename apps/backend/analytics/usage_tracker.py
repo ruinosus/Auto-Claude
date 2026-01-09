@@ -8,6 +8,7 @@ with deduplication and context enrichment (spec, session, subtask, phase).
 from typing import Optional, Set
 from datetime import datetime
 
+from phase_config import resolve_model_id
 from .pricing_provider import get_model_pricing
 from .storage import AnalyticsStorage
 from .otel_exporter import get_otel_exporter, is_otel_enabled
@@ -104,7 +105,7 @@ class UsageTracker:
             cache_creation = getattr(usage, 'cache_creation_input_tokens', 0) or 0
 
         # Get model
-        model = getattr(message, 'model', 'claude-sonnet-4-5')
+        model = getattr(message, 'model', None) or resolve_model_id("sonnet")
         if not self.primary_model:
             self.primary_model = model
 

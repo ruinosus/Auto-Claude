@@ -67,7 +67,7 @@ except (ImportError, ValueError, SystemError):
         ReviewCategory,
         ReviewSeverity,
     )
-    from phase_config import get_thinking_budget
+    from phase_config import get_thinking_budget, resolve_model_id
     from services.pydantic_models import OrchestratorReviewResponse
     from services.review_tools import (
         check_coverage,
@@ -208,7 +208,7 @@ class OrchestratorReviewer:
             )
 
             # Use model and thinking level from config (user settings)
-            model = self.config.model or "claude-sonnet-4-5-20250929"
+            model = self.config.model or resolve_model_id("sonnet")
             thinking_level = self.config.thinking_level or "medium"
             thinking_budget = get_thinking_budget(thinking_level)
 

@@ -172,7 +172,6 @@ def extract_github_review_artifacts(
                 "line": finding.line,
                 "end_line": finding.end_line,
                 "fixable": finding.fixable,
-                "confidence": finding.confidence,
                 "validation_status": finding.validation_status,
             },
         })

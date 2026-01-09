@@ -11,10 +11,18 @@ All save() operations use file locking to prevent corruption in concurrent scena
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+
+# Add backend path for imports
+_backend_path = Path(__file__).parent.parent.parent
+if str(_backend_path) not in sys.path:
+    sys.path.insert(0, str(_backend_path))
+
+from phase_config import resolve_model_id
 
 try:
     from .file_lock import locked_json_update, locked_json_write
@@ -828,8 +836,8 @@ class GitHubRunnerConfig:
         True  # Use SDK subagent parallel orchestrator (default)
     )
 
-    # Model settings
-    model: str = "claude-sonnet-4-20250514"
+    # Model settings (resolved at runtime to support Azure Foundry deployment names)
+    model: str = field(default_factory=lambda: resolve_model_id("sonnet"))
     thinking_level: str = "medium"
 
     def to_dict(self) -> dict:
@@ -903,6 +911,6 @@ class GitHubRunnerConfig:
             review_own_prs=settings.get("review_own_prs", False),
             auto_post_reviews=settings.get("auto_post_reviews", False),
             allow_fix_commits=settings.get("allow_fix_commits", True),
-            model=settings.get("model", "claude-sonnet-4-20250514"),
+            model=settings.get("model") or resolve_model_id("sonnet"),
             thinking_level=settings.get("thinking_level", "medium"),
         )

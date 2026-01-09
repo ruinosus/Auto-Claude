@@ -104,10 +104,16 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
     setError(null);
 
     try {
+      // Normalize URL - ensure it ends with /anthropic (as required by Azure Foundry)
+      let normalizedUrl = config.baseUrl.trim().replace(/\/$/, '');
+      if (!normalizedUrl.endsWith('/anthropic')) {
+        normalizedUrl = `${normalizedUrl}/anthropic`;
+      }
+
       // Save to global settings
       const result = await window.electronAPI.saveSettings({
         azureFoundryApiKey: config.apiKey.trim(),
-        azureFoundryBaseUrl: config.baseUrl.trim(),
+        azureFoundryBaseUrl: normalizedUrl,
         azureFoundryResourceName: config.resourceName.trim() || undefined,
         // Model deployment names
         azureFoundrySonnetModel: config.sonnetModel.trim() || undefined,
@@ -218,7 +224,7 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
                 onChange={(e) => handleChange('baseUrl', e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Your Azure OpenAI endpoint. The /anthropic suffix will be added automatically if needed.
+                Your Azure AI Foundry endpoint (e.g., https://your-resource.openai.azure.com). The /anthropic suffix will be added automatically if needed.
               </p>
             </div>
 

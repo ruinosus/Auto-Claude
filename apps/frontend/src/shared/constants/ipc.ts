@@ -520,6 +520,18 @@ export const IPC_CHANNELS = {
   ROI_GET_AGGREGATE: 'roi:getAggregate',
   ROI_DELETE_SPEC: 'roi:deleteSpec',
 
+  // Squad operations (team-based ROI configuration)
+  SQUAD_GET_ALL: 'squad:getAll',
+  SQUAD_GET: 'squad:get',
+  SQUAD_CREATE: 'squad:create',
+  SQUAD_UPDATE: 'squad:update',
+  SQUAD_DELETE: 'squad:delete',
+  SQUAD_GET_PROJECT_SQUAD: 'squad:getProjectSquad',
+  SQUAD_SET_PROJECT_SQUAD: 'squad:setProjectSquad',
+  SQUAD_WRITE_CONFIG_TO_PROJECT: 'squad:writeConfigToProject',
+  SQUAD_EXPORT: 'squad:export',
+  SQUAD_IMPORT: 'squad:import',
+
   // Artifact storage operations (local full content storage)
   ARTIFACT_GET: 'artifact:get',               // Get single artifact by ID
   ARTIFACT_LIST: 'artifact:list',             // List artifacts with filters

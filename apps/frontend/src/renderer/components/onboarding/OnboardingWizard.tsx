@@ -20,6 +20,7 @@ import { ClaudeCodeStep } from './ClaudeCodeStep';
 import { DevToolsStep } from './DevToolsStep';
 import { PrivacyStep } from './PrivacyStep';
 import { GraphitiStep } from './GraphitiStep';
+import { SquadStep } from './SquadStep';
 import { CompletionStep } from './CompletionStep';
 import { useSettingsStore } from '../../stores/settings-store';
 
@@ -31,7 +32,7 @@ interface OnboardingWizardProps {
 }
 
 // Wizard step identifiers
-type WizardStepId = 'welcome' | 'auth-mode' | 'auth-choice' | 'oauth' | 'azure-foundry' | 'auth-token' | 'claude-code' | 'devtools' | 'privacy' | 'memory' | 'graphiti' | 'completion';
+type WizardStepId = 'welcome' | 'auth-mode' | 'auth-choice' | 'oauth' | 'azure-foundry' | 'auth-token' | 'claude-code' | 'devtools' | 'privacy' | 'memory' | 'graphiti' | 'squad' | 'completion';
 
 // Step configuration with translation keys
 interface WizardStepConfig {
@@ -61,6 +62,7 @@ const WIZARD_STEPS: WizardStepConfig[] = [
   { id: 'devtools', labelKey: 'steps.devtools' },
   { id: 'privacy', labelKey: 'steps.privacy' },
   { id: 'graphiti', labelKey: 'steps.memory' },
+  { id: 'squad', labelKey: 'steps.squad' },
   { id: 'completion', labelKey: 'steps.done' }
 ];
 
@@ -69,6 +71,7 @@ const FINAL_STEPS: WizardStepConfig[] = [
   { id: 'claude-code', labelKey: 'steps.claudeCode' },
   { id: 'devtools', labelKey: 'steps.devtools' },
   { id: 'graphiti', labelKey: 'steps.memory' },
+  { id: 'squad', labelKey: 'steps.squad' },
   { id: 'completion', labelKey: 'steps.done' }
 ];
 
@@ -310,6 +313,14 @@ export function OnboardingWizard({
       case 'graphiti':
         return (
           <GraphitiStep
+            onNext={goToNextStep}
+            onBack={goToPreviousStep}
+            onSkip={skipWizard}
+          />
+        );
+      case 'squad':
+        return (
+          <SquadStep
             onNext={goToNextStep}
             onBack={goToPreviousStep}
             onSkip={skipWizard}

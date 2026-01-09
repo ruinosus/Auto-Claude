@@ -109,10 +109,21 @@ export function Insights({ projectId }: InsightsProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load session and set up listeners on mount
+  // Log projectId for debugging - helps diagnose wrong project issues
   useEffect(() => {
+    console.log('[Insights] ========================================');
+    console.log('[Insights] Component mounted/updated');
+    console.log('[Insights] projectId received:', projectId);
+    console.log('[Insights] ========================================');
+  }, [projectId]);
+
+  // Load session and set up listeners on mount
+  // Pass projectId to setupInsightsListeners to filter events by project
+  // This prevents cross-project contamination when switching between projects
+  useEffect(() => {
+    console.log('[Insights] Loading session for projectId:', projectId);
     loadInsightsSession(projectId);
-    const cleanup = setupInsightsListeners();
+    const cleanup = setupInsightsListeners(projectId);
     return cleanup;
   }, [projectId]);
 

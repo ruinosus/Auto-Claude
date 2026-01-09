@@ -109,6 +109,7 @@
     "devtools": "Outils dev",
     "privacy": "Confidentialité",
     "memory": "Mémoire",
+    "squad": "ROI Équipe",
     "done": "Terminé"
   },
   "authMode": {
@@ -244,5 +245,18 @@
       "retry": "Réessayer",
       "fallbackNote": "La mémoire fonctionnera toujours avec la recherche par mots-clés même sans embeddings."
     }
+  },
+  "squad": {
+    "title": "Configuration ROI Équipe",
+    "description": "Configurez les taux horaires de votre équipe pour mesurer la valeur du développement IA",
+    "whySquads": "Pourquoi configurer une Squad ?",
+    "whySquadsDescription": "Les Squads définissent les taux horaires et configurations d'équipe utilisés pour calculer le ROI (Retour sur Investissement) du développement assisté par IA. Cela aide à quantifier la valeur qu'Auto Claude apporte à vos projets.",
+    "emptyState": "Aucune squad configurée. Créez votre première squad pour commencer à suivre le ROI.",
+    "createFirst": "Créer votre première Squad",
+    "selectSquad": "Sélectionner une Squad",
+    "selectPlaceholder": "Choisir une squad...",
+    "selectDescription": "La squad sélectionnée sera utilisée par défaut pour les nouveaux projets",
+    "createNew": "Créer une nouvelle Squad",
+    "skipHint": "Vous pouvez passer cette étape et configurer les squads plus tard dans les Paramètres"
   }
 }

@@ -52,7 +52,7 @@ except (ImportError, ValueError, SystemError):
         PRReviewResult,
         ReviewSeverity,
     )
-    from phase_config import get_thinking_budget
+    from phase_config import get_thinking_budget, resolve_model_id
     from services.category_utils import map_category
     from services.pr_worktree_manager import PRWorktreeManager
     from services.pydantic_models import ParallelOrchestratorResponse
@@ -536,7 +536,7 @@ The SDK will run invoked agents in parallel automatically.
                     )
 
             # Use model and thinking level from config (user settings)
-            model = self.config.model or "claude-sonnet-4-5-20250929"
+            model = self.config.model or resolve_model_id("sonnet")
             thinking_level = self.config.thinking_level or "medium"
             thinking_budget = get_thinking_budget(thinking_level)
 

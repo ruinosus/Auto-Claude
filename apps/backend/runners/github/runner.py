@@ -69,6 +69,9 @@ if env_file.exists():
 from core.auth import cleanup_conflicting_env_vars
 cleanup_conflicting_env_vars()
 
+# Model resolution for Azure Foundry support
+from phase_config import resolve_model_id
+
 from debug import debug_error
 
 # ROI publisher (optional - graceful degradation if not available)
@@ -630,11 +633,14 @@ def get_config(args) -> GitHubRunnerConfig:
         print("Error: No GitHub repo found. Set GITHUB_REPO or run from a git repo.")
         sys.exit(1)
 
+    # Resolve model at runtime for Azure Foundry support
+    resolved_model = args.model or resolve_model_id("sonnet")
+
     return GitHubRunnerConfig(
         token=token,
         repo=repo,
         bot_token=bot_token,
-        model=args.model,
+        model=resolved_model,
         thinking_level=args.thinking_level,
         auto_fix_enabled=getattr(args, "auto_fix_enabled", False),
         auto_fix_labels=getattr(args, "auto_fix_labels", ["auto-fix"]),
@@ -1423,8 +1429,8 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="claude-sonnet-4-20250514",
-        help="AI model to use",
+        default=None,
+        help="AI model to use (default: resolved at runtime for Azure Foundry support)",
     )
     parser.add_argument(
         "--thinking-level",

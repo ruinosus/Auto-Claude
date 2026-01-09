@@ -7,6 +7,9 @@ import { pythonEnvManager, getConfiguredPythonPath } from '../python-env-manager
 import { getValidatedPythonPath } from '../python-detector';
 import { getAugmentedEnv } from '../env-utils';
 import { getEffectiveSourcePath } from '../updater/path-resolver';
+import { buildMemoryEnvVars } from '../memory-env-builder';
+import { readSettingsFile } from '../settings-utils';
+import type { AppSettings } from '../../shared/types/settings';
 
 /**
  * Configuration manager for insights service
@@ -104,7 +107,7 @@ export class InsightsConfig {
 
   /**
    * Get complete environment for process execution
-   * Includes system env, auto-claude env, and active Claude profile
+   * Includes system env, auto-claude env, Azure Foundry settings, and active Claude profile
    */
   async getProcessEnv(): Promise<Record<string, string>> {
     const autoBuildEnv = this.loadAutoBuildEnv();
@@ -112,6 +115,11 @@ export class InsightsConfig {
     const apiProfileEnv = await getAPIProfileEnv();
     const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
     const pythonEnv = pythonEnvManager.getPythonEnv();
+
+    // Load Azure Foundry settings from settings.json (if configured)
+    // This ensures Azure Foundry deployment names are passed to Python processes
+    const appSettings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
+    const memoryEnv = buildMemoryEnvVars(appSettings as AppSettings);
     const autoBuildSource = this.getAutoBuildSourcePath();
     const pythonPathParts = (pythonEnv.PYTHONPATH ?? '')
       .split(path.delimiter)
@@ -144,6 +152,7 @@ export class InsightsConfig {
       ...augmentedEnv,
       ...pythonEnv, // Include PYTHONPATH for bundled site-packages
       ...autoBuildEnv,
+      ...memoryEnv, // Azure Foundry and Graphiti settings from settings.json
       ...oauthModeClearVars,
       ...profileEnv,
       ...apiProfileEnv,

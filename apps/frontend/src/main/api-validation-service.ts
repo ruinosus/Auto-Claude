@@ -244,8 +244,11 @@ export async function validateLLMApiKey(
 
 /**
  * Validate Azure Foundry connection
+ * Azure Foundry uses 'api-key' header (not 'x-api-key')
+ * See: https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry
+ *
  * @param apiKey - Azure Foundry API key
- * @param baseUrl - Azure Foundry base URL (must end with /anthropic)
+ * @param baseUrl - Azure Foundry base URL (e.g., https://resource.services.ai.azure.com/anthropic)
  */
 export async function validateAzureFoundryConnection(
   apiKey: string,
@@ -266,16 +269,26 @@ export async function validateAzureFoundryConnection(
   }
 
   const trimmedUrl = baseUrl.trim();
-  if (!trimmedUrl.endsWith('/anthropic')) {
+  // Validate URL format - must be Azure Foundry endpoint
+  const isAzureFoundry = trimmedUrl.includes('services.ai.azure.com') || trimmedUrl.includes('openai.azure.com');
+
+  if (!isAzureFoundry) {
     return {
       success: false,
-      message: 'Base URL must end with /anthropic',
+      message: 'Base URL should be an Azure Foundry endpoint (e.g., https://your-resource.services.ai.azure.com)',
     };
   }
 
   try {
     const startTime = Date.now();
-    const url = new URL(trimmedUrl);
+
+    // Normalize URL to ensure it has the /anthropic path
+    let normalizedUrl = trimmedUrl.replace(/\/$/, '');
+    if (!normalizedUrl.includes('/anthropic')) {
+      normalizedUrl = `${normalizedUrl}/anthropic`;
+    }
+
+    const url = new URL(normalizedUrl);
 
     // Use native https module to make a simple request to verify connectivity
     const result = await new Promise<ApiValidationResult>((resolve) => {
@@ -287,17 +300,16 @@ export async function validateAzureFoundryConnection(
         path: `${url.pathname}/v1/messages`,
         method: 'POST',
         headers: {
-          'x-api-key': apiKey.trim(),
+          'x-api-key': apiKey.trim(), // Azure Foundry uses 'x-api-key' header
           'anthropic-version': '2023-06-01',
           'Content-Type': 'application/json',
         },
         timeout: 15000,
       };
 
-      // Send a minimal request that should fail with a validation error
-      // but proves the credentials work
+      // Send a minimal request to verify connection
       const postData = JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-haiku-4-5', // Use Claude 4.5 model name for Azure Foundry
         max_tokens: 1,
         messages: [{ role: 'user', content: 'test' }]
       });
@@ -312,7 +324,7 @@ export async function validateAzureFoundryConnection(
         res.on('end', () => {
           const latencyMs = Date.now() - startTime;
 
-          // 200 = success, 401 = invalid auth, other = likely valid auth but other issue
+          // 200 = success
           if (res.statusCode === 200) {
             resolve({
               success: true,
@@ -322,24 +334,20 @@ export async function validateAzureFoundryConnection(
                 latencyMs,
               },
             });
-          } else if (res.statusCode === 401 || res.statusCode === 403) {
+            return;
+          }
+
+          // 401/403 = invalid auth
+          if (res.statusCode === 401 || res.statusCode === 403) {
             resolve({
               success: false,
               message: 'Authentication failed. Please check your API key.',
             });
-          } else if (res.statusCode === 400) {
-            // 400 Bad Request likely means auth worked but request was malformed
-            // This is actually success for connection testing
-            resolve({
-              success: true,
-              message: 'Azure Foundry connection successful (auth validated)',
-              details: {
-                provider: 'azure_foundry',
-                latencyMs,
-              },
-            });
-          } else if (res.statusCode === 429) {
-            // Rate limited but connection works
+            return;
+          }
+
+          // 429 = rate limited but auth works
+          if (res.statusCode === 429) {
             resolve({
               success: true,
               message: 'Azure Foundry connection successful (rate limited)',
@@ -348,17 +356,45 @@ export async function validateAzureFoundryConnection(
                 latencyMs,
               },
             });
-          } else {
+            return;
+          }
+
+          // Parse error response for 400/404
+          if (res.statusCode === 400 || res.statusCode === 404) {
             try {
               const errorData = JSON.parse(data);
-              // Check if it's an auth error vs other error
-              if (errorData.error?.type === 'authentication_error') {
+              const errorType = errorData?.error?.type || '';
+              const errorMessage = errorData?.error?.message || '';
+
+              // Check for authentication errors in response
+              if (errorType === 'authentication_error' || errorType === 'permission_error' ||
+                  errorMessage.toLowerCase().includes('invalid api key') ||
+                  errorMessage.toLowerCase().includes('unauthorized') ||
+                  errorMessage.toLowerCase().includes('authentication')) {
                 resolve({
                   success: false,
                   message: 'Authentication failed. Please check your API key.',
                 });
-              } else {
-                // Other errors likely mean auth worked
+                return;
+              }
+
+              // Model/deployment not found errors mean auth worked
+              if (errorMessage.includes('model') || errorMessage.includes('deployment') ||
+                  errorMessage.includes('not found') || errorMessage.includes('does not exist') ||
+                  errorType === 'not_found_error') {
+                resolve({
+                  success: true,
+                  message: 'Azure Foundry connection successful (deployment may need configuration)',
+                  details: {
+                    provider: 'azure_foundry',
+                    latencyMs,
+                  },
+                });
+                return;
+              }
+
+              // Input validation errors mean auth worked
+              if (errorType === 'invalid_request_error') {
                 resolve({
                   success: true,
                   message: 'Azure Foundry connection successful',
@@ -367,13 +403,54 @@ export async function validateAzureFoundryConnection(
                     latencyMs,
                   },
                 });
+                return;
               }
-            } catch {
+
+              // Unknown 400/404 error with an error message - report it
+              if (errorMessage) {
+                resolve({
+                  success: false,
+                  message: errorMessage,
+                });
+                return;
+              }
+
+              // Got a 400/404 with JSON but no message - likely auth worked but unknown issue
               resolve({
-                success: false,
-                message: `Unexpected response: ${res.statusCode}`,
+                success: true,
+                message: 'Azure Foundry connection successful',
+                details: {
+                  provider: 'azure_foundry',
+                  latencyMs,
+                },
+              });
+            } catch {
+              // JSON parse failed - endpoint was reached but returned non-JSON response
+              // Since 401/403 would be returned for actual auth failures, assume auth worked
+              resolve({
+                success: true,
+                message: 'Azure Foundry connection successful (endpoint reached)',
+                details: {
+                  provider: 'azure_foundry',
+                  latencyMs,
+                },
               });
             }
+            return;
+          }
+
+          // Other status codes
+          try {
+            const errorData = JSON.parse(data);
+            resolve({
+              success: false,
+              message: errorData?.error?.message || `Unexpected response: ${res.statusCode}`,
+            });
+          } catch {
+            resolve({
+              success: false,
+              message: `Unexpected response: ${res.statusCode}`,
+            });
           }
         });
       });

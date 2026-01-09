@@ -6,6 +6,9 @@ import { EventEmitter } from 'events';
 import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from './rate-limit-detector';
 import { parsePythonCommand, getValidatedPythonPath } from './python-detector';
 import { getConfiguredPythonPath } from './python-env-manager';
+import { buildMemoryEnvVars } from './memory-env-builder';
+import { readSettingsFile } from './settings-utils';
+import type { AppSettings } from '../shared/types/settings';
 
 /**
  * Debug logging - only logs when DEBUG=true or in development mode
@@ -140,6 +143,11 @@ export class TitleGenerator extends EventEmitter {
     // Get active Claude profile environment (CLAUDE_CONFIG_DIR if not default)
     const profileEnv = getProfileEnv();
 
+    // Load Azure Foundry settings from settings.json (if configured)
+    // This ensures Azure Foundry deployment names are passed to Python processes
+    const appSettings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
+    const memoryEnv = buildMemoryEnvVars(appSettings as AppSettings);
+
     return new Promise((resolve) => {
       // Parse Python command to handle space-separated commands like "py -3"
       const [pythonCommand, pythonBaseArgs] = parsePythonCommand(this.pythonPath);
@@ -148,6 +156,7 @@ export class TitleGenerator extends EventEmitter {
         env: {
           ...process.env,
           ...autoBuildEnv,
+          ...memoryEnv, // Azure Foundry and Graphiti settings from settings.json
           ...profileEnv, // Include active Claude profile config
           PYTHONUNBUFFERED: '1',
           PYTHONIOENCODING: 'utf-8',

@@ -21,7 +21,10 @@ Each feature type contributes to ROI in different ways:
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from analytics.squad_config import SquadConfig
 
 
 class ValueType(Enum):
@@ -443,13 +446,13 @@ class UnifiedROI:
 
 
 # =============================================================================
-# Value Estimation Constants
+# Value Estimation Constants (Defaults - can be overridden by SquadConfig)
 # =============================================================================
 
-# Hourly rate for developer time (configurable)
+# Hourly rate for developer time (configurable via SquadConfig)
 DEFAULT_HOURLY_RATE = 150.0
 
-# Value multipliers by feature type
+# Value multipliers by feature type (can be overridden by squad.feature_multipliers)
 VALUE_MULTIPLIERS = {
     # Ideation - value of finding problems early
     FeatureType.IDEATION_SECURITY: 5.0,  # Security issues are high value
@@ -501,6 +504,7 @@ TIME_SAVINGS = {
 }
 
 # Bug/issue prevention values (estimated cost of bug in production)
+# Can be overridden by squad.prevention_values
 PREVENTION_VALUES = {
     "security_critical": 10000.0,
     "security_high": 5000.0,
@@ -513,11 +517,101 @@ PREVENTION_VALUES = {
 }
 
 
+# =============================================================================
+# Squad-aware Helper Functions
+# =============================================================================
+
+def get_hourly_rate(
+    squad_config: Optional["SquadConfig"] = None,
+    seniority: Optional[str] = None,
+    role: Optional[str] = None,
+) -> float:
+    """
+    Get hourly rate, optionally from squad config.
+
+    Args:
+        squad_config: Optional SquadConfig from the project's squad
+        seniority: Stakeholder seniority (junior, mid, senior, staff, principal)
+        role: Stakeholder role (developer, qa, devops, pm, architect, tech_lead)
+
+    Returns:
+        Hourly rate in USD
+    """
+    if squad_config:
+        return squad_config.get_hourly_rate(seniority, role)
+    return DEFAULT_HOURLY_RATE
+
+
+def get_time_savings(
+    activity: str,
+    squad_config: Optional["SquadConfig"] = None,
+) -> int:
+    """
+    Get time savings for an activity, optionally from squad config.
+
+    Args:
+        activity: Activity name (pr_review, spec_writing, etc.)
+        squad_config: Optional SquadConfig from the project's squad
+
+    Returns:
+        Time savings in minutes
+    """
+    if squad_config:
+        return squad_config.get_time_savings(activity)
+    return TIME_SAVINGS.get(activity, 30)
+
+
+def get_prevention_value(
+    category: str,
+    squad_config: Optional["SquadConfig"] = None,
+) -> float:
+    """
+    Get prevention value for a category, optionally from squad config.
+
+    Args:
+        category: Category name (security_critical, bug_high, etc.)
+        squad_config: Optional SquadConfig from the project's squad
+
+    Returns:
+        Prevention value in USD
+    """
+    if squad_config:
+        return squad_config.get_prevention_value(category)
+    return PREVENTION_VALUES.get(category, 1000.0)
+
+
+def get_feature_multiplier(
+    feature_type: FeatureType,
+    squad_config: Optional["SquadConfig"] = None,
+) -> float:
+    """
+    Get value multiplier for a feature type, optionally from squad config.
+
+    Args:
+        feature_type: The FeatureType enum value
+        squad_config: Optional SquadConfig from the project's squad
+
+    Returns:
+        Multiplier value (1.0 is baseline)
+    """
+    if squad_config and squad_config.feature_multipliers:
+        # Check if squad has a custom multiplier for this feature
+        feature_key = feature_type.value
+        if feature_key in squad_config.feature_multipliers:
+            return squad_config.feature_multipliers[feature_key]
+    return VALUE_MULTIPLIERS.get(feature_type, 1.0)
+
+
+# =============================================================================
+# Value Estimation Functions (Squad-aware)
+# =============================================================================
+
 def estimate_ideation_value(
     ideation_type: FeatureType,
     ideas_count: int,
     high_impact_count: int,
     hourly_rate: float = DEFAULT_HOURLY_RATE,
+    squad_config: Optional["SquadConfig"] = None,
 ) -> Dict[ValueType, float]:
     """
     Estimate the value of ideation output.
@@ -526,22 +620,35 @@ def estimate_ideation_value(
     - DECISION: Identifying what to do/not do
     - PREVENTION: Finding issues before they become problems
     - KNOWLEDGE: Learning about the codebase
+
+    Args:
+        ideation_type: The type of ideation (security, performance, etc.)
+        ideas_count: Total number of ideas generated
+        high_impact_count: Number of high-impact ideas
+        hourly_rate: Hourly rate for calculations (deprecated, use squad_config)
+        squad_config: Optional SquadConfig for customized values
     """
     values = {}
 
+    # Use squad config if provided, otherwise fall back to hourly_rate param or default
+    effective_hourly_rate = get_hourly_rate(squad_config) if squad_config else hourly_rate
+
     # Base value: time saved on brainstorming
-    brainstorm_hours = TIME_SAVINGS["idea_generation"] / 60
-    values[ValueType.KNOWLEDGE] = brainstorm_hours * hourly_rate * 0.5
+    brainstorm_minutes = get_time_savings("idea_generation", squad_config)
+    brainstorm_hours = brainstorm_minutes / 60
+    values[ValueType.KNOWLEDGE] = brainstorm_hours * effective_hourly_rate * 0.5
 
     # Decision value: each high-impact idea is valuable
-    multiplier = VALUE_MULTIPLIERS.get(ideation_type, 1.0)
+    multiplier = get_feature_multiplier(ideation_type, squad_config)
     values[ValueType.DECISION] = high_impact_count * 50 * multiplier  # $50 per high-impact idea
 
     # Prevention value: especially for security/performance
     if ideation_type == FeatureType.IDEATION_SECURITY:
-        values[ValueType.PREVENTION] = high_impact_count * PREVENTION_VALUES["security_medium"]
+        prevention_val = get_prevention_value("security_medium", squad_config)
+        values[ValueType.PREVENTION] = high_impact_count * prevention_val
     elif ideation_type == FeatureType.IDEATION_PERFORMANCE:
-        values[ValueType.PREVENTION] = high_impact_count * PREVENTION_VALUES["performance_high"] * 0.1
+        prevention_val = get_prevention_value("performance_high", squad_config)
+        values[ValueType.PREVENTION] = high_impact_count * prevention_val * 0.1
 
     return values
 
@@ -551,6 +658,7 @@ def estimate_roadmap_value(
     features_rejected: int,
     avg_feature_cost: float = 5000.0,  # Average cost to implement a feature
     hourly_rate: float = DEFAULT_HOURLY_RATE,
+    squad_config: Optional["SquadConfig"] = None,
 ) -> Dict[ValueType, float]:
     """
     Estimate the value of roadmap output.
@@ -559,12 +667,23 @@ def estimate_roadmap_value(
     - DECISION: Prioritizing what to do first
     - PREVENTION: NOT doing low-value features (huge savings!)
     - KNOWLEDGE: Understanding the market/competitors
+
+    Args:
+        features_identified: Number of features identified
+        features_rejected: Number of features rejected (not to be built)
+        avg_feature_cost: Average cost to implement a feature
+        hourly_rate: Hourly rate for calculations (deprecated, use squad_config)
+        squad_config: Optional SquadConfig for customized values
     """
     values = {}
 
+    # Use squad config if provided, otherwise fall back to hourly_rate param or default
+    effective_hourly_rate = get_hourly_rate(squad_config) if squad_config else hourly_rate
+
     # Planning time saved
-    planning_hours = TIME_SAVINGS["roadmap_planning"] / 60
-    values[ValueType.KNOWLEDGE] = planning_hours * hourly_rate * 0.5
+    planning_minutes = get_time_savings("roadmap_planning", squad_config)
+    planning_hours = planning_minutes / 60
+    values[ValueType.KNOWLEDGE] = planning_hours * effective_hourly_rate * 0.5
 
     # Decision value: prioritization matters
     values[ValueType.DECISION] = features_identified * 100  # $100 per prioritized feature
@@ -581,6 +700,7 @@ def estimate_github_value(
     issues_triaged: int = 0,
     issues_auto_fixed: int = 0,
     hourly_rate: float = DEFAULT_HOURLY_RATE,
+    squad_config: Optional["SquadConfig"] = None,
 ) -> Dict[ValueType, float]:
     """
     Estimate the value of GitHub automation.
@@ -588,16 +708,28 @@ def estimate_github_value(
     Value comes from:
     - EXECUTION: Time saved on reviews and triage
     - PREVENTION: Issues caught before merge
+
+    Args:
+        prs_reviewed: Number of PRs reviewed
+        issues_triaged: Number of issues triaged
+        issues_auto_fixed: Number of issues auto-fixed
+        hourly_rate: Hourly rate for calculations (deprecated, use squad_config)
+        squad_config: Optional SquadConfig for customized values
     """
     values = {}
 
+    # Use squad config if provided, otherwise fall back to hourly_rate param or default
+    effective_hourly_rate = get_hourly_rate(squad_config) if squad_config else hourly_rate
+
     # Time saved on PR reviews
-    pr_review_hours = (prs_reviewed * TIME_SAVINGS["pr_review"]) / 60
+    pr_review_minutes = get_time_savings("pr_review", squad_config)
+    pr_review_hours = (prs_reviewed * pr_review_minutes) / 60
 
     # Time saved on issue triage
-    triage_hours = (issues_triaged * TIME_SAVINGS["issue_triage"]) / 60
+    issue_triage_minutes = get_time_savings("issue_triage", squad_config)
+    triage_hours = (issues_triaged * issue_triage_minutes) / 60
 
-    values[ValueType.EXECUTION] = (pr_review_hours + triage_hours) * hourly_rate
+    values[ValueType.EXECUTION] = (pr_review_hours + triage_hours) * effective_hourly_rate
 
     # Auto-fixed issues have high value
     values[ValueType.DECISION] = issues_auto_fixed * 200  # $200 per auto-fixed issue

@@ -12,6 +12,7 @@ import type { Request as ExpressRequest, Response as ExpressResponse } from 'exp
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { projectStore } from '../project-store';
 
 const API_PORT = process.env.ELECTRON_API_PORT || 9824;
 
@@ -184,54 +185,286 @@ interface SearchCodeResponse {
 }
 
 /**
- * Mock function to get build progress
- * TODO: Replace with actual implementation that queries task manager
+ * Get build progress from implementation_plan.json
+ * Reads actual task progress from the spec directory
  */
 async function getBuildProgress(specId: string): Promise<BuildProgressResponse> {
-  // In production, this would call actual Electron IPC handlers
-  // For now, return mock data
-  return {
-    specId,
-    status: 'running',
-    phase: 'implementation',
-    progress: 65,
-    currentTask: 'Implementing feature X',
-    startedAt: new Date().toISOString()
-  };
+  // Get the active project from tab state to find the spec
+  const tabState = projectStore.getTabState();
+  let projectPath: string | undefined;
+
+  if (tabState.activeProjectId) {
+    const activeProject = projectStore.getProject(tabState.activeProjectId);
+    projectPath = activeProject?.path;
+  }
+
+  // Fallback to first project
+  if (!projectPath) {
+    const projects = projectStore.getProjects();
+    if (projects.length > 0) {
+      projectPath = projects[0].path;
+    }
+  }
+
+  if (!projectPath) {
+    return {
+      specId,
+      status: 'pending',
+      progress: 0
+    };
+  }
+
+  // Find the spec directory - check both .auto-claude and auto-claude paths
+  const specsDirs = [
+    path.join(projectPath, '.auto-claude', 'specs'),
+    path.join(projectPath, 'auto-claude', 'specs')
+  ];
+
+  let planPath: string | undefined;
+  for (const specsDir of specsDirs) {
+    const potentialPath = path.join(specsDir, specId, 'implementation_plan.json');
+    if (fs.existsSync(potentialPath)) {
+      planPath = potentialPath;
+      break;
+    }
+  }
+
+  if (!planPath) {
+    return {
+      specId,
+      status: 'pending',
+      progress: 0
+    };
+  }
+
+  try {
+    const planContent = fs.readFileSync(planPath, 'utf-8');
+    const plan = JSON.parse(planContent);
+
+    // Calculate progress from subtasks
+    const phases = plan.phases || [];
+    let totalSubtasks = 0;
+    let completedSubtasks = 0;
+    let currentTask: string | undefined;
+
+    for (const phase of phases) {
+      const subtasks = phase.subtasks || phase.chunks || [];
+      for (const subtask of subtasks) {
+        totalSubtasks++;
+        if (subtask.status === 'completed') {
+          completedSubtasks++;
+        } else if (subtask.status === 'in_progress' && !currentTask) {
+          currentTask = subtask.description;
+        }
+      }
+    }
+
+    const progress = totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
+
+    // Determine status based on plan status and subtask states
+    let status: BuildProgressResponse['status'] = 'pending';
+    const planStatus = plan.status || plan.planStatus;
+
+    if (planStatus === 'done' || planStatus === 'completed') {
+      status = 'completed';
+    } else if (planStatus === 'failed') {
+      status = 'failed';
+    } else if (totalSubtasks > 0 && completedSubtasks === totalSubtasks) {
+      status = 'completed';
+    } else if (completedSubtasks > 0 || phases.some((p: { subtasks?: Array<{status: string}>; chunks?: Array<{status: string}> }) =>
+      (p.subtasks || p.chunks || []).some((s) => s.status === 'in_progress'))) {
+      status = 'running';
+    }
+
+    // Determine phase
+    let phase: string | undefined;
+    if (planStatus === 'planning' || planStatus === 'spec') {
+      phase = 'planning';
+    } else if (planStatus === 'coding' || planStatus === 'in_progress') {
+      phase = 'implementation';
+    } else if (planStatus === 'review' || planStatus === 'ai_review') {
+      phase = 'review';
+    } else if (planStatus === 'qa') {
+      phase = 'qa';
+    }
+
+    return {
+      specId,
+      status,
+      phase,
+      progress,
+      currentTask,
+      startedAt: plan.created_at,
+      completedAt: status === 'completed' ? plan.updated_at : undefined
+    };
+  } catch {
+    return {
+      specId,
+      status: 'pending',
+      progress: 0
+    };
+  }
 }
 
 /**
- * Mock function to get project context
- * TODO: Replace with actual implementation that queries project state
+ * Get project context from ProjectStore
+ * Returns actual project data instead of mock data
  */
 async function getProjectContext(
   projectPath?: string,
   includeMemory?: boolean
 ): Promise<ProjectContextResponse> {
-  // In production, this would call actual Electron IPC handlers
-  return {
-    projectPath: projectPath || '/path/to/project',
-    projectName: 'Auto-Claude',
-    techStack: ['TypeScript', 'React', 'Electron', 'Python'],
-    recentSpecs: [
-      { id: '001', name: 'MCP Integration', status: 'completed' },
-      { id: '002', name: 'Skills Module', status: 'running' }
-    ],
-    codebaseStats: includeMemory ? {
-      totalFiles: 156,
-      totalLines: 12450,
-      languages: {
-        TypeScript: 8500,
-        Python: 3200,
-        JSON: 750
+  // If projectPath is provided, try to find or add the project
+  if (projectPath) {
+    // Check if project exists in store by path
+    const projects = projectStore.getProjects();
+    let project = projects.find(p => p.path === projectPath);
+
+    if (!project) {
+      // Project not in store yet - add it
+      project = projectStore.addProject(projectPath);
+    }
+
+    // Get tasks (specs) for the project
+    const tasks = projectStore.getTasks(project.id);
+    const recentSpecs = tasks.slice(0, 5).map(task => ({
+      id: task.specId,
+      name: task.title,
+      status: task.status
+    }));
+
+    // Detect tech stack from project files
+    const techStack: string[] = [];
+    if (fs.existsSync(path.join(projectPath, 'package.json'))) {
+      techStack.push('JavaScript', 'Node.js');
+      // Check for specific frameworks
+      try {
+        const pkgJson = JSON.parse(fs.readFileSync(path.join(projectPath, 'package.json'), 'utf-8'));
+        const allDeps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
+        if (allDeps?.['typescript']) techStack.push('TypeScript');
+        if (allDeps?.['react']) techStack.push('React');
+        if (allDeps?.['vue']) techStack.push('Vue');
+        if (allDeps?.['angular'] || allDeps?.['@angular/core']) techStack.push('Angular');
+        if (allDeps?.['next']) techStack.push('Next.js');
+        if (allDeps?.['electron']) techStack.push('Electron');
+        if (allDeps?.['express']) techStack.push('Express');
+        if (allDeps?.['fastify']) techStack.push('Fastify');
+      } catch {
+        // Ignore parse errors
       }
-    } : undefined
+    }
+    if (fs.existsSync(path.join(projectPath, 'requirements.txt')) ||
+        fs.existsSync(path.join(projectPath, 'pyproject.toml'))) {
+      techStack.push('Python');
+    }
+    if (fs.existsSync(path.join(projectPath, 'Cargo.toml'))) {
+      techStack.push('Rust');
+    }
+    if (fs.existsSync(path.join(projectPath, 'go.mod'))) {
+      techStack.push('Go');
+    }
+
+    return {
+      projectPath: project.path,
+      projectName: project.name,
+      techStack: techStack.length > 0 ? techStack : ['Unknown'],
+      recentSpecs,
+      codebaseStats: includeMemory ? await getCodebaseStats(projectPath) : undefined
+    };
+  }
+
+  // No projectPath provided - try to get the active project from tab state
+  const tabState = projectStore.getTabState();
+  if (tabState.activeProjectId) {
+    const activeProject = projectStore.getProject(tabState.activeProjectId);
+    if (activeProject) {
+      return getProjectContext(activeProject.path, includeMemory);
+    }
+  }
+
+  // Fallback: return first project if any
+  const projects = projectStore.getProjects();
+  if (projects.length > 0) {
+    return getProjectContext(projects[0].path, includeMemory);
+  }
+
+  // No projects found - return empty response
+  return {
+    projectPath: '',
+    projectName: 'No project selected',
+    techStack: [],
+    recentSpecs: [],
+    codebaseStats: undefined
   };
 }
 
 /**
- * Mock function to search code
- * TODO: Replace with actual implementation using ripgrep or similar
+ * Get codebase statistics for a project
+ */
+async function getCodebaseStats(projectPath: string): Promise<ProjectContextResponse['codebaseStats']> {
+  const stats = {
+    totalFiles: 0,
+    totalLines: 0,
+    languages: {} as Record<string, number>
+  };
+
+  const extensions: Record<string, string> = {
+    '.ts': 'TypeScript',
+    '.tsx': 'TypeScript',
+    '.js': 'JavaScript',
+    '.jsx': 'JavaScript',
+    '.py': 'Python',
+    '.rs': 'Rust',
+    '.go': 'Go',
+    '.java': 'Java',
+    '.json': 'JSON',
+    '.md': 'Markdown'
+  };
+
+  function countFiles(dir: string, depth: number = 0): void {
+    if (depth > 5) return; // Limit depth
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        // Skip common ignored directories
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' ||
+            entry.name === 'dist' || entry.name === 'build' ||
+            entry.name === '__pycache__' || entry.name === 'venv' ||
+            entry.name === '.venv' || entry.name === 'target') {
+          continue;
+        }
+
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          countFiles(fullPath, depth + 1);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          const lang = extensions[ext];
+          if (lang) {
+            stats.totalFiles++;
+            try {
+              const content = fs.readFileSync(fullPath, 'utf-8');
+              const lines = content.split('\n').length;
+              stats.totalLines += lines;
+              stats.languages[lang] = (stats.languages[lang] || 0) + lines;
+            } catch {
+              // Skip files that can't be read
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore directory read errors
+    }
+  }
+
+  countFiles(projectPath);
+  return stats;
+}
+
+/**
+ * Search code in project files
+ * Uses Node.js fs APIs to search for patterns in files
  */
 async function searchCode(
   query: string,
@@ -239,26 +472,125 @@ async function searchCode(
   caseSensitive?: boolean,
   maxResults?: number
 ): Promise<SearchCodeResponse> {
-  // In production, this would use actual search functionality
+  // Get the active project
+  const tabState = projectStore.getTabState();
+  let projectPath: string | undefined;
+
+  if (tabState.activeProjectId) {
+    const activeProject = projectStore.getProject(tabState.activeProjectId);
+    projectPath = activeProject?.path;
+  }
+
+  if (!projectPath) {
+    const projects = projectStore.getProjects();
+    if (projects.length > 0) {
+      projectPath = projects[0].path;
+    }
+  }
+
+  if (!projectPath) {
+    return {
+      query,
+      totalMatches: 0,
+      results: []
+    };
+  }
+
+  const results: SearchCodeResponse['results'] = [];
+  const limit = maxResults || 20;
+  const searchRegex = caseSensitive
+    ? new RegExp(query, 'g')
+    : new RegExp(query, 'gi');
+
+  // File extensions to search
+  const codeExtensions = new Set([
+    '.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go', '.java',
+    '.c', '.cpp', '.h', '.hpp', '.cs', '.rb', '.php', '.swift',
+    '.kt', '.scala', '.vue', '.svelte', '.md', '.json', '.yaml', '.yml'
+  ]);
+
+  // Check if file matches pattern (simple glob support)
+  const matchesPattern = (filename: string): boolean => {
+    if (!filePattern) return true;
+
+    // Convert glob to regex-like matching
+    const pattern = filePattern
+      .replace(/\*\*/g, '{{DOUBLESTAR}}')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\?/g, '.')
+      .replace(/{{DOUBLESTAR}}/g, '.*');
+
+    try {
+      const regex = new RegExp(`^${pattern}$`, 'i');
+      return regex.test(filename);
+    } catch {
+      // If pattern is invalid, do simple includes check
+      return filename.includes(filePattern.replace(/\*/g, ''));
+    }
+  };
+
+  function searchDir(dir: string, depth: number = 0): void {
+    if (depth > 10 || results.length >= limit) return;
+
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (results.length >= limit) break;
+
+        // Skip ignored directories
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' ||
+            entry.name === 'dist' || entry.name === 'build' ||
+            entry.name === '__pycache__' || entry.name === 'venv' ||
+            entry.name === '.venv' || entry.name === 'target' ||
+            entry.name === 'coverage' || entry.name === '.git') {
+          continue;
+        }
+
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = path.relative(projectPath!, fullPath);
+
+        if (entry.isDirectory()) {
+          searchDir(fullPath, depth + 1);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (!codeExtensions.has(ext)) continue;
+          if (!matchesPattern(relativePath)) continue;
+
+          try {
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const lines = content.split('\n');
+
+            for (let i = 0; i < lines.length && results.length < limit; i++) {
+              const line = lines[i];
+              searchRegex.lastIndex = 0;
+              const match = searchRegex.exec(line);
+
+              if (match) {
+                results.push({
+                  file: relativePath,
+                  line: i + 1,
+                  column: match.index + 1,
+                  match: match[0],
+                  context: line.trim().substring(0, 200)
+                });
+              }
+            }
+          } catch {
+            // Skip files that can't be read
+          }
+        }
+      }
+    } catch {
+      // Ignore directory read errors
+    }
+  }
+
+  searchDir(projectPath);
+
   return {
     query,
-    totalMatches: 5,
-    results: [
-      {
-        file: 'src/components/MCPToolsList.tsx',
-        line: 42,
-        column: 10,
-        match: query,
-        context: `const result = await ${query}();`
-      },
-      {
-        file: 'src/main/mcp-manager.ts',
-        line: 156,
-        column: 5,
-        match: query,
-        context: `// Using ${query} for MCP integration`
-      }
-    ].slice(0, maxResults || 20)
+    totalMatches: results.length,
+    results
   };
 }
 

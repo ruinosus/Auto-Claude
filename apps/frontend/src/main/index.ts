@@ -38,6 +38,7 @@ import { setupErrorLogging } from './app-logger';
 import { initSentryMain } from './sentry';
 import { preWarmToolCache } from './cli-tool-manager';
 import { initializeClaudeProfileManager } from './claude-profile-manager';
+import { projectStore } from './project-store';
 import type { AppSettings } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -451,6 +452,13 @@ app.on('window-all-closed', () => {
 
 // Cleanup before quit
 app.on('before-quit', async () => {
+  // Log current tab state for debugging (tab state should already be saved immediately on change)
+  const tabState = projectStore.getTabState();
+  console.warn('[main] App quitting. Current tab state:', {
+    activeProjectId: tabState.activeProjectId,
+    openProjectIds: tabState.openProjectIds
+  });
+
   // Stop usage monitor
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();

@@ -9,14 +9,17 @@ Used by both commit_message.py and merge resolver.
 import logging
 import os
 
+from phase_config import resolve_model_id
+
 logger = logging.getLogger(__name__)
 
-# Default model for utility operations (commit messages, merge resolution)
-DEFAULT_UTILITY_MODEL = "claude-haiku-4-5-20251001"
+# Default model shorthand for utility operations (commit messages, merge resolution)
+# Use resolve_model_id() at runtime to get the correct model ID (supports Azure Foundry)
+DEFAULT_UTILITY_MODEL_SHORT = "haiku"
 
 
 def get_utility_model_config(
-    default_model: str = DEFAULT_UTILITY_MODEL,
+    default_model: str | None = None,
 ) -> tuple[str, int | None]:
     """
     Get utility model configuration from environment variables.
@@ -25,13 +28,16 @@ def get_utility_model_config(
     with sensible defaults and validation.
 
     Args:
-        default_model: Default model ID to use if UTILITY_MODEL_ID not set
+        default_model: Default model ID to use if UTILITY_MODEL_ID not set.
+                      If None, uses resolve_model_id("haiku") for Azure Foundry support.
 
     Returns:
         Tuple of (model_id, thinking_budget) where thinking_budget is None
         if extended thinking is disabled, or an int representing token budget
     """
-    model = os.environ.get("UTILITY_MODEL_ID", default_model)
+    # Resolve default model at runtime to support Azure Foundry deployment names
+    resolved_default = default_model if default_model else resolve_model_id(DEFAULT_UTILITY_MODEL_SHORT)
+    model = os.environ.get("UTILITY_MODEL_ID", resolved_default)
     thinking_budget_str = os.environ.get("UTILITY_THINKING_BUDGET", "")
 
     # Parse thinking budget: empty string = disabled (None), number = budget tokens

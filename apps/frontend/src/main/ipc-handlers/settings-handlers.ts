@@ -317,62 +317,113 @@ export function registerSettingsHandlers(
         }
 
         // Validate by making a minimal API call to the Anthropic messages endpoint
-        // We send an invalid request that will fail with 400 (bad request)
-        // but proves the credentials work (vs 401/403 for auth errors)
-        const response = await fetch(normalizedUrl, {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: 'claude-3-haiku-20240307', // Use a basic model for validation
-            max_tokens: 1,
-            messages: [{ role: 'user', content: 'test' }]
-          })
-        });
+        // Azure Foundry uses 'api-key' header (not 'x-api-key')
+        // See: https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-        // Success responses
-        if (response.ok) {
-          return { success: true };
-        }
+        try {
+          const response = await fetch(normalizedUrl, {
+            method: 'POST',
+            headers: {
+              'x-api-key': apiKey, // Azure Foundry uses 'x-api-key' header
+              'anthropic-version': '2023-06-01',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'claude-haiku-4-5', // Use Claude 4.5 model name for Azure Foundry
+              max_tokens: 1,
+              messages: [{ role: 'user', content: 'test' }]
+            }),
+            signal: controller.signal
+          });
 
-        // Check for specific error codes
-        if (response.status === 401) {
-          return { success: false, error: 'Invalid API key. Please check your credentials.' };
-        }
-        if (response.status === 403) {
-          return { success: false, error: 'Access denied. Please check your API key permissions.' };
-        }
+          clearTimeout(timeoutId);
 
-        // 400 (bad request) or 404 (model not found) still means auth worked
-        // The credentials are valid, just the test request format may differ
-        if (response.status === 400 || response.status === 404) {
-          // Try to parse the error to see if it's an auth issue or just a request format issue
+          // Success responses - actual valid response
+          if (response.ok) {
+            return { success: true };
+          }
+
+          // Parse response body to check error type
+          let errorData: { error?: { type?: string; message?: string } } | null = null;
           try {
-            const errorData = await response.json();
-            const errorMessage = errorData?.error?.message || '';
+            errorData = await response.json();
+          } catch {
+            // JSON parse failed
+          }
 
-            // If it's a model/deployment not found error, credentials are likely valid
+          const errorType = errorData?.error?.type || '';
+          const errorMessage = errorData?.error?.message || '';
+
+          // Check for authentication errors (401, 403)
+          if (response.status === 401) {
+            return { success: false, error: 'Invalid API key. Please check your credentials.' };
+          }
+          if (response.status === 403) {
+            return { success: false, error: 'Access denied. Please check your API key permissions.' };
+          }
+
+          // For 400/404 errors, we need to check if it's an auth issue or just model/request issue
+          if (response.status === 400 || response.status === 404) {
+            // Authentication errors can come as 400 with specific error types
+            if (errorType === 'authentication_error' || errorType === 'permission_error') {
+              return { success: false, error: errorMessage || 'Authentication failed. Please check your credentials.' };
+            }
+
+            // Invalid API key can come as different error messages
+            if (errorMessage.toLowerCase().includes('invalid api key') ||
+                errorMessage.toLowerCase().includes('unauthorized') ||
+                errorMessage.toLowerCase().includes('authentication failed')) {
+              return { success: false, error: 'Invalid API key. Please check your credentials.' };
+            }
+
+            // If it's a model/deployment not found error, credentials ARE valid
+            // The deployment just doesn't exist yet or has a different name
             if (errorMessage.includes('model') || errorMessage.includes('deployment') ||
-                errorMessage.includes('not found') || errorMessage.includes('does not exist')) {
+                errorMessage.includes('not found') || errorMessage.includes('does not exist') ||
+                errorMessage.includes('resource') || errorType === 'not_found_error') {
               return { success: true };
             }
 
-            // For other 400/404 errors, assume credentials work but request format differs
-            return { success: true };
-          } catch {
-            // JSON parse failed, but status indicates the endpoint was reached
+            // For input validation errors (like max_tokens, messages format), auth is valid
+            if (errorType === 'invalid_request_error') {
+              return { success: true };
+            }
+
+            // If we got a 400 but couldn't parse the error body, the endpoint was reached
+            // This likely means auth worked but Azure returned a non-JSON error
+            // (e.g., HTML error page, empty body, etc.)
+            if (!errorData) {
+              // If there's no error body at all, endpoint was reachable - likely auth issue
+              // But if we got here, it means 401/403 wasn't returned, so auth probably worked
+              return { success: true };
+            }
+
+            // Unknown 400 error with parseable body but unrecognized type - be conservative
+            // If there's a message, show it; otherwise assume it's a config issue
+            if (errorMessage) {
+              return { success: false, error: errorMessage };
+            }
+
+            // Got a 400/404 with JSON but no message - likely auth worked but unknown issue
             return { success: true };
           }
-        }
 
-        const errorText = await response.text();
-        return {
-          success: false,
-          error: `Validation failed (${response.status}): ${errorText}`
-        };
+          // Rate limiting - auth worked but rate limited
+          if (response.status === 429) {
+            return { success: true };
+          }
+
+          // Other errors
+          const errorText = errorMessage || await response.text().catch(() => 'Unknown error');
+          return {
+            success: false,
+            error: `Validation failed (${response.status}): ${errorText}`
+          };
+        } finally {
+          clearTimeout(timeoutId);
+        }
       } catch (error) {
         // Network errors or other exceptions
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

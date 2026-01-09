@@ -19,6 +19,7 @@ export * from './app-update';
 export * from './skills';
 export * from './mcp';
 export * from './roi';
+export * from './squad';
 export * from './cli';
 export * from './analytics-v2';
 export * from './notification';

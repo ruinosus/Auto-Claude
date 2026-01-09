@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from phase_config import resolve_model_id
+
 # Analytics tracking
 try:
     from analytics import (
@@ -127,7 +129,7 @@ async def spawn_security_review(
     pr_context: PRContext,
     project_dir: Path,
     github_dir: Path,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: Optional[str] = None,
 ) -> list[PRReviewFinding]:
     """
     Spawn a focused security review subagent for specific files.
@@ -143,6 +145,9 @@ async def spawn_security_review(
     Returns:
         List of security findings
     """
+    # Resolve model at runtime to support Azure Foundry deployment names
+    model = model or resolve_model_id("sonnet")
+
     logger.info(
         f"[Orchestrator] Spawning security review for {len(files)} files: {focus_areas}"
     )
@@ -277,7 +282,7 @@ async def spawn_quality_review(
     pr_context: PRContext,
     project_dir: Path,
     github_dir: Path,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: Optional[str] = None,
 ) -> list[PRReviewFinding]:
     """
     Spawn a focused code quality review subagent for specific files.
@@ -293,6 +298,9 @@ async def spawn_quality_review(
     Returns:
         List of quality findings
     """
+    # Resolve model at runtime to support Azure Foundry deployment names
+    model = model or resolve_model_id("sonnet")
+
     logger.info(
         f"[Orchestrator] Spawning quality review for {len(files)} files: {focus_areas}"
     )
@@ -420,7 +428,7 @@ async def spawn_deep_analysis(
     pr_context: PRContext,
     project_dir: Path,
     github_dir: Path,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: Optional[str] = None,
 ) -> list[PRReviewFinding]:
     """
     Spawn a deep analysis subagent to investigate a specific concern.
@@ -436,6 +444,9 @@ async def spawn_deep_analysis(
     Returns:
         List of findings from deep analysis
     """
+    # Resolve model at runtime to support Azure Foundry deployment names
+    model = model or resolve_model_id("sonnet")
+
     logger.info(f"[Orchestrator] Spawning deep analysis for: {focus_question}")
 
     try:

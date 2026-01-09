@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from phase_config import resolve_model_id
+
 try:
     from ..models import AutoFixState, AutoFixStatus, GitHubRunnerConfig
 except (ImportError, ValueError, SystemError):
@@ -92,7 +94,7 @@ class BatchProcessor:
                 min_batch_size=1,
                 max_batch_size=5,
                 validate_batches=True,
-                validation_model="claude-sonnet-4-20250514",
+                validation_model=resolve_model_id("sonnet"),
                 validation_thinking_budget=10000,
             )
 
@@ -218,7 +220,7 @@ class BatchProcessor:
                 min_batch_size=1,
                 max_batch_size=5,
                 validate_batches=True,
-                validation_model="claude-sonnet-4-20250514",
+                validation_model=resolve_model_id("sonnet"),
                 validation_thinking_budget=10000,
             )
 

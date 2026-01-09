@@ -57,6 +57,10 @@
       "title": "Parametres ROI",
       "description": "Configurer les parametres de calcul du ROI"
     },
+    "squads": {
+      "title": "Equipes",
+      "description": "Configurer les compositions d'equipe avec des valeurs ROI personnalisees"
+    },
     "debug": {
       "title": "Debug & Logs",
       "description": "Outils de dépannage"
@@ -477,6 +481,99 @@
     "minutesPerLine": "Minutes par ligne",
     "minPerLine": "min/ligne",
     "minutesPerLineHint": "Temps moyen pour ecrire ou modifier manuellement une ligne de code"
+  },
+  "squads": {
+    "title": "Equipes",
+    "description": "Configurez les compositions d'equipe avec des valeurs ROI personnalisees",
+    "emptyState": "Aucune equipe configuree. Creez votre premiere equipe pour personnaliser les calculs ROI.",
+    "createFirst": "Creer la premiere equipe",
+    "addSquad": "Ajouter une equipe",
+    "createSquad": "Creer une equipe",
+    "editSquad": "Modifier l'equipe",
+    "formDescription": "Configurer les valeurs specifiques a l'equipe pour les calculs ROI",
+    "deleteConfirmTitle": "Supprimer l'equipe",
+    "deleteConfirmDescription": "Etes-vous sur de vouloir supprimer \"{{name}}\" ? Cela supprimera la configuration de l'equipe mais n'affectera pas les calculs ROI existants.",
+    "name": "Nom de l'equipe",
+    "namePlaceholder": "ex: Equipe Backend",
+    "descriptionLabel": "Description",
+    "descriptionPlaceholder": "Description optionnelle de cette equipe",
+    "defaultRate": "Taux par defaut",
+    "defaultHourlyRate": "Taux horaire par defaut",
+    "defaultRateHint": "Taux horaire utilise quand aucun taux specifique n'est defini",
+    "stakeholders": "Parties prenantes",
+    "updated": "Mis a jour",
+    "tabs": {
+      "general": "General",
+      "stakeholders": "Parties prenantes",
+      "timeSavings": "Gains de temps",
+      "prevention": "Prevention",
+      "quality": "Qualite"
+    },
+    "stakeholderRatesDescription": "Configurez les taux horaires pour chaque niveau d'anciennete et role",
+    "stakeholderRatesHint": "Ces taux sont utilises pour calculer la valeur du temps economise grace a l'IA",
+    "seniorityRole": "Anciennete / Role",
+    "seniority": {
+      "junior": "Junior",
+      "mid": "Intermediaire",
+      "senior": "Senior",
+      "staff": "Staff",
+      "principal": "Principal"
+    },
+    "roles": {
+      "developer": "Developpeur",
+      "qa": "QA",
+      "devops": "DevOps",
+      "pm": "Chef de projet",
+      "architect": "Architecte",
+      "techLead": "Tech Lead"
+    },
+    "timeSavingsDescription": "Temps estime economise (en minutes) pour chaque type d'activite assistee par IA",
+    "timeSavings": {
+      "prReview": "Revue de PR",
+      "issueTriage": "Triage d'issues",
+      "ideaGeneration": "Generation d'idees",
+      "roadmapPlanning": "Planification roadmap",
+      "specWriting": "Ecriture de spec",
+      "codebaseExploration": "Exploration du code",
+      "conflictResolution": "Resolution de conflits"
+    },
+    "preventionDescription": "Cout estime (en USD) des problemes qui pourraient atteindre la production s'ils ne sont pas detectes",
+    "prevention": {
+      "securityCritical": "Securite (Critique)",
+      "securityHigh": "Securite (Haute)",
+      "securityMedium": "Securite (Moyenne)",
+      "performanceCritical": "Performance (Critique)",
+      "performanceHigh": "Performance (Haute)",
+      "bugCritical": "Bug (Critique)",
+      "bugHigh": "Bug (Haut)",
+      "bugMedium": "Bug (Moyen)"
+    },
+    "qualityDescription": "Multiplicateurs d'ajustement ROI bases sur les indicateurs de qualite du code (en pourcentages)",
+    "quality": {
+      "firstPassQaBonus": "Bonus QA premier passage",
+      "secondPassQaBonus": "Bonus QA deuxieme passage",
+      "qaFailedPenalty": "Penalite echec QA",
+      "hasTestsBonus": "Bonus tests inclus",
+      "hasDocsBonus": "Bonus documentation incluse",
+      "hasTypesBonus": "Bonus types inclus",
+      "highCoverageBonus": "Bonus haute couverture",
+      "mediumCoverageBonus": "Bonus couverture moyenne",
+      "manyLintErrorsPenalty": "Penalite erreurs lint",
+      "reworkPenalty": "Penalite retravail"
+    },
+    "projectSquad": "Equipe du projet",
+    "selectSquad": "Selectionner une equipe...",
+    "noSquad": "Pas d'equipe (utiliser les valeurs par defaut)",
+    "projectSquadHint": "Associer ce projet a une equipe pour des calculs ROI personnalises",
+    "export": "Exporter",
+    "import": "Importer",
+    "importResultTitle": "Importation terminee",
+    "importResultDescription": "L'importation des equipes a ete traitee.",
+    "importedCount": "{{count}} equipe importee",
+    "importedCount_plural": "{{count}} equipes importees",
+    "skippedTitle": "Ignores",
+    "errorsTitle": "Erreurs",
+    "noChanges": "Aucune equipe n'a ete importee."
   },
   "otel": {
     "title": "Parametres OpenTelemetry",

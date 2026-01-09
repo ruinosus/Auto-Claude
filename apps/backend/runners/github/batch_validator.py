@@ -40,8 +40,12 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
-# Default model and thinking configuration
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+# Import model resolution for Azure Foundry support
+from phase_config import resolve_model_id
+
+# Default model shorthand and thinking configuration
+# Use resolve_model_id() at runtime for actual API calls
+DEFAULT_MODEL_SHORT = "sonnet"
 DEFAULT_THINKING_BUDGET = 10000  # Medium thinking
 
 
@@ -129,10 +133,11 @@ class BatchValidator:
     def __init__(
         self,
         project_dir: Path | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
         thinking_budget: int = DEFAULT_THINKING_BUDGET,
     ):
-        self.model = model
+        # Resolve model at runtime to support Azure Foundry deployment names
+        self.model = model or resolve_model_id(DEFAULT_MODEL_SHORT)
         self.thinking_budget = thinking_budget
         self.project_dir = project_dir or Path.cwd()
 
@@ -347,7 +352,7 @@ class BatchValidator:
 async def validate_batches(
     batches: list[dict[str, Any]],
     project_dir: Path | None = None,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
     thinking_budget: int = DEFAULT_THINKING_BUDGET,
 ) -> list[BatchValidationResult]:
     """
@@ -356,7 +361,7 @@ async def validate_batches(
     Args:
         batches: List of batch dicts with batch_id, primary_issue, issues, common_themes
         project_dir: Project directory for Claude SDK
-        model: Model to use for validation
+        model: Model to use for validation (resolved at runtime for Azure Foundry support)
         thinking_budget: Token budget for extended thinking
 
     Returns:

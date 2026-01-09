@@ -50,6 +50,12 @@
     "continue": "Continue",
     "saving": "Saving..."
   },
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "save": "Save",
+  "saving": "Saving...",
+  "create": "Create",
+  "minutes": "minutes",
   "labels": {
     "loading": "Loading...",
     "error": "Error",

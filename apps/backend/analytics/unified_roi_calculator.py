@@ -35,7 +35,7 @@ Usage:
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 
 from .roi_model import (
     UnifiedROI,
@@ -56,8 +56,14 @@ from .roi_model import (
     estimate_ideation_value,
     estimate_roadmap_value,
     estimate_github_value,
+    get_hourly_rate,
+    get_time_savings,
+    get_prevention_value,
 )
 from .quality_multipliers import QualityMultiplierCalculator, QualityMultiplier
+
+if TYPE_CHECKING:
+    from .squad_config import SquadConfig, QualityMultipliersConfig
 
 logger = logging.getLogger(__name__)
 
@@ -74,17 +80,32 @@ class UnifiedROICalculator:
         self,
         hourly_rate: float = DEFAULT_HOURLY_RATE,
         avg_feature_cost: float = 5000.0,
+        squad_config: Optional["SquadConfig"] = None,
     ):
         """
         Initialize the calculator.
 
         Args:
             hourly_rate: Developer hourly rate for time-based calculations
+                         (deprecated - use squad_config instead)
             avg_feature_cost: Average cost to implement a feature (for roadmap)
+            squad_config: Optional SquadConfig for customized ROI calculations.
+                          When provided, values from squad_config take precedence
+                          over hourly_rate and other defaults.
         """
-        self.hourly_rate = hourly_rate
+        self.squad_config = squad_config
+
+        # Use squad config hourly rate if available, otherwise fall back to parameter
+        if squad_config:
+            self.hourly_rate = squad_config.default_hourly_rate
+        else:
+            self.hourly_rate = hourly_rate
+
         self.avg_feature_cost = avg_feature_cost
-        self.quality_calculator = QualityMultiplierCalculator()
+
+        # Create quality calculator with squad config if available
+        quality_config = squad_config.quality_multipliers if squad_config else None
+        self.quality_calculator = QualityMultiplierCalculator(config=quality_config)
 
     def calculate_ideation_roi(
         self,
@@ -119,6 +140,7 @@ class UnifiedROICalculator:
             ideas_count=ideas_generated,
             high_impact_count=high_impact_ideas,
             hourly_rate=self.hourly_rate,
+            squad_config=self.squad_config,
         )
 
         # Create metrics
@@ -180,6 +202,7 @@ class UnifiedROICalculator:
             features_rejected=features_rejected,
             avg_feature_cost=self.avg_feature_cost,
             hourly_rate=self.hourly_rate,
+            squad_config=self.squad_config,
         )
 
         # Create metrics
@@ -242,9 +265,11 @@ class UnifiedROICalculator:
         """
         value_breakdown = {}
 
-        # Time saved on spec writing
-        spec_hours = TIME_SAVINGS["spec_writing"] / 60
-        value_breakdown[ValueType.EXECUTION] = spec_hours * self.hourly_rate * 0.6
+        # Time saved on spec writing (use squad config if available)
+        spec_minutes = get_time_savings("spec_writing", self.squad_config)
+        spec_hours = spec_minutes / 60
+        effective_hourly_rate = get_hourly_rate(self.squad_config) if self.squad_config else self.hourly_rate
+        value_breakdown[ValueType.EXECUTION] = spec_hours * effective_hourly_rate * 0.6
 
         # Decision value: clarity reduces scope creep
         complexity_multiplier = {"simple": 0.5, "standard": 1.0, "complex": 1.5}
@@ -350,8 +375,9 @@ class UnifiedROICalculator:
         # Prevention value: QA prevents bugs
         if qa_passed:
             bugs_prevented = max(1, files_changed // 2)  # Estimate
+            bug_medium_value = get_prevention_value("bug_medium", self.squad_config)
             value_breakdown[ValueType.PREVENTION] = (
-                bugs_prevented * PREVENTION_VALUES["bug_medium"] * 0.1
+                bugs_prevented * bug_medium_value * 0.1
             )
 
         # Create metrics
@@ -464,6 +490,7 @@ class UnifiedROICalculator:
             issues_triaged=issues_triaged,
             issues_auto_fixed=issues_auto_fixed,
             hourly_rate=self.hourly_rate,
+            squad_config=self.squad_config,
         )
 
         # Add prevention value for duplicates/spam
@@ -471,15 +498,17 @@ class UnifiedROICalculator:
             (duplicates_detected + spam_detected) * 20  # $20 per avoided duplicate
         )
 
-        # Create metrics
+        # Create metrics (use squad config for time savings)
+        pr_review_time = get_time_savings("pr_review", self.squad_config)
+        issue_triage_time = get_time_savings("issue_triage", self.squad_config)
         github_metrics = GitHubMetrics(
             prs_reviewed=prs_reviewed,
             issues_triaged=issues_triaged,
             issues_auto_fixed=issues_auto_fixed,
             duplicates_detected=duplicates_detected,
             spam_detected=spam_detected,
-            estimated_review_time_saved_minutes=prs_reviewed * TIME_SAVINGS["pr_review"],
-            estimated_triage_time_saved_minutes=issues_triaged * TIME_SAVINGS["issue_triage"],
+            estimated_review_time_saved_minutes=prs_reviewed * pr_review_time,
+            estimated_triage_time_saved_minutes=issues_triaged * issue_triage_time,
         )
 
         # Determine feature type
@@ -543,8 +572,10 @@ class UnifiedROICalculator:
         value_breakdown = {}
 
         # Knowledge value: exploration time saved + diagrams + code explanations
-        exploration_hours = TIME_SAVINGS["codebase_exploration"] / 60
-        knowledge_value = exploration_hours * self.hourly_rate * 0.4 * (files_explored / 10)
+        exploration_minutes = get_time_savings("codebase_exploration", self.squad_config)
+        exploration_hours = exploration_minutes / 60
+        effective_hourly_rate = get_hourly_rate(self.squad_config) if self.squad_config else self.hourly_rate
+        knowledge_value = exploration_hours * effective_hourly_rate * 0.4 * (files_explored / 10)
 
         # Add diagram value ($150 per diagram - saves time understanding architecture)
         knowledge_value += diagrams_generated * 150
@@ -625,9 +656,11 @@ class UnifiedROICalculator:
         value_breakdown = {}
 
         # Execution value: time saved on conflict resolution
-        # Each conflict takes ~20 minutes to resolve manually
-        resolution_hours = (conflicts_resolved * TIME_SAVINGS["conflict_resolution"]) / 60
-        value_breakdown[ValueType.EXECUTION] = resolution_hours * self.hourly_rate
+        # Each conflict takes ~20 minutes to resolve manually (configurable via squad config)
+        resolution_minutes = get_time_savings("conflict_resolution", self.squad_config)
+        resolution_hours = (conflicts_resolved * resolution_minutes) / 60
+        effective_hourly_rate = get_hourly_rate(self.squad_config) if self.squad_config else self.hourly_rate
+        value_breakdown[ValueType.EXECUTION] = resolution_hours * effective_hourly_rate
 
         # Decision value: merge decisions and code choices
         # $75 per merge decision (ours/theirs/combined)
@@ -641,7 +674,7 @@ class UnifiedROICalculator:
         if manual_intervention_avoided > 0:
             # Each avoided intervention saves ~30 minutes + reduces error risk
             prevention_hours = (manual_intervention_avoided * 30) / 60
-            value_breakdown[ValueType.PREVENTION] = prevention_hours * self.hourly_rate * 0.5
+            value_breakdown[ValueType.PREVENTION] = prevention_hours * effective_hourly_rate * 0.5
 
         # Create metrics
         merge_metrics = MergeMetrics(
@@ -650,7 +683,7 @@ class UnifiedROICalculator:
             manual_intervention_avoided=manual_intervention_avoided,
             merge_decisions=merge_decisions,
             code_choices=code_choices,
-            estimated_resolution_time_saved_minutes=conflicts_resolved * TIME_SAVINGS["conflict_resolution"],
+            estimated_resolution_time_saved_minutes=conflicts_resolved * resolution_minutes,
         )
 
         # Create unified ROI

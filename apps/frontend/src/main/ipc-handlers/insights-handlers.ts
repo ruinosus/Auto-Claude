@@ -20,7 +20,10 @@ export function registerInsightsHandlers(
   ipcMain.handle(
     IPC_CHANNELS.INSIGHTS_GET_SESSION,
     async (_, projectId: string): Promise<IPCResult<InsightsSession | null>> => {
+      console.log('[Insights IPC] GET_SESSION for projectId:', projectId);
       const project = projectStore.getProject(projectId);
+      console.log('[Insights IPC] GET_SESSION resolved project:', project?.name, '-> path:', project?.path);
+
       if (!project) {
         return { success: false, error: 'Project not found' };
       }
@@ -33,8 +36,23 @@ export function registerInsightsHandlers(
   ipcMain.on(
     IPC_CHANNELS.INSIGHTS_SEND_MESSAGE,
     async (_, projectId: string, message: string, modelConfig?: InsightsModelConfig) => {
+      // Log all available projects for debugging
+      const allProjects = projectStore.getProjects();
+      console.log('[Insights IPC] ========================================');
+      console.log('[Insights IPC] SEND_MESSAGE received');
+      console.log('[Insights IPC] Requested projectId:', projectId);
+      console.log('[Insights IPC] Available projects:');
+      allProjects.forEach((p, i) => {
+        console.log(`[Insights IPC]   ${i + 1}. ${p.name} (${p.id}) -> ${p.path}`);
+      });
+
       const project = projectStore.getProject(projectId);
+      console.log('[Insights IPC] Resolved project:', project?.name || 'NOT FOUND');
+      console.log('[Insights IPC] Resolved path:', project?.path || 'N/A');
+      console.log('[Insights IPC] ========================================');
+
       if (!project) {
+        console.error('[Insights] Project not found for ID:', projectId);
         const mainWindow = getMainWindow();
         if (mainWindow) {
           mainWindow.webContents.send(IPC_CHANNELS.INSIGHTS_ERROR, projectId, 'Project not found');

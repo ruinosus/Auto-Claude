@@ -17,6 +17,7 @@ from typing import Any
 
 # Memory integration for cross-session learning
 from agents.memory_manager import get_graphiti_context, save_session_memory
+from phase_config import resolve_model_id
 from claude_agent_sdk import ClaudeSDKClient
 from debug import debug, debug_detailed, debug_error, debug_section, debug_success
 from prompts_pkg import get_qa_reviewer_prompt
@@ -489,7 +490,7 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
                                 }
                             log_generation_in_current_trace(
                                 name=f"qa-reviewer-gen-{generation_count}",
-                                model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
+                                model=getattr(client, "model", None) or resolve_model_id("sonnet"),
                                 input_data=prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
                                 output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
                                 usage=usage,
@@ -658,7 +659,7 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
                         "artifact_value_usd": total_artifact_value,
                     },
                     duration_seconds=duration_seconds,
-                    model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
+                    model=getattr(client, "model", None) or resolve_model_id("sonnet"),
                     spec_id=spec_id,
                     trace_id=langfuse_trace_id,
                     artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse

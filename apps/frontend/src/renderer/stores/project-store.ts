@@ -153,8 +153,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ activeProjectId: projectId });
     // Also update selectedProjectId for backward compatibility
     get().selectProject(projectId);
-    // Save to main process (debounced)
-    saveTabStateToMain();
+    // Save activeProjectId immediately to prevent stale state on app close
+    // This fixes the bug where Insights could use wrong project
+    saveActiveProjectImmediate();
   },
 
   reorderTabs: (fromIndex, toIndex) => {
@@ -229,6 +230,26 @@ function saveTabStateToMain(): void {
       console.error('[ProjectStore] Failed to save tab state:', err);
     }
   }, 100);
+}
+
+/**
+ * Save activeProjectId immediately without debounce.
+ * This ensures the active project is persisted even if the app closes quickly after switching tabs.
+ * Fixes bug where Insights could use wrong project due to stale activeProjectId.
+ */
+async function saveActiveProjectImmediate(): Promise<void> {
+  const store = useProjectStore.getState();
+  const tabState = {
+    openProjectIds: store.openProjectIds,
+    activeProjectId: store.activeProjectId,
+    tabOrder: store.tabOrder
+  };
+  console.log('[ProjectStore] Saving activeProjectId immediately:', store.activeProjectId);
+  try {
+    await window.electronAPI.saveTabState(tabState);
+  } catch (err) {
+    console.error('[ProjectStore] Failed to save active project immediately:', err);
+  }
 }
 
 /**

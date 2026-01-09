@@ -24,6 +24,9 @@ from typing import Any
 backend_path = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_path))
 
+# Import model resolution for Azure Foundry support
+from phase_config import resolve_model_id
+
 # Langfuse integration for tracing
 try:
     from analytics.langfuse_integration import (
@@ -434,7 +437,7 @@ Respond with JSON only:
                 metadata={
                     "issues_count": len(issues),
                     "max_batch_size": max_batch_size,
-                    "model": "claude-sonnet-4-20250514",
+                    "model": resolve_model_id("sonnet"),
                 },
                 tags=["github", "batch_analyzer", "issue_triage"],
                 input_data={"prompt": trace_input, "issues_count": len(issues)},
@@ -465,7 +468,7 @@ Respond with JSON only:
 
             client = create_simple_client(
                 agent_type="batch_analysis",
-                model="claude-sonnet-4-20250514",
+                model=resolve_model_id("sonnet"),
                 system_prompt="You are an expert at analyzing GitHub issues and grouping related ones. Respond ONLY with valid JSON. Do NOT use any tools.",
                 cwd=self.project_dir,
             )
@@ -483,7 +486,7 @@ Respond with JSON only:
                 try:
                     log_generation_in_current_trace(
                         name="batch-analyzer",
-                        model="claude-sonnet-4-20250514",
+                        model=resolve_model_id("sonnet"),
                         input_data=prompt[:500] + "..." if len(prompt) > 500 else prompt,
                         output_data=response_text[:1000] + "..." if len(response_text) > 1000 else response_text,
                         usage={
@@ -542,7 +545,7 @@ Respond with JSON only:
                         project_id=self.project_id,
                         cost_usd=cost_usd,
                         tokens=total_tokens,
-                        model="claude-sonnet-4-20250514",
+                        model=resolve_model_id("sonnet"),
                         trace_id=langfuse_trace_id,
                         metrics={
                             "issues_triaged": issues_triaged,
@@ -861,7 +864,7 @@ class IssueBatcher:
         api_key: str | None = None,
         # AI validation settings
         validate_batches: bool = True,
-        validation_model: str = "claude-sonnet-4-20250514",
+        validation_model: str = resolve_model_id("sonnet"),
         validation_thinking_budget: int = 10000,  # Medium thinking
     ):
         self.github_dir = github_dir

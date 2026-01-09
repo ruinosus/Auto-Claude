@@ -21,7 +21,8 @@ import {
   TrendingUp,
   Code,
   Bug,
-  Server
+  Server,
+  Users
 } from 'lucide-react';
 
 // GitLab icon component (lucide-react doesn't have one)
@@ -62,6 +63,7 @@ import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProj
 import { SkillsManager } from '../skills';
 import { MCPManager } from '../mcp';
 import { ROISettingsSection } from './ROISettingsSection';
+import { SquadSettings } from './squad';
 
 interface AppSettingsDialogProps {
   open: boolean;
@@ -72,7 +74,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings sections
-export type AppSection = 'appearance' | 'display' | 'language' | 'devtools' | 'agent' | 'paths' | 'integrations' | 'api-profiles' | 'updates' | 'notifications' | 'skills' | 'mcp' | 'roi' | 'debug';
+export type AppSection = 'appearance' | 'display' | 'language' | 'devtools' | 'agent' | 'paths' | 'integrations' | 'api-profiles' | 'updates' | 'notifications' | 'skills' | 'mcp' | 'roi' | 'squads' | 'debug';
 
 interface NavItemConfig<T extends string> {
   id: T;
@@ -93,6 +95,7 @@ const appNavItemsConfig: NavItemConfig<AppSection>[] = [
   { id: 'skills', icon: Zap },
   { id: 'mcp', icon: Plug },
   { id: 'roi', icon: TrendingUp },
+  { id: 'squads', icon: Users },
   { id: 'debug', icon: Bug }
 ];
 
@@ -214,6 +217,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <MCPManager />;
       case 'roi':
         return <ROISettingsSection />;
+      case 'squads':
+        return <SquadSettings />;
       case 'debug':
         return <DebugSettings />;
       default:

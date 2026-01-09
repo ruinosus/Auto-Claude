@@ -30,6 +30,7 @@ import { registerMemoryHandlers } from './memory-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
 import { setupAnalyticsHandlers } from './analytics-handlers';
 import { setupROIHandlers } from './roi-handlers';
+import { setupSquadHandlers } from './squad-handlers';
 import { setupExportHandlers } from './export-handlers';
 import { setupArtifactHandlers } from './artifact-handlers';
 import { registerListSkillsHandler } from './skills/list-skills';
@@ -122,6 +123,9 @@ export function setupIpcHandlers(
   // ROI handlers
   setupROIHandlers();
 
+  // Squad handlers (team-based ROI configuration)
+  setupSquadHandlers();
+
   // Export handlers
   setupExportHandlers();
 
@@ -177,6 +181,7 @@ export {
   registerAppUpdateHandlers,
   setupAnalyticsHandlers,
   setupROIHandlers,
+  setupSquadHandlers,
   setupExportHandlers,
   setupArtifactHandlers,
   registerListSkillsHandler,

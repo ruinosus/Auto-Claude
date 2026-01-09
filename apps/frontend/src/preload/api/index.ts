@@ -12,6 +12,7 @@ import { GitLabAPI, createGitLabAPI } from './modules/gitlab-api';
 import { SkillsAPI, createSkillsAPI } from './modules/skills-api';
 import { MCPAPI, createMCPAPI } from './modules/mcp-api';
 import { ROIAPI, createROIAPI } from './modules/roi-api';
+import { SquadAPI, createSquadAPI } from './modules/squad-api';
 import { NotificationAPI, createNotificationAPI } from './modules/notification-api';
 import { ExportAPI, createExportAPI } from './modules/export-api';
 import { DebugAPI, createDebugAPI } from './modules/debug-api';
@@ -34,6 +35,7 @@ export interface ElectronAPI extends
   SkillsAPI,
   MCPAPI,
   ROIAPI,
+  SquadAPI,
   NotificationAPI,
   ExportAPI,
   DebugAPI,
@@ -58,6 +60,7 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createSkillsAPI(),
   ...createMCPAPI(),
   ...createROIAPI(),
+  ...createSquadAPI(),
   ...createNotificationAPI(),
   ...createExportAPI(),
   ...createDebugAPI(),
@@ -85,6 +88,7 @@ export {
   createSkillsAPI,
   createMCPAPI,
   createROIAPI,
+  createSquadAPI,
   createNotificationAPI,
   createExportAPI,
   createDebugAPI,
@@ -109,6 +113,7 @@ export type {
   SkillsAPI,
   MCPAPI,
   ROIAPI,
+  SquadAPI,
   NotificationAPI,
   ExportAPI,
   DebugAPI,

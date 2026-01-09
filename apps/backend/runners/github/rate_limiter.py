@@ -159,14 +159,27 @@ class TokenBucket:
 
 
 # AI model pricing (per 1M tokens)
+# Includes both full model IDs (direct API) and Azure Foundry deployment names
 AI_PRICING = {
-    # Claude models (as of 2025)
+    # Claude Sonnet 4.5 (current)
+    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},  # Azure Foundry deployment
+    # Claude Sonnet 4 (legacy)
     "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    # Claude Opus 4.5
+    "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00},
+    "claude-opus-4-5": {"input": 15.00, "output": 75.00},  # Azure Foundry deployment
+    # Claude Opus 4 (legacy)
     "claude-opus-4-20250514": {"input": 15.00, "output": 75.00},
+    # Claude Haiku 4.5
+    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
+    "claude-haiku-4-5": {"input": 0.80, "output": 4.00},  # Azure Foundry deployment
+    # Claude 3.5 models (legacy)
     "claude-sonnet-3-5-20241022": {"input": 3.00, "output": 15.00},
     "claude-haiku-3-5-20241022": {"input": 0.80, "output": 4.00},
     # Extended thinking models (higher output costs)
     "claude-sonnet-4-20250514-thinking": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-5-20250929-thinking": {"input": 3.00, "output": 15.00},
     # Default fallback
     "default": {"input": 3.00, "output": 15.00},
 }

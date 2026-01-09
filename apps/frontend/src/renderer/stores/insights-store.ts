@@ -339,13 +339,20 @@ export async function createTaskFromSuggestion(
   return null;
 }
 
-// IPC listener setup - call this once when the app initializes
-export function setupInsightsListeners(): () => void {
+// IPC listener setup - call this when the Insights component mounts
+// Pass currentProjectId to filter events and prevent cross-project contamination
+export function setupInsightsListeners(currentProjectId: string): () => void {
   const store = useInsightsStore.getState;
 
-  // Listen for streaming chunks
+  // Listen for streaming chunks - FILTER BY PROJECT
   const unsubStreamChunk = window.electronAPI.onInsightsStreamChunk(
-    (_projectId, chunk: InsightsStreamChunk) => {
+    (projectId, chunk: InsightsStreamChunk) => {
+      // Ignore events from other projects to prevent cross-project contamination
+      if (projectId !== currentProjectId) {
+        console.log('[Insights] Ignoring stream chunk from different project:', projectId, '(current:', currentProjectId, ')');
+        return;
+      }
+
       switch (chunk.type) {
         case 'text':
           if (chunk.content) {
@@ -402,13 +409,21 @@ export function setupInsightsListeners(): () => void {
     }
   );
 
-  // Listen for status updates
-  const unsubStatus = window.electronAPI.onInsightsStatus((_projectId, status) => {
+  // Listen for status updates - FILTER BY PROJECT
+  const unsubStatus = window.electronAPI.onInsightsStatus((projectId, status) => {
+    if (projectId !== currentProjectId) {
+      console.log('[Insights] Ignoring status from different project:', projectId, '(current:', currentProjectId, ')');
+      return;
+    }
     store().setStatus(status);
   });
 
-  // Listen for errors
-  const unsubError = window.electronAPI.onInsightsError((_projectId, error) => {
+  // Listen for errors - FILTER BY PROJECT
+  const unsubError = window.electronAPI.onInsightsError((projectId, error) => {
+    if (projectId !== currentProjectId) {
+      console.log('[Insights] Ignoring error from different project:', projectId, '(current:', currentProjectId, ')');
+      return;
+    }
     store().setStatus({
       phase: 'error',
       error

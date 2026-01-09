@@ -15,6 +15,7 @@ from typing import Any
 
 # Memory integration for cross-session learning
 from agents.memory_manager import get_graphiti_context, save_session_memory
+from phase_config import resolve_model_id
 from claude_agent_sdk import ClaudeSDKClient
 from debug import debug, debug_detailed, debug_error, debug_section, debug_success
 from security.tool_input_validator import get_safe_tool_input
@@ -464,7 +465,7 @@ async def run_qa_fixer_session(
                                 }
                             log_generation_in_current_trace(
                                 name=f"qa-fixer-gen-{generation_count}",
-                                model=getattr(client, "model", "claude-sonnet-4-5-20250929"),
+                                model=getattr(client, "model", None) or resolve_model_id("sonnet"),
                                 input_data=prompt[:500] if generation_count == 1 else f"[continuation {generation_count}]",
                                 output_data=block.text[:1000] if len(block.text) > 1000 else block.text,
                                 usage=usage,
