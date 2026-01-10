@@ -58,11 +58,14 @@ export async function createTerminal(
       debugLog('[TerminalLifecycle] Injecting OAuth token from active profile');
     }
 
-    // Log Azure Foundry env vars if present
-    if (profileEnv.ANTHROPIC_DEFAULT_OPUS_MODEL) {
+    // Log Azure Foundry env vars if present (correct vars: FOUNDRY_RESOURCE, not BASE_URL)
+    if (profileEnv.CLAUDE_CODE_USE_FOUNDRY) {
       console.warn('[TerminalLifecycle] Injecting Azure Foundry env vars:', {
-        baseUrl: profileEnv.ANTHROPIC_BASE_URL,
-        hasAuthToken: !!profileEnv.ANTHROPIC_AUTH_TOKEN,
+        // Correct Foundry vars (mutually exclusive):
+        resource: profileEnv.ANTHROPIC_FOUNDRY_RESOURCE || '(not set)',
+        baseUrl: profileEnv.ANTHROPIC_FOUNDRY_BASE_URL || '(not set - using RESOURCE)',
+        hasApiKey: !!profileEnv.ANTHROPIC_FOUNDRY_API_KEY,
+        // Model overrides:
         models: {
           sonnet: profileEnv.ANTHROPIC_DEFAULT_SONNET_MODEL,
           haiku: profileEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL,

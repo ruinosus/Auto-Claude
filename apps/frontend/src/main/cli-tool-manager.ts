@@ -992,6 +992,7 @@ class CLIToolManager {
    * Detect tool path asynchronously
    *
    * All tools now use async detection methods to prevent blocking the main process.
+   * Claude detection has a 10-second timeout to prevent UI freezing.
    *
    * @param tool - The tool to detect
    * @returns Promise resolving to detection result
@@ -999,7 +1000,26 @@ class CLIToolManager {
   private async detectToolPathAsync(tool: CLITool): Promise<ToolDetectionResult> {
     switch (tool) {
       case 'claude':
-        return this.detectClaudeAsync();
+        // Add timeout to prevent UI freeze - Claude detection can be slow
+        // if it needs to check many paths (NVM, Homebrew, etc.)
+        try {
+          const CLAUDE_DETECTION_TIMEOUT_MS = 10000; // 10 seconds
+          const result = await Promise.race([
+            this.detectClaudeAsync(),
+            new Promise<ToolDetectionResult>((_, reject) =>
+              setTimeout(() => reject(new Error('Claude CLI detection timeout (10s)')), CLAUDE_DETECTION_TIMEOUT_MS)
+            )
+          ]);
+          return result;
+        } catch (error) {
+          console.error('[CLI Tools] Claude detection timed out or failed:', error);
+          // Return not-found result so it falls back to 'claude' command
+          return {
+            found: false,
+            source: 'fallback',
+            message: `Claude CLI detection failed: ${error instanceof Error ? error.message : 'timeout'}`,
+          };
+        }
       case 'python':
         return this.detectPythonAsync();
       case 'git':

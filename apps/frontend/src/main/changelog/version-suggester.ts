@@ -4,6 +4,8 @@ import type { GitCommit } from '../../shared/types';
 import { getProfileEnv } from '../rate-limit-detector';
 import { parsePythonCommand } from '../python-detector';
 import { getAugmentedEnv } from '../env-utils';
+import { getOAuthModeClearVars } from '../agent/env-utils';
+import { getAPIProfileEnv } from '../services/profile';
 
 interface VersionSuggestion {
   version: string;
@@ -50,7 +52,7 @@ export class VersionSuggester {
     const script = this.createAnalysisScript(prompt);
 
     // Build environment
-    const spawnEnv = this.buildSpawnEnvironment();
+    const spawnEnv = await this.buildSpawnEnvironment();
 
     return new Promise((resolve, _reject) => {
       // Parse Python command to handle space-separated commands like "py -3"
@@ -210,8 +212,9 @@ except Exception as e:
 
   /**
    * Build spawn environment with proper PATH and auth settings
+   * Includes API profile env vars for Azure Foundry support
    */
-  private buildSpawnEnvironment(): Record<string, string> {
+  private async buildSpawnEnvironment(): Promise<Record<string, string>> {
     const homeDir = os.homedir();
     const isWindows = process.platform === 'win32';
 
@@ -222,9 +225,16 @@ except Exception as e:
     // Get active Claude profile environment
     const profileEnv = getProfileEnv();
 
+    // Get API profile env vars (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
+    // This is CRITICAL for Azure Foundry - provides the baseURL that the SDK needs
+    const apiProfileEnv = await getAPIProfileEnv();
+    const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
+
     const spawnEnv: Record<string, string> = {
       ...augmentedEnv,
+      ...oauthModeClearVars,
       ...profileEnv,
+      ...apiProfileEnv, // CRITICAL: API profile with ANTHROPIC_BASE_URL for Azure Foundry
       // Ensure critical env vars are set for claude CLI
       ...(isWindows ? { USERPROFILE: homeDir } : { HOME: homeDir }),
       USER: process.env.USER || process.env.USERNAME || 'user',

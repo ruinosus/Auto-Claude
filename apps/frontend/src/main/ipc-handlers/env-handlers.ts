@@ -473,26 +473,52 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
         config.claudeTokenIsGlobal = true;
       }
 
-      // Azure Foundry
+      // Azure Foundry: project-specific takes precedence, then global settings
+      // This ensures Azure Foundry config from global settings.json is used if not set per-project
       if (vars['ANTHROPIC_FOUNDRY_API_KEY']) {
         config.azureFoundryApiKey = vars['ANTHROPIC_FOUNDRY_API_KEY'];
         config.azureFoundryAuthStatus = 'configured';
+        config.azureFoundryIsGlobal = false;
+      } else if (globalSettings.azureFoundryApiKey) {
+        config.azureFoundryApiKey = globalSettings.azureFoundryApiKey;
+        config.azureFoundryAuthStatus = 'configured';
+        config.azureFoundryIsGlobal = true;
       }
+
       if (vars['ANTHROPIC_FOUNDRY_BASE_URL']) {
         config.azureFoundryBaseUrl = vars['ANTHROPIC_FOUNDRY_BASE_URL'];
+      } else if (globalSettings.azureFoundryBaseUrl) {
+        config.azureFoundryBaseUrl = globalSettings.azureFoundryBaseUrl;
       }
+
       if (vars['ANTHROPIC_FOUNDRY_RESOURCE']) {
         config.azureFoundryResource = vars['ANTHROPIC_FOUNDRY_RESOURCE'];
+      } else if (globalSettings.azureFoundryResourceName) {
+        config.azureFoundryResource = globalSettings.azureFoundryResourceName;
       }
-      // Azure Foundry Model Deployment Names
+
+      // Azure Foundry Model Deployment Names: project-specific takes precedence, then global
       if (vars['ANTHROPIC_DEFAULT_SONNET_MODEL']) {
         config.azureFoundrySonnetModel = vars['ANTHROPIC_DEFAULT_SONNET_MODEL'];
+      } else if (globalSettings.azureFoundrySonnetModel) {
+        config.azureFoundrySonnetModel = globalSettings.azureFoundrySonnetModel;
       }
+
       if (vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']) {
         config.azureFoundryHaikuModel = vars['ANTHROPIC_DEFAULT_HAIKU_MODEL'];
+      } else if (globalSettings.azureFoundryHaikuModel) {
+        config.azureFoundryHaikuModel = globalSettings.azureFoundryHaikuModel;
       }
+
       if (vars['ANTHROPIC_DEFAULT_OPUS_MODEL']) {
         config.azureFoundryOpusModel = vars['ANTHROPIC_DEFAULT_OPUS_MODEL'];
+      } else if (globalSettings.azureFoundryOpusModel) {
+        config.azureFoundryOpusModel = globalSettings.azureFoundryOpusModel;
+      }
+
+      // Auth mode: project-specific takes precedence, then global
+      if (!config.authMode && globalSettings.defaultAuthMode) {
+        config.authMode = globalSettings.defaultAuthMode as 'oauth' | 'azure-foundry' | 'auth-token';
       }
 
       // Auth Token (Proxy/CCR)

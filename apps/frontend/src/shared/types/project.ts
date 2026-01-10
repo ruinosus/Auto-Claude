@@ -308,6 +308,8 @@ export interface ProjectEnvConfig {
   azureFoundryBaseUrl?: string; // e.g., "https://your-resource.openai.azure.com/anthropic"
   azureFoundryResource?: string; // Azure resource name
   azureFoundryAuthStatus?: 'configured' | 'not_configured';
+  // Indicates if the Azure Foundry config is from global settings (not project-specific)
+  azureFoundryIsGlobal?: boolean;
   // Azure Foundry Model Deployment Names (required for Azure Foundry)
   azureFoundrySonnetModel?: string; // e.g., "claude-sonnet-4-5"
   azureFoundryHaikuModel?: string;  // e.g., "claude-haiku-4-5"

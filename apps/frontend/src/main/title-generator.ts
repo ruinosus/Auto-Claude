@@ -8,6 +8,8 @@ import { parsePythonCommand, getValidatedPythonPath } from './python-detector';
 import { getConfiguredPythonPath } from './python-env-manager';
 import { buildMemoryEnvVars } from './memory-env-builder';
 import { readSettingsFile } from './settings-utils';
+import { getOAuthModeClearVars } from './agent/env-utils';
+import { getAPIProfileEnv } from './services/profile';
 import type { AppSettings } from '../shared/types/settings';
 
 /**
@@ -136,12 +138,19 @@ export class TitleGenerator extends EventEmitter {
     debug('Generating title for description:', description.substring(0, 100) + '...');
 
     const autoBuildEnv = this.loadAutoBuildEnv();
-    debug('Environment loaded', {
-      hasOAuthToken: !!autoBuildEnv.CLAUDE_CODE_OAUTH_TOKEN
-    });
 
     // Get active Claude profile environment (CLAUDE_CONFIG_DIR if not default)
     const profileEnv = getProfileEnv();
+
+    // Get API profile env vars (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
+    // This is CRITICAL for Azure Foundry - provides the baseURL that the SDK needs
+    const apiProfileEnv = await getAPIProfileEnv();
+    const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
+
+    debug('Environment loaded', {
+      hasOAuthToken: !!autoBuildEnv.CLAUDE_CODE_OAUTH_TOKEN,
+      hasApiProfileBaseUrl: !!apiProfileEnv.ANTHROPIC_BASE_URL
+    });
 
     // Load Azure Foundry settings from settings.json (if configured)
     // This ensures Azure Foundry deployment names are passed to Python processes
@@ -157,7 +166,9 @@ export class TitleGenerator extends EventEmitter {
           ...process.env,
           ...autoBuildEnv,
           ...memoryEnv, // Azure Foundry and Graphiti settings from settings.json
+          ...oauthModeClearVars,
           ...profileEnv, // Include active Claude profile config
+          ...apiProfileEnv, // CRITICAL: API profile with ANTHROPIC_BASE_URL for Azure Foundry
           PYTHONUNBUFFERED: '1',
           PYTHONIOENCODING: 'utf-8',
           PYTHONUTF8: '1'

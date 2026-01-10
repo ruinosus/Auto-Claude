@@ -104,6 +104,10 @@ export function GitHubSetupModal({
   const [isValidatingAzure, setIsValidatingAzure] = useState(false);
   const [azureError, setAzureError] = useState<string | null>(null);
   const [hasAzureConfig, setHasAzureConfig] = useState(false);
+  // Track if user is editing an existing API key (shows masked value until user types)
+  const [hasExistingApiKey, setHasExistingApiKey] = useState(false);
+  const [isEditingApiKey, setIsEditingApiKey] = useState(false);
+  const MASKED_API_KEY = '••••••••••••••••••••••••••••••••';
 
   // Reset state and check existing auth when modal opens
   useEffect(() => {
@@ -132,6 +136,8 @@ export function GitHubSetupModal({
       setAzureBaseUrl('');
       setAzureError(null);
       setHasAzureConfig(false);
+      setHasExistingApiKey(false);
+      setIsEditingApiKey(false);
 
       // Check for existing authentication and skip to appropriate step
       const checkExistingAuth = async () => {
@@ -153,6 +159,8 @@ export function GitHubSetupModal({
             if (settings.azureFoundryApiKey) {
               hasAzureFoundryConfig = true;
               setHasAzureConfig(true);
+              setHasExistingApiKey(true);
+              // Don't pre-fill the actual key for security, but show masked indicator
             }
           }
 
@@ -556,14 +564,34 @@ export function GitHubSetupModal({
 
                 {/* Azure API Key */}
                 <div className="space-y-2">
-                  <Label htmlFor="azure-api-key">API Key *</Label>
+                  <Label htmlFor="azure-api-key">
+                    API Key *
+                    {hasExistingApiKey && !isEditingApiKey && (
+                      <span className="ml-2 text-xs text-success">(saved)</span>
+                    )}
+                  </Label>
                   <div className="relative">
                     <Input
                       id="azure-api-key"
                       type={showAzureApiKey ? 'text' : 'password'}
-                      placeholder="Enter your Azure API key"
-                      value={azureApiKey}
-                      onChange={(e) => setAzureApiKey(e.target.value)}
+                      placeholder={hasExistingApiKey && !isEditingApiKey ? '' : 'Enter your Azure API key'}
+                      value={hasExistingApiKey && !isEditingApiKey ? MASKED_API_KEY : azureApiKey}
+                      onChange={(e) => {
+                        if (hasExistingApiKey && !isEditingApiKey) {
+                          // User is starting to edit, clear masked value
+                          setIsEditingApiKey(true);
+                          setAzureApiKey(e.target.value.replace(MASKED_API_KEY, ''));
+                        } else {
+                          setAzureApiKey(e.target.value);
+                        }
+                      }}
+                      onFocus={() => {
+                        if (hasExistingApiKey && !isEditingApiKey) {
+                          // Clear masked value on focus so user can type fresh
+                          setIsEditingApiKey(true);
+                          setAzureApiKey('');
+                        }
+                      }}
                       className="pr-10"
                       disabled={isValidatingAzure}
                     />
@@ -575,6 +603,11 @@ export function GitHubSetupModal({
                       {showAzureApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
+                  {hasExistingApiKey && !isEditingApiKey && (
+                    <p className="text-xs text-muted-foreground">
+                      Click &quot;Use Existing Configuration&quot; to keep this key, or click the field to enter a new one.
+                    </p>
+                  )}
                 </div>
 
                 {/* Azure Base URL */}

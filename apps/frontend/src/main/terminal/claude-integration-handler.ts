@@ -8,15 +8,14 @@ import * as fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { app } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { getClaudeProfileManager, initializeClaudeProfileManager } from '../claude-profile-manager';
 import * as OutputParser from './output-parser';
 import * as SessionHandler from './session-handler';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { escapeShellArg, buildCdCommand } from '../../shared/utils/shell-escape';
-import { parseEnvFile } from '../ipc-handlers/utils';
 import { getProfileEnv } from '../rate-limit-detector';
+import { getAuthEnvVars } from '../auth-env-builder';
 import { getClaudeCliInvocation, getClaudeCliInvocationAsync } from '../claude-cli-utils';
 import type {
   TerminalProcess,
@@ -40,7 +39,8 @@ function normalizePathForBash(envPath: string): string {
 type ClaudeCommandConfig =
   | { method: 'default' }
   | { method: 'temp-file'; escapedTempFile: string }
-  | { method: 'config-dir'; escapedConfigDir: string };
+  | { method: 'config-dir'; escapedConfigDir: string }
+  | { method: 'inline-env'; envPrefix: string };
 
 /**
  * Build the shell command for invoking Claude CLI.
@@ -80,6 +80,11 @@ export function buildClaudeShellCommand(
 
     case 'config-dir':
       return `clear && ${cwdCommand}HISTFILE= HISTCONTROL=ignorespace CLAUDE_CONFIG_DIR=${config.escapedConfigDir} ${pathPrefix}bash -c "exec ${escapedClaudeCmd}"\r`;
+
+    case 'inline-env':
+      // For Azure Foundry: use inline env vars without bash -c or exec
+      // This is simpler and more reliable than temp file + source + exec
+      return `clear && ${cwdCommand}${config.envPrefix}${pathPrefix}${escapedClaudeCmd}\r`;
 
     default:
       return `${cwdCommand}${pathPrefix}${escapedClaudeCmd}\r`;
@@ -333,239 +338,56 @@ export function handleClaudeSessionId(
 }
 
 /**
- * Extract Azure resource name from Foundry URL
- * @param url - Azure Foundry base URL (e.g., https://aif-cockpit-br-prd01.services.ai.azure.com/anthropic)
- * @returns Resource name (e.g., aif-cockpit-br-prd01) or undefined
- */
-function extractAzureResourceFromUrl(url: string): string | undefined {
-  try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-
-    // Extract resource name from hostname patterns:
-    // Pattern 1: resource-name.openai.azure.com
-    // Pattern 2: resource-name.services.ai.azure.com
-    const match = hostname.match(/^([^.]+)\.(openai\.azure\.com|services\.ai\.azure\.com)$/);
-
-    if (match) {
-      return match[1];
-    }
-  } catch (error) {
-    debugError('[ClaudeIntegration:extractAzureResourceFromUrl] Invalid URL:', error);
-  }
-
-  return undefined;
-}
-
-/**
- * Find the backend directory by trying multiple possible paths
- * @returns Path to backend directory or undefined if not found
- */
-function findBackendDir(): string | undefined {
-  const possiblePaths = [
-    // New apps structure: from out/main -> apps/backend
-    path.resolve(__dirname, '..', '..', '..', 'backend'),
-    path.resolve(app.getAppPath(), '..', 'backend'),
-    path.resolve(process.cwd(), 'apps', 'backend'),
-    // Legacy paths for backwards compatibility
-    path.resolve(__dirname, '..', '..', '..', 'auto-claude'),
-    path.resolve(app.getAppPath(), '..', 'auto-claude'),
-    path.resolve(process.cwd(), 'auto-claude')
-  ];
-
-  for (const backendPath of possiblePaths) {
-    if (fs.existsSync(backendPath)) {
-      return backendPath;
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Default Azure Foundry model deployment names.
- * Azure Foundry deployments use shorter names without the full version date suffix.
- * These are used as fallback when backend .env cannot be loaded.
- */
-const AZURE_FOUNDRY_DEFAULT_MODELS: Record<string, string> = {
-  'ANTHROPIC_DEFAULT_SONNET_MODEL': 'claude-sonnet-4-5',
-  'ANTHROPIC_DEFAULT_HAIKU_MODEL': 'claude-haiku-4-5',
-  'ANTHROPIC_DEFAULT_OPUS_MODEL': 'claude-opus-4-5'
-};
-
-/**
- * Check if a URL looks like an Azure Foundry endpoint
- */
-function isAzureFoundryUrl(url: string): boolean {
-  try {
-    const hostname = new URL(url).hostname;
-    return hostname.includes('.azure.com') ||
-           hostname.includes('azure') ||
-           hostname.includes('foundry');
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Load Azure Foundry configuration from backend .env file
- * @param proxyBaseUrl - Optional proxy base URL to check if Azure Foundry mode
- * @returns Object with all Azure Foundry environment variables
- */
-function loadBackendAzureFoundryConfig(proxyBaseUrl?: string): Record<string, string> {
-  const backendDir = findBackendDir();
-  let config: Record<string, string> = {};
-
-  if (!backendDir) {
-    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend directory not found');
-  } else {
-    const backendEnvPath = path.join(backendDir, '.env');
-
-    if (!fs.existsSync(backendEnvPath)) {
-      debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Backend .env not found at:', backendEnvPath);
-    } else {
-      try {
-        const envContent = fs.readFileSync(backendEnvPath, 'utf-8');
-        const vars = parseEnvFile(envContent);
-
-        // Extract all Azure Foundry related variables
-        const azureFoundryVars = [
-          'CLAUDE_CODE_USE_FOUNDRY',
-          'ANTHROPIC_FOUNDRY_API_KEY',
-          'ANTHROPIC_FOUNDRY_BASE_URL',
-          'ANTHROPIC_FOUNDRY_RESOURCE',
-          'ANTHROPIC_BASE_URL',
-          'ANTHROPIC_API_KEY',
-          'ANTHROPIC_AUTH_TOKEN',
-          'ANTHROPIC_DEFAULT_SONNET_MODEL',
-          'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-          'ANTHROPIC_DEFAULT_OPUS_MODEL'
-        ];
-
-        for (const varName of azureFoundryVars) {
-          if (vars[varName]) {
-            config[varName] = vars[varName];
-          }
-        }
-
-        if (Object.keys(config).length > 0) {
-          debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Loaded Azure Foundry config:', {
-            hasFoundryFlag: !!config['CLAUDE_CODE_USE_FOUNDRY'],
-            hasApiKey: !!config['ANTHROPIC_FOUNDRY_API_KEY'],
-            hasBaseUrl: !!config['ANTHROPIC_BASE_URL'],
-            modelOverrides: {
-              sonnet: !!config['ANTHROPIC_DEFAULT_SONNET_MODEL'],
-              haiku: !!config['ANTHROPIC_DEFAULT_HAIKU_MODEL'],
-              opus: !!config['ANTHROPIC_DEFAULT_OPUS_MODEL']
-            }
-          });
-        }
-      } catch (error) {
-        debugError('[ClaudeIntegration:loadBackendAzureFoundryConfig] Failed to load backend .env:', error);
-      }
-    }
-  }
-
-  // CRITICAL: If in Azure Foundry mode but no model overrides were loaded,
-  // use default Azure Foundry deployment names to prevent "deployment not found" errors.
-  // Azure Foundry deployments use names like "claude-opus-4-5" instead of "claude-opus-4-5-20251101".
-  const isAzureMode = proxyBaseUrl && isAzureFoundryUrl(proxyBaseUrl);
-  const hasModelOverrides = config['ANTHROPIC_DEFAULT_SONNET_MODEL'] ||
-                            config['ANTHROPIC_DEFAULT_HAIKU_MODEL'] ||
-                            config['ANTHROPIC_DEFAULT_OPUS_MODEL'];
-
-  if (isAzureMode && !hasModelOverrides) {
-    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Azure Foundry detected but no model overrides found - using defaults');
-
-    // Add default model mappings for Azure Foundry
-    for (const [key, value] of Object.entries(AZURE_FOUNDRY_DEFAULT_MODELS)) {
-      if (!config[key]) {
-        config[key] = value;
-      }
-    }
-
-    debugLog('[ClaudeIntegration:loadBackendAzureFoundryConfig] Applied default Azure Foundry models:', AZURE_FOUNDRY_DEFAULT_MODELS);
-  }
-
-  return config;
-}
-
-/**
  * Build environment variables for terminal session.
  *
- * Priority:
- * 1. Active profile configuration (global)
- * 2. Project .env (legacy/per-project config)
- * 3. OAuth token (fallback)
+ * SIMPLIFIED: Respects user's auth mode choice from settings.json.
+ * No complex priority chains. User's choice is honored.
  *
- * @param projectPath - Path to the project (to locate .env file)
- * @param oauthToken - OAuth token from Claude profile (fallback)
+ * @param projectPath - Path to the project (unused, kept for API compatibility)
+ * @param oauthToken - OAuth token from Claude profile (fallback for oauth mode)
  * @returns Shell export commands as a string
  */
 function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: string | undefined): string {
   const envVars: string[] = [];
 
-  // PRIORITY 1: Use active profile configuration (global)
-  const profileEnv = getProfileEnv();
+  // FIRST: Check user's auth mode choice in settings.json
+  const authEnv = getAuthEnvVars();
 
-  if (profileEnv.ANTHROPIC_BASE_URL && profileEnv.ANTHROPIC_AUTH_TOKEN) {
-    // Profile is in proxy mode (Azure Foundry)
-    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using Azure Foundry profile configuration');
+  if (Object.keys(authEnv).length > 0) {
+    // User chose azure-foundry and it's configured
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using Azure Foundry from user settings');
 
-    const baseUrl = profileEnv.ANTHROPIC_BASE_URL;
-    const apiKey = profileEnv.ANTHROPIC_AUTH_TOKEN;
-
-    // Export Azure Foundry variables
-    envVars.push('export CLAUDE_CODE_USE_FOUNDRY=1');
-    envVars.push(`export ANTHROPIC_FOUNDRY_API_KEY="${apiKey}"`);
-    envVars.push(`export ANTHROPIC_FOUNDRY_BASE_URL="${baseUrl}"`);
-
-    // Export proxy mode variables for SDK compatibility
-    // NOTE: When using ANTHROPIC_BASE_URL, do NOT export ANTHROPIC_FOUNDRY_RESOURCE
-    // as they are mutually exclusive in the Claude SDK
-    envVars.push(`export ANTHROPIC_BASE_URL="${baseUrl}"`);
-    envVars.push(`export ANTHROPIC_AUTH_TOKEN="${apiKey}"`);
-
-    // CRITICAL: Export model overrides from profileEnv first (these are always available)
-    // This ensures Azure Foundry deployment names are used even when backend .env can't be loaded
-    // The model overrides are set in getProfileEnv() when Azure Foundry is detected
-    const modelOverrideKeys = [
-      'ANTHROPIC_DEFAULT_SONNET_MODEL',
-      'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-      'ANTHROPIC_DEFAULT_OPUS_MODEL'
-    ];
-
-    for (const key of modelOverrideKeys) {
-      if (profileEnv[key]) {
-        envVars.push(`export ${key}="${profileEnv[key]}"`);
-        console.warn(`[ClaudeIntegration:buildTerminalEnvVars] Exporting model override: ${key}=${profileEnv[key]}`);
-      }
-    }
-
-    // Also try to load additional config from backend .env (for extra vars like CLAUDE_CODE_USE_FOUNDRY)
-    // Pass baseUrl to enable fallback to default Azure Foundry model names
-    const backendConfig = loadBackendAzureFoundryConfig(baseUrl);
-    for (const [key, value] of Object.entries(backendConfig)) {
-      // Skip if already exported from profileEnv, or if mutually exclusive with base URL
-      if (key === 'ANTHROPIC_BASE_URL' ||
-          key === 'ANTHROPIC_AUTH_TOKEN' ||
-          key === 'ANTHROPIC_FOUNDRY_RESOURCE' ||
-          modelOverrideKeys.includes(key)) {
-        continue;
-      }
+    for (const [key, value] of Object.entries(authEnv)) {
       envVars.push(`export ${key}="${value}"`);
     }
 
     console.warn('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry env vars exported:', {
-      hasApiKey: !!apiKey,
-      hasBaseUrl: !!baseUrl,
-      modelOverrides: {
-        sonnet: profileEnv.ANTHROPIC_DEFAULT_SONNET_MODEL,
-        haiku: profileEnv.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-        opus: profileEnv.ANTHROPIC_DEFAULT_OPUS_MODEL
-      },
-      backendConfigVars: Object.keys(backendConfig)
+      hasFoundryFlag: !!authEnv['CLAUDE_CODE_USE_FOUNDRY'],
+      hasApiKey: !!authEnv['ANTHROPIC_FOUNDRY_API_KEY'],
+      hasResource: !!authEnv['ANTHROPIC_FOUNDRY_RESOURCE'],
+      hasBaseUrl: !!authEnv['ANTHROPIC_FOUNDRY_BASE_URL']
     });
+
+    return envVars.join('\n') + '\n';
+  }
+
+  // SECOND: Check active profile for OAuth or proxy config
+  const profileEnv = getProfileEnv();
+
+  if (profileEnv.ANTHROPIC_BASE_URL && profileEnv.ANTHROPIC_AUTH_TOKEN) {
+    // Profile has proxy config (legacy Azure Foundry via profiles)
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using Azure Foundry from profile');
+
+    envVars.push('export CLAUDE_CODE_USE_FOUNDRY=1');
+    envVars.push(`export ANTHROPIC_BASE_URL="${profileEnv.ANTHROPIC_BASE_URL}"`);
+    envVars.push(`export ANTHROPIC_AUTH_TOKEN="${profileEnv.ANTHROPIC_AUTH_TOKEN}"`);
+
+    // Model overrides from profile
+    for (const key of ['ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL']) {
+      if (profileEnv[key]) {
+        envVars.push(`export ${key}="${profileEnv[key]}"`);
+      }
+    }
 
     return envVars.join('\n') + '\n';
   }
@@ -584,78 +406,9 @@ function buildTerminalEnvVars(projectPath: string | undefined, oauthToken: strin
     return envVars.join('\n') + '\n';
   }
 
-  // PRIORITY 2: Try to load Azure Foundry configuration from project .env (legacy)
-  if (projectPath) {
-    const projectEnvPath = path.join(projectPath, '.auto-claude', '.env');
-
-    if (fs.existsSync(projectEnvPath)) {
-      try {
-        const envContent = fs.readFileSync(projectEnvPath, 'utf-8');
-        const vars = parseEnvFile(envContent);
-
-        // Check if Azure Foundry is enabled
-        const isFoundryEnabled = vars['CLAUDE_CODE_USE_FOUNDRY'] === '1' ||
-                                  vars['CLAUDE_CODE_USE_FOUNDRY'] === 'true';
-
-        if (isFoundryEnabled) {
-          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry detected in project .env (legacy)');
-
-          // Export Azure Foundry flag
-          envVars.push('export CLAUDE_CODE_USE_FOUNDRY=1');
-
-          // Export Azure Foundry API Key
-          if (vars['ANTHROPIC_FOUNDRY_API_KEY']) {
-            envVars.push(`export ANTHROPIC_FOUNDRY_API_KEY="${vars['ANTHROPIC_FOUNDRY_API_KEY']}"`);
-          }
-
-          // Export Azure Foundry Base URL
-          if (vars['ANTHROPIC_FOUNDRY_BASE_URL']) {
-            envVars.push(`export ANTHROPIC_FOUNDRY_BASE_URL="${vars['ANTHROPIC_FOUNDRY_BASE_URL']}"`);
-          }
-
-          // Export Azure Foundry Resource
-          if (vars['ANTHROPIC_FOUNDRY_RESOURCE']) {
-            envVars.push(`export ANTHROPIC_FOUNDRY_RESOURCE="${vars['ANTHROPIC_FOUNDRY_RESOURCE']}"`);
-          }
-
-          // Export Azure Foundry Model Overrides
-          if (vars['ANTHROPIC_DEFAULT_SONNET_MODEL']) {
-            envVars.push(`export ANTHROPIC_DEFAULT_SONNET_MODEL="${vars['ANTHROPIC_DEFAULT_SONNET_MODEL']}"`);
-          }
-          if (vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']) {
-            envVars.push(`export ANTHROPIC_DEFAULT_HAIKU_MODEL="${vars['ANTHROPIC_DEFAULT_HAIKU_MODEL']}"`);
-          }
-          if (vars['ANTHROPIC_DEFAULT_OPUS_MODEL']) {
-            envVars.push(`export ANTHROPIC_DEFAULT_OPUS_MODEL="${vars['ANTHROPIC_DEFAULT_OPUS_MODEL']}"`);
-          }
-
-          // Export base URL if set (for consistency)
-          if (vars['ANTHROPIC_BASE_URL']) {
-            envVars.push(`export ANTHROPIC_BASE_URL="${vars['ANTHROPIC_BASE_URL']}"`);
-          }
-
-          debugLog('[ClaudeIntegration:buildTerminalEnvVars] Azure Foundry env vars (project):', {
-            hasApiKey: !!vars['ANTHROPIC_FOUNDRY_API_KEY'],
-            hasBaseUrl: !!vars['ANTHROPIC_FOUNDRY_BASE_URL'],
-            hasResource: !!vars['ANTHROPIC_FOUNDRY_RESOURCE'],
-            modelOverrides: {
-              sonnet: !!vars['ANTHROPIC_DEFAULT_SONNET_MODEL'],
-              haiku: !!vars['ANTHROPIC_DEFAULT_HAIKU_MODEL'],
-              opus: !!vars['ANTHROPIC_DEFAULT_OPUS_MODEL']
-            }
-          });
-
-          return envVars.join('\n') + '\n';
-        }
-      } catch (error) {
-        debugError('[ClaudeIntegration:buildTerminalEnvVars] Failed to load project .env:', error);
-      }
-    }
-  }
-
-  // PRIORITY 3: Fallback to OAuth token (original behavior)
+  // THIRD: Fallback to provided OAuth token
   if (oauthToken) {
-    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using OAuth token (fallback)');
+    debugLog('[ClaudeIntegration:buildTerminalEnvVars] Using provided OAuth token');
     envVars.push(`export CLAUDE_CODE_OAUTH_TOKEN="${oauthToken}"`);
   }
 
@@ -707,9 +460,40 @@ export function invokeClaude(
     ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
     : '';
 
-  // Export environment variables for:
-  // 1. Proxy mode profiles (Azure Foundry) - ALWAYS, even if default
-  // 2. Non-default profiles with OAuth tokens or configDir
+  // =========================================================================
+  // PRIORITY 1: Check Azure Foundry from settings.json (user's auth mode choice)
+  // This takes precedence over ALL profile-based configuration
+  // =========================================================================
+  const authEnv = getAuthEnvVars();
+  const isAzureFoundryFromSettings = Object.keys(authEnv).length > 0;
+
+  if (isAzureFoundryFromSettings) {
+    debugLog('[ClaudeIntegration:invokeClaude] Azure Foundry configured via settings.json - using inline env');
+    debugLog('[ClaudeIntegration:invokeClaude] Auth env vars:', Object.keys(authEnv));
+
+    // Build inline env prefix for Azure Foundry (simpler than temp file + source + exec)
+    const envPrefix = Object.entries(authEnv)
+      .map(([key, value]) => `${key}=${escapeShellArg(value)}`)
+      .join(' ') + ' ';
+
+    // For Azure Foundry: skip pathPrefix since we use absolute path to claude
+    const command = buildClaudeShellCommand(cwdCommand, '', escapedClaudeCmd, { method: 'inline-env', envPrefix });
+    debugLog('[ClaudeIntegration:invokeClaude] Executing command (Azure Foundry from settings)');
+    terminal.pty.write(command);
+
+    if (activeProfile) {
+      profileManager.markProfileUsed(activeProfile.id);
+    }
+
+    finalizeClaudeInvoke(terminal, activeProfile, projectPath, startTime, getWindow, onSessionCapture);
+    debugLog('[ClaudeIntegration:invokeClaude] ========== INVOKE CLAUDE COMPLETE (Azure Foundry settings) ==========');
+    return;
+  }
+
+  // =========================================================================
+  // PRIORITY 2: Profile-based configuration (proxy mode, OAuth, configDir)
+  // Only used if Azure Foundry is NOT configured in settings.json
+  // =========================================================================
   const isProxyMode = activeProfile?.proxyEnabled && activeProfile?.proxyBaseUrl;
   const needsEnvExport = isProxyMode || (activeProfile && !activeProfile.isDefault);
 
@@ -872,13 +656,72 @@ export async function invokeClaudeAsync(
     isDefault: activeProfile?.isDefault
   });
 
-  // Async CLI invocation - non-blocking
+  // Async CLI invocation - with timeout to prevent UI freeze
   const cwdCommand = buildCdCommand(cwd);
-  const { command: claudeCmd, env: claudeEnv } = await getClaudeCliInvocationAsync();
+  let claudeCmd: string;
+  let claudeEnv: Record<string, string>;
+
+  try {
+    const CLI_INVOCATION_TIMEOUT_MS = 15000; // 15 seconds
+    const cliResult = await Promise.race([
+      getClaudeCliInvocationAsync(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('CLI invocation timeout (15s)')), CLI_INVOCATION_TIMEOUT_MS)
+      )
+    ]);
+    claudeCmd = cliResult.command;
+    claudeEnv = cliResult.env;
+    console.warn('[ClaudeIntegration:invokeClaudeAsync] CLI detected:', claudeCmd);
+  } catch (error) {
+    console.error('[ClaudeIntegration:invokeClaudeAsync] CLI detection failed, using fallback:', error);
+    // Fallback: use 'claude' directly and let system PATH resolve it
+    claudeCmd = 'claude';
+    claudeEnv = {};
+  }
+
   const escapedClaudeCmd = escapeShellArg(claudeCmd);
   const pathPrefix = claudeEnv.PATH
     ? `PATH=${escapeShellArg(normalizePathForBash(claudeEnv.PATH))} `
     : '';
+
+  // =========================================================================
+  // PRIORITY 1: Check Azure Foundry from settings.json (user's auth mode choice)
+  // This takes precedence over ALL profile-based configuration
+  // =========================================================================
+  const authEnv = getAuthEnvVars();
+  const isAzureFoundryFromSettings = Object.keys(authEnv).length > 0;
+
+  if (isAzureFoundryFromSettings) {
+    console.warn('[ClaudeIntegration:invokeClaudeAsync] Azure Foundry configured via settings.json');
+    console.warn('[ClaudeIntegration:invokeClaudeAsync] Auth env vars:', Object.keys(authEnv));
+
+    // Build inline env prefix for Azure Foundry (simpler than temp file + source + exec)
+    // Format: VAR1=value1 VAR2=value2 ... command
+    const envPrefix = Object.entries(authEnv)
+      .map(([key, value]) => `${key}=${escapeShellArg(value)}`)
+      .join(' ') + ' ';
+
+    console.warn('[ClaudeIntegration:invokeClaudeAsync] Using inline env vars (no temp file)');
+
+    // For Azure Foundry: skip pathPrefix since we use absolute path to claude
+    // This avoids extremely long commands due to PATH override
+    const command = buildClaudeShellCommand(cwdCommand, '', escapedClaudeCmd, { method: 'inline-env', envPrefix });
+    console.warn('[ClaudeIntegration:invokeClaudeAsync] Executing command:', command);
+    terminal.pty.write(command);
+
+    if (activeProfile) {
+      profileManager.markProfileUsed(activeProfile.id);
+    }
+
+    finalizeClaudeInvoke(terminal, activeProfile, projectPath, startTime, getWindow, onSessionCapture);
+    debugLog('[ClaudeIntegration:invokeClaudeAsync] ========== INVOKE CLAUDE COMPLETE (Azure Foundry settings) ==========');
+    return;
+  }
+
+  // =========================================================================
+  // PRIORITY 2: Profile-based configuration (proxy mode, OAuth, configDir)
+  // Only used if Azure Foundry is NOT configured in settings.json
+  // =========================================================================
   const needsEnvOverride = profileId && profileId !== previousProfileId;
 
   debugLog('[ClaudeIntegration:invokeClaudeAsync] Environment override check:', {

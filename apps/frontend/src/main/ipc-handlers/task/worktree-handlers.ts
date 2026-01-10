@@ -12,6 +12,8 @@ import { projectStore } from '../../project-store';
 import { getConfiguredPythonPath, PythonEnvManager, pythonEnvManager as pythonEnvManagerSingleton } from '../../python-env-manager';
 import { getEffectiveSourcePath } from '../../updater/path-resolver';
 import { getProfileEnv } from '../../rate-limit-detector';
+import { getOAuthModeClearVars } from '../../agent/env-utils';
+import { getAPIProfileEnv } from '../../services/profile';
 import { findTaskAndProject } from './shared';
 import { parsePythonCommand } from '../../python-detector';
 import { getToolPath } from '../../cli-tool-manager';
@@ -1952,9 +1954,16 @@ export function registerWorktreeHandlers(
 
         // Get profile environment with OAuth token for AI merge resolution
         const profileEnv = getProfileEnv();
+
+        // Get API profile env vars (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
+        // This is CRITICAL for Azure Foundry - provides the baseURL that the SDK needs
+        const apiProfileEnv = await getAPIProfileEnv();
+        const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
+
         debug('Profile env for merge:', {
           hasOAuthToken: !!profileEnv.CLAUDE_CODE_OAUTH_TOKEN,
-          hasConfigDir: !!profileEnv.CLAUDE_CONFIG_DIR
+          hasConfigDir: !!profileEnv.CLAUDE_CONFIG_DIR,
+          hasApiProfileBaseUrl: !!apiProfileEnv.ANTHROPIC_BASE_URL
         });
 
         return new Promise((resolve) => {
@@ -1976,7 +1985,9 @@ export function registerWorktreeHandlers(
             env: {
               ...process.env,
               ...pythonEnv, // Include bundled packages PYTHONPATH
+              ...oauthModeClearVars,
               ...profileEnv, // Include active Claude profile OAuth token
+              ...apiProfileEnv, // CRITICAL: API profile with ANTHROPIC_BASE_URL for Azure Foundry
               PYTHONUNBUFFERED: '1',
               PYTHONUTF8: '1',
               // Utility feature settings for merge resolver
@@ -2928,6 +2939,11 @@ export function registerWorktreeHandlers(
         // Get profile environment with OAuth token
         const profileEnv = getProfileEnv();
 
+        // Get API profile env vars (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
+        // This is CRITICAL for Azure Foundry - provides the baseURL that the SDK needs
+        const apiProfileEnv = await getAPIProfileEnv();
+        const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
+
         return new Promise((resolve) => {
           let timeoutId: NodeJS.Timeout | null = null;
           let resolved = false;
@@ -2942,7 +2958,9 @@ export function registerWorktreeHandlers(
             env: {
               ...process.env,
               ...pythonEnv,
+              ...oauthModeClearVars,
               ...profileEnv,
+              ...apiProfileEnv, // CRITICAL: API profile with ANTHROPIC_BASE_URL for Azure Foundry
               PYTHONUNBUFFERED: '1',
               PYTHONUTF8: '1'
             },

@@ -7,6 +7,7 @@ import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from './rate-l
 import { parsePythonCommand } from './python-detector';
 import { pythonEnvManager } from './python-env-manager';
 import { getClaudeProfileManager } from './claude-profile-manager';
+import { loadProfilesFileSync } from './services/profile/profile-manager';
 
 /**
  * Debug logging - only logs when DEBUG=true or in development mode
@@ -170,10 +171,28 @@ export class TerminalNameGenerator extends EventEmitter {
     // Get profile config dir (for non-default profiles)
     const profileEnv = getProfileEnv();
 
+    // Also check API Profile (profiles.json) for Azure Foundry settings
+    // This is separate from Claude Profile Manager and stores custom API endpoints
+    let apiProfileEnv: Record<string, string> = {};
+    const apiProfilesFile = loadProfilesFileSync();
+    if (apiProfilesFile.activeProfileId) {
+      const activeApiProfile = apiProfilesFile.profiles.find(p => p.id === apiProfilesFile.activeProfileId);
+      if (activeApiProfile?.baseUrl && activeApiProfile?.apiKey) {
+        apiProfileEnv = {
+          ANTHROPIC_BASE_URL: activeApiProfile.baseUrl,
+          ANTHROPIC_AUTH_TOKEN: activeApiProfile.apiKey,
+          ...(activeApiProfile.models?.default ? { ANTHROPIC_MODEL: activeApiProfile.models.default } : {}),
+          ...(activeApiProfile.models?.sonnet ? { ANTHROPIC_DEFAULT_SONNET_MODEL: activeApiProfile.models.sonnet } : {}),
+          ...(activeApiProfile.models?.haiku ? { ANTHROPIC_DEFAULT_HAIKU_MODEL: activeApiProfile.models.haiku } : {}),
+          ...(activeApiProfile.models?.opus ? { ANTHROPIC_DEFAULT_OPUS_MODEL: activeApiProfile.models.opus } : {})
+        };
+      }
+    }
+
     debug('Environment loaded', {
       hasOAuthToken: !!autoBuildEnv.CLAUDE_CODE_OAUTH_TOKEN || !!activeProfileEnv.CLAUDE_CODE_OAUTH_TOKEN,
-      isAzureFoundry: !!activeProfileEnv.ANTHROPIC_BASE_URL,
-      hasProxyAuth: !!activeProfileEnv.ANTHROPIC_AUTH_TOKEN
+      isAzureFoundry: !!activeProfileEnv.ANTHROPIC_BASE_URL || !!apiProfileEnv.ANTHROPIC_BASE_URL,
+      hasProxyAuth: !!activeProfileEnv.ANTHROPIC_AUTH_TOKEN || !!apiProfileEnv.ANTHROPIC_AUTH_TOKEN
     });
 
     return new Promise((resolve) => {
@@ -185,7 +204,8 @@ export class TerminalNameGenerator extends EventEmitter {
           ...process.env,
           ...autoBuildEnv,
           ...profileEnv, // Include Claude profile config dir
-          ...activeProfileEnv, // Include Azure Foundry/OAuth (highest priority)
+          ...activeProfileEnv, // Include Azure Foundry/OAuth from Claude Profile Manager
+          ...apiProfileEnv, // Include Azure Foundry from API Profile (profiles.json)
           PYTHONUNBUFFERED: '1',
           PYTHONIOENCODING: 'utf-8',
           PYTHONUTF8: '1'

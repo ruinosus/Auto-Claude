@@ -50,6 +50,8 @@ import {
   hasValidToken,
   expandHomePath
 } from './claude-profile/profile-utils';
+import { readSettingsFile } from './settings-utils';
+import { getAuthEnvVars, isAzureFoundryEnabled } from './auth-env-builder';
 
 /**
  * Manages Claude Code profiles for multi-account support.
@@ -367,7 +369,8 @@ export class ClaudeProfileManager {
   /**
    * Get environment variables for spawning processes with the active profile.
    * Priority:
-   * 1. Proxy mode: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
+   * 0. Azure Foundry via settings.json (defaultAuthMode) - SINGLE SOURCE OF TRUTH
+   * 1. Proxy mode: ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN (for non-Azure proxies)
    * 2. OAuth token: CLAUDE_CODE_OAUTH_TOKEN
    * 3. Config dir: CLAUDE_CONFIG_DIR (deprecated)
    */
@@ -375,36 +378,43 @@ export class ClaudeProfileManager {
     const profile = this.getActiveProfile();
     const env: Record<string, string> = {};
 
-    // Priority 1: Proxy mode (LiteLLM/Azure OpenAI)
-    if (profile?.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
-      env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
-      env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;
-
-      // CRITICAL: Add Azure Foundry model deployment name overrides
-      // Azure Foundry deployments use names like "claude-opus-4-5" instead of full IDs like "claude-opus-4-5-20251101"
-      // Without these overrides, Claude CLI will use the full model ID which doesn't exist as a deployment
-      const isAzureFoundry = profile.proxyBaseUrl.includes('.azure.com') ||
-                             profile.proxyBaseUrl.includes('azure') ||
-                             profile.proxyBaseUrl.includes('foundry');
-
-      if (isAzureFoundry) {
-        env.CLAUDE_CODE_USE_FOUNDRY = '1';
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5';
-        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5';
-        env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-5';
-
-        console.warn('[ClaudeProfileManager] Azure Foundry detected - model overrides set:', {
-          sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-          haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-          opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL
-        });
+    // Priority 0: Azure Foundry via settings.json (defaultAuthMode === 'azure-foundry')
+    // This is the SINGLE SOURCE OF TRUTH for Azure Foundry configuration
+    // Uses auth-env-builder.ts which has the correct Foundry-specific vars:
+    // - ANTHROPIC_FOUNDRY_RESOURCE (not ANTHROPIC_BASE_URL!)
+    // - ANTHROPIC_FOUNDRY_API_KEY (not ANTHROPIC_AUTH_TOKEN!)
+    if (isAzureFoundryEnabled()) {
+      const authEnv = getAuthEnvVars();
+      if (Object.keys(authEnv).length > 0) {
+        console.warn('[ClaudeProfileManager] Azure Foundry enabled via settings.json - using auth-env-builder vars:', Object.keys(authEnv));
+        return authEnv;
       }
+      // If Azure Foundry is enabled but not configured, fall through to other methods
+      console.warn('[ClaudeProfileManager] Azure Foundry enabled but not configured in settings.json');
+    }
 
-      console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name, {
-        baseUrl: profile.proxyBaseUrl,
-        isAzureFoundry
-      });
-      return env;
+    // Priority 1: Proxy mode (LiteLLM/non-Azure proxies ONLY)
+    // NOTE: Azure Foundry should be configured via settings.json, NOT profile proxy mode
+    if (profile?.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
+      // Check if this looks like Azure Foundry - warn and skip if defaultAuthMode should be used
+      const looksLikeAzureFoundry = profile.proxyBaseUrl.includes('.azure.com') ||
+                                     profile.proxyBaseUrl.includes('foundry');
+
+      if (looksLikeAzureFoundry) {
+        console.warn('[ClaudeProfileManager] WARNING: Profile has Azure Foundry-like proxy settings, but defaultAuthMode is not azure-foundry.');
+        console.warn('[ClaudeProfileManager] For Azure Foundry, set defaultAuthMode to "azure-foundry" in settings.json');
+        console.warn('[ClaudeProfileManager] Skipping proxy mode to avoid incorrect env vars (ANTHROPIC_BASE_URL vs ANTHROPIC_FOUNDRY_RESOURCE)');
+        // Do NOT return proxy env vars for Azure Foundry - they use wrong variable names
+      } else {
+        // Non-Azure proxy - use standard proxy vars
+        env.ANTHROPIC_BASE_URL = profile.proxyBaseUrl;
+        env.ANTHROPIC_AUTH_TOKEN = profile.proxyApiKey;
+
+        console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name, {
+          baseUrl: profile.proxyBaseUrl
+        });
+        return env;
+      }
     }
 
     // Priority 2: OAuth token
@@ -517,6 +527,7 @@ export class ClaudeProfileManager {
   /**
    * Check if a profile has valid authentication for starting tasks.
    * A profile is considered authenticated if:
+   * 0) Azure Foundry is enabled via settings.json with valid config, OR
    * 1) Proxy mode is enabled with valid proxy credentials, OR
    * 2) It has a valid OAuth token (not expired), OR
    * 3) It has an authenticated configDir (credential files exist)
@@ -525,15 +536,29 @@ export class ClaudeProfileManager {
    * @returns true if the profile can authenticate, false otherwise
    */
   hasValidAuth(profileId?: string): boolean {
+    // Check 0: Azure Foundry via settings.json (SINGLE SOURCE OF TRUTH)
+    if (isAzureFoundryEnabled()) {
+      const authEnv = getAuthEnvVars();
+      if (Object.keys(authEnv).length > 0) {
+        console.warn('[ClaudeProfileManager] hasValidAuth: Azure Foundry enabled via settings.json');
+        return true;
+      }
+    }
+
     const profile = profileId ? this.getProfile(profileId) : this.getActiveProfile();
     if (!profile) {
       return false;
     }
 
-    // Check 1: Proxy mode is enabled with valid credentials
+    // Check 1: Proxy mode is enabled with valid credentials (non-Azure only)
     if (profile.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
-      console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name);
-      return true;
+      // Skip Azure Foundry-like proxies - those should use settings.json
+      const looksLikeAzureFoundry = profile.proxyBaseUrl.includes('.azure.com') ||
+                                     profile.proxyBaseUrl.includes('foundry');
+      if (!looksLikeAzureFoundry) {
+        console.warn('[ClaudeProfileManager] Using proxy mode for profile:', profile.name);
+        return true;
+      }
     }
 
     // Check 2: Profile has a valid OAuth token

@@ -6,7 +6,7 @@
  * Uses file locking to prevent race conditions in concurrent operations.
  */
 
-import { promises as fs } from 'fs';
+import { promises as fs, readFileSync } from 'fs';
 import path from 'path';
 import { app } from 'electron';
 // @ts-expect-error - no types available for proper-lockfile
@@ -93,6 +93,31 @@ export async function loadProfilesFile(): Promise<ProfilesFile> {
 
   try {
     const content = await fs.readFile(filePath, 'utf-8');
+    const data = JSON.parse(content);
+
+    // Validate parsed data structure
+    if (isValidProfilesFile(data)) {
+      return data;
+    }
+
+    // Validation failed - return default
+    return getDefaultProfilesFile();
+  } catch {
+    // File doesn't exist or read/parse error - return default
+    return getDefaultProfilesFile();
+  }
+}
+
+/**
+ * Load profiles.json synchronously from disk
+ * Used by terminal integration where async is not possible
+ * Returns default empty profiles file if file doesn't exist or is corrupted
+ */
+export function loadProfilesFileSync(): ProfilesFile {
+  const filePath = getProfilesFilePath();
+
+  try {
+    const content = readFileSync(filePath, 'utf-8');
     const data = JSON.parse(content);
 
     // Validate parsed data structure

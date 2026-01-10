@@ -4,6 +4,7 @@
  */
 
 import { getClaudeProfileManager } from './claude-profile-manager';
+import { getAuthEnvVars, isAzureFoundryEnabled } from './auth-env-builder';
 
 /**
  * Regex pattern to detect Claude Code rate limit messages
@@ -244,13 +245,22 @@ export function isAuthFailureError(output: string): boolean {
 
 /**
  * Get environment variables for a specific Claude profile.
- * Priority:
- * 1. Proxy mode (Azure Foundry/LiteLLM): ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN
- * 2. OAuth token: CLAUDE_CODE_OAUTH_TOKEN
- * 3. Config dir: CLAUDE_CONFIG_DIR (deprecated)
+ *
+ * SIMPLIFIED: First checks user's auth mode choice from settings.json.
+ * If user chose azure-foundry, uses that. Otherwise falls back to profile config.
+ *
  * Note: Tokens are decrypted automatically by the profile manager.
  */
 export function getProfileEnv(profileId?: string): Record<string, string> {
+  // FIRST: Check user's auth mode choice in settings.json
+  // This takes precedence over profile configuration
+  const authEnv = getAuthEnvVars();
+  if (Object.keys(authEnv).length > 0) {
+    console.warn('[getProfileEnv] Using Azure Foundry from user settings');
+    return authEnv;
+  }
+
+  // SECOND: Fall back to profile-based configuration
   const profileManager = getClaudeProfileManager();
   const profile = profileId
     ? profileManager.getProfile(profileId)
@@ -271,7 +281,7 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     return {};
   }
 
-  // Priority 1: Proxy mode (Azure Foundry/LiteLLM)
+  // Proxy mode (Azure Foundry/LiteLLM via profile)
   if (profile.proxyEnabled && profile.proxyBaseUrl && profile.proxyApiKey) {
     console.warn('[getProfileEnv] Using proxy mode for profile:', profile.name, {
       baseUrl: profile.proxyBaseUrl
@@ -283,30 +293,22 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     };
 
     // Check if Azure Foundry mode - add default model deployment names
-    // Azure Foundry deployments use names like "claude-opus-4-5" not "claude-opus-4-5-20251101"
     const isAzureFoundry = profile.proxyBaseUrl.includes('.azure.com') ||
                            profile.proxyBaseUrl.includes('azure') ||
                            profile.proxyBaseUrl.includes('foundry');
 
     if (isAzureFoundry) {
-      // CRITICAL: Set Azure Foundry deployment names
-      // Azure deployments use names like "claude-opus-4-5" instead of full IDs like "claude-opus-4-5-20251101"
       env.ANTHROPIC_DEFAULT_SONNET_MODEL = 'claude-sonnet-4-5';
       env.ANTHROPIC_DEFAULT_HAIKU_MODEL = 'claude-haiku-4-5';
       env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'claude-opus-4-5';
 
-      console.warn('[getProfileEnv] Azure Foundry detected - model overrides set:', {
-        sonnet: env.ANTHROPIC_DEFAULT_SONNET_MODEL,
-        haiku: env.ANTHROPIC_DEFAULT_HAIKU_MODEL,
-        opus: env.ANTHROPIC_DEFAULT_OPUS_MODEL
-      });
+      console.warn('[getProfileEnv] Azure Foundry detected - model overrides set');
     }
 
     return env;
   }
 
-  // Priority 2: OAuth token (instant switching, no browser auth needed)
-  // Use profile manager to get decrypted token
+  // OAuth token (instant switching, no browser auth needed)
   if (profile.oauthToken) {
     const decryptedToken = profileId
       ? profileManager.getProfileToken(profileId)
@@ -322,16 +324,15 @@ export function getProfileEnv(profileId?: string): Record<string, string> {
     }
   }
 
-  // Priority 3: If default profile, no env vars needed
+  // If default profile, no env vars needed
   if (profile.isDefault) {
     console.warn('[getProfileEnv] Using default profile (no env vars)');
     return {};
   }
 
-  // Priority 4: Use configDir for profiles without OAuth token (legacy)
+  // Use configDir for profiles without OAuth token (legacy)
   if (profile.configDir) {
     console.warn('[getProfileEnv] Using configDir fallback for profile:', profile.name);
-    console.warn('[getProfileEnv] WARNING: Profile has no OAuth token. Run "claude setup-token" and save the token to enable instant switching.');
     return {
       CLAUDE_CONFIG_DIR: profile.configDir
     };

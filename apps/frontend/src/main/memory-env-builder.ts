@@ -13,51 +13,53 @@
 
 import type { AppSettings } from '../shared/types/settings';
 import { getMemoriesDir } from './config-paths';
+import { getAuthEnvVars } from './auth-env-builder';
+
+/**
+ * Centralized Azure Foundry mode detection.
+ * Use this function instead of duplicating detection logic across files.
+ *
+ * @param settings - Optional AppSettings to check defaultAuthMode
+ * @param url - Optional URL to check for Azure Foundry patterns
+ * @returns true if Azure Foundry mode is detected
+ */
+export function isAzureFoundryMode(settings?: Partial<AppSettings> | null, url?: string): boolean {
+  // Check via settings.defaultAuthMode
+  if (settings?.defaultAuthMode === 'azure-foundry') {
+    return true;
+  }
+
+  // Check via URL patterns
+  if (url) {
+    const lowerUrl = url.toLowerCase();
+    if (
+      lowerUrl.includes('.azure.com') ||
+      lowerUrl.includes('services.ai.azure.com') ||
+      lowerUrl.includes('foundry')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * Build environment variables for memory/Graphiti and auth configuration from app settings.
+ *
+ * SIMPLIFIED: Uses centralized getAuthEnvVars() for Azure Foundry configuration.
+ * This ensures consistent auth handling across terminal, agents, and all other components.
  *
  * @param settings - App-wide settings from settings.json
  * @returns Record of environment variables to inject into agent processes
  */
 export function buildMemoryEnvVars(settings: AppSettings): Record<string, string> {
-  const env: Record<string, string> = {};
-
   // =========================================================================
   // AZURE FOUNDRY AUTHENTICATION (Claude API)
   // =========================================================================
-  // These settings are configured in the Onboarding Wizard (AzureFoundryStep)
-  // and must be passed to Python agent processes for Claude SDK to work.
-
-  if (settings.defaultAuthMode === 'azure-foundry') {
-    env.CLAUDE_CODE_USE_FOUNDRY = '1';
-
-    if (settings.azureFoundryApiKey) {
-      env.ANTHROPIC_FOUNDRY_API_KEY = settings.azureFoundryApiKey;
-      env.ANTHROPIC_AUTH_TOKEN = settings.azureFoundryApiKey; // Fallback for some SDK versions
-    }
-
-    if (settings.azureFoundryBaseUrl) {
-      env.ANTHROPIC_FOUNDRY_BASE_URL = settings.azureFoundryBaseUrl;
-    }
-
-    if (settings.azureFoundryResourceName) {
-      env.ANTHROPIC_FOUNDRY_RESOURCE = settings.azureFoundryResourceName;
-    }
-
-    // Model deployment names
-    if (settings.azureFoundrySonnetModel) {
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL = settings.azureFoundrySonnetModel;
-    }
-
-    if (settings.azureFoundryHaikuModel) {
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = settings.azureFoundryHaikuModel;
-    }
-
-    if (settings.azureFoundryOpusModel) {
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL = settings.azureFoundryOpusModel;
-    }
-  }
+  // Use centralized auth env builder - respects user's choice from settings.json
+  // and falls back to apps/backend/.env if needed
+  const env: Record<string, string> = { ...getAuthEnvVars() };
 
   // =========================================================================
   // GRAPHITI/MEMORY CONFIGURATION

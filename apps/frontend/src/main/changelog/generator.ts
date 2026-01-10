@@ -14,6 +14,8 @@ import { getCommits, getBranchDiffCommits } from './git-integration';
 import { detectRateLimit, createSDKRateLimitInfo, getProfileEnv } from '../rate-limit-detector';
 import { parsePythonCommand } from '../python-detector';
 import { getAugmentedEnv } from '../env-utils';
+import { getOAuthModeClearVars } from '../agent/env-utils';
+import { getAPIProfileEnv } from '../services/profile';
 import { buildMemoryEnvVars } from '../memory-env-builder';
 import { readSettingsFile } from '../settings-utils';
 import type { AppSettings } from '../../shared/types/settings';
@@ -142,7 +144,7 @@ export class ChangelogGenerator extends EventEmitter {
     this.debug('Spawning Python process...');
 
     // Build environment with explicit critical variables
-    const spawnEnv = this.buildSpawnEnvironment();
+    const spawnEnv = await this.buildSpawnEnvironment();
 
     // Parse Python command to handle space-separated commands like "py -3"
     const [pythonCommand, pythonBaseArgs] = parsePythonCommand(this.pythonPath);
@@ -245,8 +247,9 @@ export class ChangelogGenerator extends EventEmitter {
 
   /**
    * Build spawn environment with proper PATH and auth settings
+   * Includes API profile env vars for Azure Foundry support (same as InsightsConfig)
    */
-  private buildSpawnEnvironment(): Record<string, string> {
+  private async buildSpawnEnvironment(): Promise<Record<string, string>> {
     const homeDir = os.homedir();
     const isWindows = process.platform === 'win32';
 
@@ -256,9 +259,16 @@ export class ChangelogGenerator extends EventEmitter {
 
     // Get active Claude profile environment (OAuth token preferred, falls back to CLAUDE_CONFIG_DIR)
     const profileEnv = getProfileEnv();
+
+    // Get API profile env vars (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
+    // This is CRITICAL for Azure Foundry - provides the baseURL that the SDK needs
+    const apiProfileEnv = await getAPIProfileEnv();
+    const oauthModeClearVars = getOAuthModeClearVars(apiProfileEnv);
+
     this.debug('Active profile environment', {
       hasOAuthToken: !!profileEnv.CLAUDE_CODE_OAUTH_TOKEN,
       hasConfigDir: !!profileEnv.CLAUDE_CONFIG_DIR,
+      hasApiProfileBaseUrl: !!apiProfileEnv.ANTHROPIC_BASE_URL,
       authMethod: profileEnv.CLAUDE_CODE_OAUTH_TOKEN ? 'oauth-token' : (profileEnv.CLAUDE_CONFIG_DIR ? 'config-dir' : 'default')
     });
 
@@ -267,11 +277,20 @@ export class ChangelogGenerator extends EventEmitter {
     const appSettings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
     const memoryEnv = buildMemoryEnvVars(appSettings as AppSettings);
 
+    // Environment variable precedence (lowest to highest):
+    // 1. augmentedEnv - System PATH augmentation
+    // 2. autoBuildEnv - Backend .env vars
+    // 3. memoryEnv - Azure Foundry and Graphiti settings from settings.json
+    // 4. oauthModeClearVars - Clears stale ANTHROPIC_* vars when in OAuth mode
+    // 5. profileEnv - Claude OAuth token from profile manager
+    // 6. apiProfileEnv - Custom API profile (ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN)
     const spawnEnv: Record<string, string> = {
       ...augmentedEnv,
       ...this.autoBuildEnv,
       ...memoryEnv, // Azure Foundry and Graphiti settings from settings.json
+      ...oauthModeClearVars,
       ...profileEnv, // Include active Claude profile config
+      ...apiProfileEnv, // CRITICAL: API profile with ANTHROPIC_BASE_URL for Azure Foundry
       // Ensure critical env vars are set for claude CLI
       // Use USERPROFILE on Windows, HOME on Unix
       ...(isWindows ? { USERPROFILE: homeDir } : { HOME: homeDir }),
@@ -285,6 +304,7 @@ export class ChangelogGenerator extends EventEmitter {
       HOME: spawnEnv.HOME,
       USER: spawnEnv.USER,
       pathDirs: spawnEnv.PATH?.split(path.delimiter).length,
+      hasBaseUrl: !!spawnEnv.ANTHROPIC_BASE_URL,
       authMethod: spawnEnv.CLAUDE_CODE_OAUTH_TOKEN ? 'oauth-token' : (spawnEnv.CLAUDE_CONFIG_DIR ? `config-dir:${spawnEnv.CLAUDE_CONFIG_DIR}` : 'default')
     });
 
