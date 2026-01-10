@@ -821,7 +821,7 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                     </div>
 
                     <Input
-                      placeholder="https://your-resource.openai.azure.com/anthropic"
+                      placeholder="https://your-resource.services.ai.azure.com"
                       value={newAzureBaseUrl}
                       onChange={(e) => {
                         setNewAzureBaseUrl(e.target.value);
@@ -1044,7 +1044,7 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                   {/* API Key */}
                   <div className="space-y-1">
                     <Label className="text-xs">
-                      {t('integrations.azureApiKey') || 'API Key'}
+                      {t('integrations.azureApiKey') || 'API Key'} *
                     </Label>
                     <div className="relative">
                       <Input
@@ -1066,39 +1066,64 @@ export function IntegrationSettings({ settings, onSettingsChange, isOpen }: Inte
                     </div>
                   </div>
 
-                  {/* Base URL */}
+                  {/* Resource Name (Recommended) */}
                   <div className="space-y-1">
                     <Label className="text-xs">
-                      {t('integrations.azureBaseUrl') || 'Base URL'}
+                      {t('integrations.azureResourceName') || 'Resource Name'} * (Recommended)
                     </Label>
                     <Input
-                      placeholder="https://your-resource.openai.azure.com/anthropic"
+                      placeholder="aif-your-resource-name"
+                      value={settings.azureFoundryResourceName || ''}
+                      onChange={(e) =>
+                        onSettingsChange({
+                          ...settings,
+                          azureFoundryResourceName: e.target.value || undefined,
+                          // Clear Base URL when Resource Name is set (mutually exclusive)
+                          azureFoundryBaseUrl: e.target.value ? undefined : settings.azureFoundryBaseUrl
+                        })
+                      }
+                      disabled={!!(settings.azureFoundryBaseUrl?.trim())}
+                      className="h-8 text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The name of your Azure AI Foundry resource. The SDK will automatically construct the endpoint URL.
+                    </p>
+                  </div>
+
+                  {/* Divider with OR */}
+                  <div className="flex items-center gap-4 py-1">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-xs text-muted-foreground uppercase">or</span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+
+                  {/* Base URL (Advanced) */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">
+                      {t('integrations.azureBaseUrl') || 'Base URL'} (Advanced)
+                    </Label>
+                    <Input
+                      placeholder="https://your-resource.services.ai.azure.com"
                       value={settings.azureFoundryBaseUrl || ''}
                       onChange={(e) => {
                         const url = e.target.value;
-                        onSettingsChange({ ...settings, azureFoundryBaseUrl: url || undefined });
+                        onSettingsChange({
+                          ...settings,
+                          azureFoundryBaseUrl: url || undefined,
+                          // Clear Resource Name when Base URL is set (mutually exclusive)
+                          azureFoundryResourceName: url ? undefined : settings.azureFoundryResourceName
+                        });
                         validateGlobalAzureUrl(url);
                       }}
-                      className={cn("h-8 text-sm", globalAzureUrlError && "border-destructive")}
+                      disabled={!!(settings.azureFoundryResourceName?.trim())}
+                      className={cn("h-8 text-sm", globalAzureUrlError && "border-destructive", settings.azureFoundryResourceName?.trim() && "opacity-50")}
                     />
                     {globalAzureUrlError && (
                       <p className="text-xs text-destructive">{globalAzureUrlError}</p>
                     )}
-                  </div>
-
-                  {/* Resource Name */}
-                  <div className="space-y-1">
-                    <Label className="text-xs">
-                      {t('integrations.azureResourceName') || 'Resource Name'}
-                    </Label>
-                    <Input
-                      placeholder="your-azure-resource"
-                      value={settings.azureFoundryResourceName || ''}
-                      onChange={(e) =>
-                        onSettingsChange({ ...settings, azureFoundryResourceName: e.target.value || undefined })
-                      }
-                      className="h-8 text-sm"
-                    />
+                    <p className="text-xs text-muted-foreground">
+                      Only use if you need a custom endpoint. The <code className="bg-muted px-1 rounded">/anthropic</code> suffix will be added automatically.
+                    </p>
                   </div>
 
                   {/* Model Deployments */}

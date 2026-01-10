@@ -24,8 +24,11 @@ interface AzureFoundryStepProps {
 
 interface AzureConfig {
   apiKey: string;
-  baseUrl: string;
+  // IMPORTANT: resourceName OR baseUrl - they are mutually exclusive!
+  // If resourceName is provided, SDK constructs the URL automatically
+  // If baseUrl is provided, it's used directly (for custom endpoints)
   resourceName: string;
+  baseUrl: string;
   // Model deployment names in Azure Foundry
   sonnetModel: string;
   haikuModel: string;
@@ -53,7 +56,10 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
   const [error, setError] = useState<string | null>(null);
   const [isValid, setIsValid] = useState(false);
 
-  const isConfigComplete = config.apiKey.trim() && config.baseUrl.trim();
+  // Config is complete if we have API key AND (Resource Name OR Base URL)
+  // Resource Name and Base URL are mutually exclusive - SDK uses one or the other
+  const hasEndpoint = config.resourceName.trim() || config.baseUrl.trim();
+  const isConfigComplete = config.apiKey.trim() && hasEndpoint;
 
   const handleChange = (field: keyof AzureConfig, value: string) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -68,21 +74,31 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
     setError(null);
 
     try {
-      // Basic URL validation - supports both Azure Foundry endpoint formats
-      const url = config.baseUrl.trim();
-      const isAzureFoundry = url.includes('services.ai.azure.com') || url.includes('openai.azure.com');
+      const resourceName = config.resourceName.trim();
+      const baseUrl = config.baseUrl.trim();
 
-      if (!isAzureFoundry) {
-        setError('Base URL should be an Azure Foundry endpoint (e.g., https://your-resource.services.ai.azure.com)');
-        setIsValidating(false);
-        return;
+      // If Resource Name is provided, construct the URL for validation
+      // If Base URL is provided directly, validate it
+      let urlToValidate = baseUrl;
+
+      if (resourceName && !baseUrl) {
+        // Construct URL from Resource Name (SDK format)
+        urlToValidate = `https://${resourceName}.services.ai.azure.com/anthropic`;
+      } else if (baseUrl) {
+        // Validate the provided URL format
+        const isAzureFoundry = baseUrl.includes('services.ai.azure.com') || baseUrl.includes('openai.azure.com');
+        if (!isAzureFoundry) {
+          setError('Base URL should be an Azure Foundry endpoint (e.g., https://your-resource.services.ai.azure.com)');
+          setIsValidating(false);
+          return;
+        }
       }
 
       // Call validation API - the handler will normalize the URL
       const result = await window.electronAPI.validateAzureFoundryConfig({
         apiKey: config.apiKey.trim(),
-        baseUrl: url,
-        resourceName: config.resourceName.trim() || undefined
+        baseUrl: urlToValidate,
+        resourceName: resourceName || undefined
       });
 
       if (result.success) {
@@ -104,17 +120,29 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
     setError(null);
 
     try {
-      // Normalize URL - ensure it ends with /anthropic (as required by Azure Foundry)
-      let normalizedUrl = config.baseUrl.trim().replace(/\/$/, '');
-      if (!normalizedUrl.endsWith('/anthropic')) {
-        normalizedUrl = `${normalizedUrl}/anthropic`;
+      const resourceName = config.resourceName.trim();
+      const baseUrl = config.baseUrl.trim();
+
+      // IMPORTANT: Resource Name and Base URL are mutually exclusive!
+      // If Resource Name is provided, SDK constructs the URL automatically
+      // If only Base URL is provided, use it directly
+      let normalizedBaseUrl: string | undefined;
+
+      if (!resourceName && baseUrl) {
+        // Only set Base URL if Resource Name is NOT provided
+        normalizedBaseUrl = baseUrl.replace(/\/$/, '');
+        if (!normalizedBaseUrl.endsWith('/anthropic')) {
+          normalizedBaseUrl = `${normalizedBaseUrl}/anthropic`;
+        }
       }
+      // If Resource Name is provided, don't set Base URL - SDK will construct it
 
       // Save to global settings
       const result = await window.electronAPI.saveSettings({
         azureFoundryApiKey: config.apiKey.trim(),
-        azureFoundryBaseUrl: normalizedUrl,
-        azureFoundryResourceName: config.resourceName.trim() || undefined,
+        // Only set one of these - they are mutually exclusive
+        azureFoundryResourceName: resourceName || undefined,
+        azureFoundryBaseUrl: normalizedBaseUrl,
         // Model deployment names
         azureFoundrySonnetModel: config.sonnetModel.trim() || undefined,
         azureFoundryHaikuModel: config.haikuModel.trim() || undefined,
@@ -198,7 +226,7 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
                 <Input
                   id="apiKey"
                   type={showApiKey ? 'text' : 'password'}
-                  placeholder="Enter your Azure OpenAI API key"
+                  placeholder="Enter your Azure AI Foundry API key"
                   value={config.apiKey}
                   onChange={(e) => handleChange('apiKey', e.target.value)}
                   className="pr-10"
@@ -213,33 +241,44 @@ export function AzureFoundryStep({ onNext, onBack, onSkip }: AzureFoundryStepPro
               </div>
             </div>
 
-            {/* Base URL */}
+            {/* Resource Name (Recommended) */}
             <div className="space-y-2">
-              <Label htmlFor="baseUrl">Base URL *</Label>
-              <Input
-                id="baseUrl"
-                type="text"
-                placeholder="https://your-resource.openai.azure.com/anthropic"
-                value={config.baseUrl}
-                onChange={(e) => handleChange('baseUrl', e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Your Azure AI Foundry endpoint (e.g., https://your-resource.openai.azure.com). The /anthropic suffix will be added automatically if needed.
-              </p>
-            </div>
-
-            {/* Resource Name (optional) */}
-            <div className="space-y-2">
-              <Label htmlFor="resourceName">Resource Name (optional)</Label>
+              <Label htmlFor="resourceName">Resource Name * (Recommended)</Label>
               <Input
                 id="resourceName"
                 type="text"
-                placeholder="your-resource-name"
+                placeholder="aif-your-resource-name"
                 value={config.resourceName}
                 onChange={(e) => handleChange('resourceName', e.target.value)}
+                disabled={!!config.baseUrl.trim()}
               />
               <p className="text-xs text-muted-foreground">
-                The name of your Azure OpenAI resource (extracted from URL if not provided).
+                The name of your Azure AI Foundry resource. The SDK will automatically construct the endpoint URL.
+                Example: <code className="bg-muted px-1 rounded">aif-cockpit-br-prd01</code>
+              </p>
+            </div>
+
+            {/* Divider with OR */}
+            <div className="flex items-center gap-4 py-2">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-xs text-muted-foreground uppercase">or</span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+
+            {/* Base URL (Advanced) */}
+            <div className="space-y-2">
+              <Label htmlFor="baseUrl" className="text-muted-foreground">Base URL (Advanced)</Label>
+              <Input
+                id="baseUrl"
+                type="text"
+                placeholder="https://your-resource.services.ai.azure.com"
+                value={config.baseUrl}
+                onChange={(e) => handleChange('baseUrl', e.target.value)}
+                disabled={!!config.resourceName.trim()}
+                className={config.resourceName.trim() ? 'opacity-50' : ''}
+              />
+              <p className="text-xs text-muted-foreground">
+                Only use if you need a custom endpoint. The <code className="bg-muted px-1 rounded">/anthropic</code> suffix will be added automatically.
               </p>
             </div>
 
