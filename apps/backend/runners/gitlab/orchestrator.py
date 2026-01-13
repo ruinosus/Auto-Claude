@@ -36,6 +36,17 @@ except ImportError:
     )
     from services import MRReviewEngine
 
+# Import safe_print for BrokenPipeError handling
+try:
+    from core.io_utils import safe_print
+except ImportError:
+    # Fallback for direct script execution
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from core.io_utils import safe_print
+
 # ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
     from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
@@ -201,7 +212,7 @@ class GitLabOrchestrator:
 
     async def _gather_mr_context(self, mr_iid: int) -> MRContext:
         """Gather context for an MR."""
-        print(f"[GitLab] Fetching MR !{mr_iid} data...", flush=True)
+        safe_print(f"[GitLab] Fetching MR !{mr_iid} data...")
 
         # Get MR details
         mr_data = self.client.get_mr(mr_iid)
@@ -267,7 +278,7 @@ class GitLabOrchestrator:
         Returns:
             MRReviewResult with findings and overall assessment
         """
-        print(f"[GitLab] Starting review for MR !{mr_iid}", flush=True)
+        safe_print(f"[GitLab] Starting review for MR !{mr_iid}")
 
         # Setup Langfuse tracing
         use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
@@ -305,10 +316,9 @@ class GitLabOrchestrator:
         try:
             # Gather MR context
             context = await self._gather_mr_context(mr_iid)
-            print(
+            safe_print(
                 f"[GitLab] Context gathered: {context.title} "
-                f"({len(context.changed_files)} files, {context.total_additions}+/{context.total_deletions}-)",
-                flush=True,
+                f"({len(context.changed_files)} files, {context.total_additions}+/{context.total_deletions}-)"
             )
 
             self._report_progress(
@@ -319,7 +329,7 @@ class GitLabOrchestrator:
             findings, verdict, summary, blockers = await self.review_engine.run_review(
                 context
             )
-            print(f"[GitLab] Review complete: {len(findings)} findings", flush=True)
+            safe_print(f"[GitLab] Review complete: {len(findings)} findings")
 
             # Map verdict to overall_status
             if verdict == MergeVerdict.BLOCKED:
@@ -399,7 +409,7 @@ class GitLabOrchestrator:
                 error_msg = f"MR !{mr_iid} not found in GitLab."
             elif e.code == 429:
                 error_msg = "GitLab rate limit exceeded. Please try again later."
-            print(f"[GitLab] Review failed for !{mr_iid}: {error_msg}", flush=True)
+            safe_print(f"[GitLab] Review failed for !{mr_iid}: {error_msg}")
             result = MRReviewResult(
                 mr_iid=mr_iid,
                 project=self.config.project,
@@ -418,7 +428,7 @@ class GitLabOrchestrator:
 
         except json.JSONDecodeError as e:
             error_msg = f"Invalid JSON response from GitLab: {e}"
-            print(f"[GitLab] Review failed for !{mr_iid}: {error_msg}", flush=True)
+            safe_print(f"[GitLab] Review failed for !{mr_iid}: {error_msg}")
             result = MRReviewResult(
                 mr_iid=mr_iid,
                 project=self.config.project,
@@ -437,7 +447,7 @@ class GitLabOrchestrator:
 
         except OSError as e:
             error_msg = f"File system error: {e}"
-            print(f"[GitLab] Review failed for !{mr_iid}: {error_msg}", flush=True)
+            safe_print(f"[GitLab] Review failed for !{mr_iid}: {error_msg}")
             result = MRReviewResult(
                 mr_iid=mr_iid,
                 project=self.config.project,
@@ -458,8 +468,8 @@ class GitLabOrchestrator:
             # Catch-all for unexpected errors, with full traceback for debugging
             error_details = f"{type(e).__name__}: {e}"
             full_traceback = traceback.format_exc()
-            print(f"[GitLab] Review failed for !{mr_iid}: {error_details}", flush=True)
-            print(f"[GitLab] Traceback:\n{full_traceback}", flush=True)
+            safe_print(f"[GitLab] Review failed for !{mr_iid}: {error_details}")
+            safe_print(f"[GitLab] Traceback:\n{full_traceback}")
 
             result = MRReviewResult(
                 mr_iid=mr_iid,
@@ -489,7 +499,7 @@ class GitLabOrchestrator:
         Returns:
             MRReviewResult with follow-up analysis
         """
-        print(f"[GitLab] Starting follow-up review for MR !{mr_iid}", flush=True)
+        safe_print(f"[GitLab] Starting follow-up review for MR !{mr_iid}")
 
         # Setup Langfuse tracing
         use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()

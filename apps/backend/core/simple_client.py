@@ -26,6 +26,7 @@ from pathlib import Path
 from agents.tools_pkg import get_agent_config, get_default_thinking_level
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 from core.auth import get_sdk_env_vars, require_auth_token
+from core.client import find_claude_cli
 from phase_config import get_thinking_budget, resolve_model_id
 
 
@@ -87,14 +88,22 @@ def create_simple_client(
     # Resolve model for Azure Foundry compatibility
     resolved_model = resolve_model_id(model)
 
-    return ClaudeSDKClient(
-        options=ClaudeAgentOptions(
-            model=resolved_model,
-            system_prompt=system_prompt,
-            allowed_tools=allowed_tools,
-            max_turns=max_turns,
-            cwd=str(cwd.resolve()) if cwd else None,
-            env=sdk_env,
-            max_thinking_tokens=max_thinking_tokens,
-        )
-    )
+    # Find Claude CLI path (handles non-standard installations)
+    cli_path = find_claude_cli()
+
+    # Build options dict
+    options_kwargs = {
+        "model": resolved_model,
+        "system_prompt": system_prompt,
+        "allowed_tools": allowed_tools,
+        "max_turns": max_turns,
+        "cwd": str(cwd.resolve()) if cwd else None,
+        "env": sdk_env,
+        "max_thinking_tokens": max_thinking_tokens,
+    }
+
+    # Add CLI path if found
+    if cli_path:
+        options_kwargs["cli_path"] = cli_path
+
+    return ClaudeSDKClient(options=ClaudeAgentOptions(**options_kwargs))

@@ -269,12 +269,22 @@ def generate_planner_prompt(spec_dir: Path, project_dir: Path | None = None) -> 
             pass  # Fall through to direct file read
 
     if prompt is None:
-        # Load the full planner prompt from file
-        prompts_dir = Path(__file__).parent / "prompts"
-        planner_file = prompts_dir / "planner.md"
+        # Load the full planner prompt from file using candidate dirs
+        candidate_dirs = [
+            Path(__file__).parent.parent / "prompts",  # current layout
+            Path(__file__).parent / "prompts",  # legacy fallback (if any)
+        ]
+        planner_file = next(
+            (
+                (candidate_dir / "planner.md")
+                for candidate_dir in candidate_dirs
+                if (candidate_dir / "planner.md").exists()
+            ),
+            None,
+        )
 
-        if planner_file.exists():
-            prompt = planner_file.read_text()
+        if planner_file:
+            prompt = planner_file.read_text(encoding="utf-8")
         else:
             prompt = (
                 "Read spec.md and create implementation_plan.json with phases and subtasks."
