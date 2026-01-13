@@ -9,10 +9,10 @@ Reads configuration from task_metadata.json and provides resolved model IDs.
 import json
 import os
 from pathlib import Path
-from typing import Literal, TypedDict
+from typing import Dict, Literal, Optional, Tuple, TypedDict
 
 # Model shorthand to full model ID mapping
-MODEL_ID_MAP: dict[str, str] = {
+MODEL_ID_MAP: Dict[str, str] = {
     "opus": "claude-opus-4-5-20251101",
     "sonnet": "claude-sonnet-4-5-20250929",
     "haiku": "claude-haiku-4-5-20251001",
@@ -20,7 +20,7 @@ MODEL_ID_MAP: dict[str, str] = {
 
 # Thinking level to budget tokens mapping (None = no extended thinking)
 # Values must match auto-claude-ui/src/shared/constants/models.ts THINKING_BUDGET_MAP
-THINKING_BUDGET_MAP: dict[str, int | None] = {
+THINKING_BUDGET_MAP: Dict[str, Optional[int]] = {
     "none": None,
     "low": 1024,
     "medium": 4096,  # Moderate analysis
@@ -31,7 +31,7 @@ THINKING_BUDGET_MAP: dict[str, int | None] = {
 # Spec runner phase-specific thinking levels
 # Heavy phases use ultrathink for deep analysis
 # Light phases use medium after compaction
-SPEC_PHASE_THINKING_LEVELS: dict[str, str] = {
+SPEC_PHASE_THINKING_LEVELS: Dict[str, str] = {
     # Heavy phases - ultrathink (discovery, spec creation, self-critique)
     "discovery": "ultrathink",
     "spec_writing": "ultrathink",
@@ -48,14 +48,14 @@ SPEC_PHASE_THINKING_LEVELS: dict[str, str] = {
 }
 
 # Default phase configuration (fallback, matches 'Balanced' profile)
-DEFAULT_PHASE_MODELS: dict[str, str] = {
+DEFAULT_PHASE_MODELS: Dict[str, str] = {
     "spec": "sonnet",
     "planning": "sonnet",  # Changed from "opus" (fix #433)
     "coding": "sonnet",
     "qa": "sonnet",
 }
 
-DEFAULT_PHASE_THINKING: dict[str, str] = {
+DEFAULT_PHASE_THINKING: Dict[str, str] = {
     "spec": "medium",
     "planning": "high",
     "coding": "medium",
@@ -154,7 +154,7 @@ def resolve_model_id(model: str) -> str:
     return resolved
 
 
-def get_thinking_budget(thinking_level: str) -> int | None:
+def get_thinking_budget(thinking_level: str) -> Optional[int]:
     """
     Get the thinking budget for a thinking level.
 
@@ -177,7 +177,7 @@ def get_thinking_budget(thinking_level: str) -> int | None:
     return THINKING_BUDGET_MAP[thinking_level]
 
 
-def load_task_metadata(spec_dir: Path) -> TaskMetadataConfig | None:
+def load_task_metadata(spec_dir: Path) -> Optional[TaskMetadataConfig]:
     """
     Load task_metadata.json from the spec directory.
 
@@ -201,7 +201,7 @@ def load_task_metadata(spec_dir: Path) -> TaskMetadataConfig | None:
 def get_phase_model(
     spec_dir: Path,
     phase: Phase,
-    cli_model: str | None = None,
+    cli_model: Optional[str] = None,
 ) -> str:
     """
     Get the resolved model ID for a specific execution phase.
@@ -245,7 +245,7 @@ def get_phase_model(
 def get_phase_thinking(
     spec_dir: Path,
     phase: Phase,
-    cli_thinking: str | None = None,
+    cli_thinking: Optional[str] = None,
 ) -> str:
     """
     Get the thinking level for a specific execution phase.
@@ -288,8 +288,8 @@ def get_phase_thinking(
 def get_phase_thinking_budget(
     spec_dir: Path,
     phase: Phase,
-    cli_thinking: str | None = None,
-) -> int | None:
+    cli_thinking: Optional[str] = None,
+) -> Optional[int]:
     """
     Get the thinking budget tokens for a specific execution phase.
 
@@ -308,9 +308,9 @@ def get_phase_thinking_budget(
 def get_phase_config(
     spec_dir: Path,
     phase: Phase,
-    cli_model: str | None = None,
-    cli_thinking: str | None = None,
-) -> tuple[str, str, int | None]:
+    cli_model: Optional[str] = None,
+    cli_thinking: Optional[str] = None,
+) -> Tuple[str, str, Optional[int]]:
     """
     Get the full configuration for a specific execution phase.
 
@@ -330,7 +330,7 @@ def get_phase_config(
     return model_id, thinking_level, thinking_budget
 
 
-def get_spec_phase_thinking_budget(phase_name: str) -> int | None:
+def get_spec_phase_thinking_budget(phase_name: str) -> Optional[int]:
     """
     Get the thinking budget for a specific spec runner phase.
 

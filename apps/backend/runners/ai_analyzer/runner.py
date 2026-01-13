@@ -32,12 +32,15 @@ except ImportError:
     trace_context = None
     _langfuse_init_result = False
 
-# Import ROI publisher
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -354,56 +357,34 @@ class AIAnalyzerRunner:
             self.cache_manager.save_result(insights)
             print(f"\n📊 Overall Score: {insights['overall_score']}/100")
 
-            # Publish ROI metrics
-            if ROI_PUBLISHER_AVAILABLE:
+            # Publish ROI metrics using ROI Engine
+            if ROI_ENGINE_AVAILABLE:
                 try:
-                    duration_seconds = time.time() - start_time
+                    # Estimate tokens and cost (from cost estimate)
+                    estimated_tokens = cost_estimate.estimated_tokens if hasattr(cost_estimate, 'estimated_tokens') else 0
+                    estimated_cost = cost_estimate.estimated_cost_usd if hasattr(cost_estimate, 'estimated_cost_usd') else 0.0
 
-                    # Extract artifacts from analysis results
-                    # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
+                    # Use ROI Engine to calculate and publish ROI
+                    squad_config = load_squad_config(project_dir=self.project_dir)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=f"ai-analyzer-{project_id}",
+                        project_dir=self.project_dir,
+                        token_cost=estimated_cost,
+                        squad_config=squad_config,
+                    )
+                    await publish_roi(
+                        roi_result,
+                        trace_id=langfuse_trace_id,
+                        project_dir=self.project_dir,
+                    )
+
+                    # Extract artifacts for reporting (optional)
                     artifacts, langfuse_refs = extract_analyzer_artifacts(
                         insights,
                         project_dir=self.project_dir,
                         trace_id=langfuse_trace_id,
                     )
 
-                    # Count artifact types for metrics (use full artifacts for counts)
-                    architecture_insights = sum(1 for a in artifacts if a["type"] == "architecture_insight")
-                    tech_debt_items = sum(1 for a in artifacts if a["type"] == "tech_debt_item")
-                    security_findings = sum(1 for a in artifacts if a["type"] == "security_audit")
-                    performance_bottlenecks = sum(1 for a in artifacts if a["type"] == "performance_bottleneck")
-                    code_quality_scores = sum(1 for a in artifacts if a["type"] == "code_quality_score")
-                    recommendations = sum(1 for a in artifacts if a["type"] == "recommendation")
-
-                    # Calculate total artifact value (use full artifacts for value)
-                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
-
-                    # Estimate tokens and cost (from cost estimate)
-                    estimated_tokens = cost_estimate.estimated_tokens if hasattr(cost_estimate, 'estimated_tokens') else 0
-                    estimated_cost = cost_estimate.estimated_cost_usd if hasattr(cost_estimate, 'estimated_cost_usd') else 0.0
-
-                    # Publish ROI with Langfuse refs (truncated previews, not full content)
-                    await publish_feature_roi(
-                        feature_type="ai_analyzer",
-                        project_id=project_id,
-                        cost_usd=estimated_cost,
-                        tokens=estimated_tokens,
-                        duration_seconds=duration_seconds,
-                        trace_id=langfuse_trace_id,
-                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
-                        metrics={
-                            "analyzers_run": len(analyzers_to_run),
-                            "overall_score": insights.get("overall_score", 0),
-                            "architecture_insights": architecture_insights,
-                            "tech_debt_items": tech_debt_items,
-                            "security_findings": security_findings,
-                            "performance_bottlenecks": performance_bottlenecks,
-                            "code_quality_scores": code_quality_scores,
-                            "recommendations": recommendations,
-                            "total_artifacts": len(artifacts),
-                            "total_artifact_value_usd": total_artifact_value,
-                        },
-                    )
                 except Exception as e:
                     # Don't break the main flow if ROI publishing fails
                     print(f"Warning: Failed to publish ROI metrics: {e}")

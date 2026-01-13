@@ -1,0 +1,71 @@
+/**
+ * ROI Engine SDK - Component Styles
+ *
+ * Main CSS file that includes all component styles.
+ * Import this file to include all SDK component styles.
+ *
+ * Usage:
+ *   import '@auto-claude/roi-sdk/dist/components/index.css';
+ *
+ * Or import individual component styles:
+ *   import '@auto-claude/roi-sdk/dist/components/ROISummaryCard.css';
+ */
+
+@import './ROISummaryCard.css';
+@import './ArtifactsByRole.css';
+@import './ValueBreakdown.css';
+
+/* =============================================================================
+   CSS Custom Properties (Theme Variables)
+   ============================================================================= */
+
+:root {
+  /* Card styles */
+  --roi-card-bg: #ffffff;
+  --roi-card-border: #e5e7eb;
+  --roi-card-radius: 0.75rem;
+  --roi-card-padding: 1.5rem;
+  --roi-card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+
+  /* Text colors */
+  --roi-text: #374151;
+  --roi-text-muted: #6b7280;
+
+  /* Semantic colors */
+  --roi-positive: #10b981;
+  --roi-negative: #ef4444;
+  --roi-focus: #3b82f6;
+
+  /* Backgrounds */
+  --roi-summary-bg: #f9fafb;
+  --roi-breakdown-bg: #f9fafb;
+  --roi-header-bg: #ffffff;
+  --roi-header-hover: #f9fafb;
+  --roi-item-border: #f3f4f6;
+  --roi-item-hover: #f9fafb;
+  --roi-bar-track: #e5e7eb;
+
+  /* Loading skeleton */
+  --roi-skeleton-start: #f3f4f6;
+  --roi-skeleton-mid: #e5e7eb;
+}
+
+/* Dark mode variables */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --roi-card-bg: #1f2937;
+    --roi-card-border: #374151;
+    --roi-card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+    --roi-text: #f9fafb;
+    --roi-text-muted: #9ca3af;
+    --roi-summary-bg: #111827;
+    --roi-breakdown-bg: #111827;
+    --roi-header-bg: #1f2937;
+    --roi-header-hover: #374151;
+    --roi-item-border: #374151;
+    --roi-item-hover: #374151;
+    --roi-bar-track: #374151;
+    --roi-skeleton-start: #374151;
+    --roi-skeleton-mid: #4b5563;
+  }
+}

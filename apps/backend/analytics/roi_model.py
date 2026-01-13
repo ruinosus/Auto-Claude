@@ -2,7 +2,19 @@
 Unified ROI Model
 ==================
 
-Defines a universal ROI structure that works across all Auto-Claude features:
+.. deprecated::
+    This module is DEPRECATED. Use the ROI Engine models instead:
+
+    from roi_engine.core import ArtifactValue, ROIResult, Role, Seniority
+
+    The ROI Engine replaces the 4-dimension value model (Execution, Decision,
+    Prevention, Knowledge) with artifact-based valuation where each artifact
+    maps to a squad role with hourly rates.
+
+    See apps/roi_engine/core/models.py for the new implementation.
+    This module will be removed in a future release.
+
+LEGACY: Defines a universal ROI structure that works across all Auto-Claude features:
 - Ideation (code improvements, security, performance, etc.)
 - Roadmap (feature prioritization, strategic decisions)
 - Spec (requirements clarity, reduced rework)

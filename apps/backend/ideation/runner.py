@@ -21,12 +21,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from debug import debug, debug_section, debug_success, debug_warning
 from ui import Icons, box, icon, muted, print_section, print_status
 
-# ROI Publishing
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_ideation_roi
-    ROI_PUBLISHER_AVAILABLE = True
-except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
+except ImportError as e:
+    ROI_ENGINE_AVAILABLE = False
+    debug_warning("ideation_runner", f"ROI Engine import failed: {e}")
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact Storage
 try:
@@ -36,11 +40,29 @@ try:
         _get_artifacts_dir,
     )
     ARTIFACT_STORAGE_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     ARTIFACT_STORAGE_AVAILABLE = False
     save_artifact_safe = None
     create_langfuse_reference = None
     _get_artifacts_dir = None
+    debug_warning("ideation_runner", f"Artifact Storage import failed: {e}")
+
+# Langfuse Integration
+try:
+    from analytics.langfuse_integration import (
+        init_langfuse,
+        trace_context,
+        is_langfuse_ready,
+        flush_langfuse,
+    )
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
+except ImportError as e:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    is_langfuse_ready = None
+    flush_langfuse = None
+    debug_warning("ideation_runner", f"Langfuse import failed: {e}")
 
 from .config import IdeationConfigManager
 from .generator import IDEATION_TYPE_LABELS
@@ -127,6 +149,33 @@ class IdeationOrchestrator:
         # Initialize output streamer
         self.output_streamer = OutputStreamer()
 
+    def _check_prerequisites(self) -> None:
+        """Log status of optional dependencies at startup."""
+        print_section("PREREQUISITES CHECK", Icons.GEAR)
+
+        # ROI Engine
+        if ROI_ENGINE_AVAILABLE:
+            print_status("ROI Engine: available", "success")
+        else:
+            print_status("ROI Engine: NOT available - ROI will not be published", "warning")
+
+        # Artifact Storage
+        if ARTIFACT_STORAGE_AVAILABLE:
+            print_status("Artifact Storage: available", "success")
+        else:
+            print_status("Artifact Storage: NOT available - artifacts will NOT be saved", "warning")
+
+        # Langfuse
+        langfuse_ready = LANGFUSE_AVAILABLE and is_langfuse_ready and is_langfuse_ready()
+        if langfuse_ready:
+            print_status("Langfuse: connected", "success")
+        elif LANGFUSE_AVAILABLE:
+            print_status("Langfuse: available but not ready", "warning")
+        else:
+            print_status("Langfuse: NOT available - no tracing", "warning")
+
+        print()  # Blank line after prerequisites
+
     async def run(self) -> bool:
         """Run the complete ideation generation process.
 
@@ -156,6 +205,42 @@ class IdeationOrchestrator:
             )
         )
 
+        # Check prerequisites before starting
+        self._check_prerequisites()
+
+        # Run with Langfuse trace context if available
+        langfuse_ready = LANGFUSE_AVAILABLE and is_langfuse_ready and is_langfuse_ready()
+        if langfuse_ready and trace_context:
+            with trace_context(
+                name="ideation-session",
+                project_id=self.project_dir.name,
+                agent_type="ideation",
+                metadata={
+                    "model": self.model,
+                    "enabled_types": self.enabled_types,
+                    "project_dir": str(self.project_dir),
+                },
+                tags=["ideation", f"model:{self.model}"],
+            ) as ctx:
+                trace_id = getattr(ctx, 'trace_id', None)
+                debug("ideation_runner", f"Running with Langfuse trace: {trace_id}")
+                result = await self._run_internal(trace_id)
+                if flush_langfuse:
+                    flush_langfuse()
+                return result
+        else:
+            debug("ideation_runner", "Running without Langfuse tracing")
+            return await self._run_internal(trace_id=None)
+
+    async def _run_internal(self, trace_id: str | None = None) -> bool:
+        """Internal run method that does the actual work.
+
+        Args:
+            trace_id: Langfuse trace ID for linking artifacts
+
+        Returns:
+            True if successful, False otherwise
+        """
         results = []
 
         # Phase 1: Project Index
@@ -253,8 +338,8 @@ class IdeationOrchestrator:
         memory_result = await self._save_to_memory()
         print(f"[MEMORY DEBUG] _save_to_memory returned: {memory_result}", file=sys.stderr, flush=True)
 
-        # Phase 6: Publish ROI
-        await self._publish_roi(results)
+        # Phase 6: Publish ROI (pass trace_id for Langfuse linking)
+        await self._publish_roi(results, trace_id)
 
         # Summary
         self._print_summary()
@@ -415,25 +500,31 @@ class IdeationOrchestrator:
             )
             return artifacts, langfuse_refs
         else:
-            # No local storage available - return artifacts as both
-            debug(
+            # No local storage available - warn user and return artifacts without saving
+            debug_warning(
                 "ideation_artifacts",
-                "Artifact storage not available, returning full artifacts",
-                artifacts_count=len(artifacts),
+                f"Artifact storage NOT available! ARTIFACT_STORAGE_AVAILABLE={ARTIFACT_STORAGE_AVAILABLE}, "
+                f"save_artifact_safe={save_artifact_safe is not None}, "
+                f"create_langfuse_reference={create_langfuse_reference is not None}. "
+                f"Artifacts will NOT be saved to disk!",
+            )
+            print_status(
+                f"WARNING: {len(artifacts)} artifacts generated but NOT saved - storage unavailable",
+                "warning",
             )
             return artifacts, artifacts
 
-    async def _publish_roi(self, results: list) -> None:
-        """Publish ROI metrics for ideation session.
+    async def _publish_roi(self, results: list, trace_id: str | None = None) -> None:
+        """Publish ROI metrics for ideation session using ROI Engine.
 
-        Calculates and publishes ROI to Langfuse for each ideation type.
-        Includes artifact extraction and storage for traceability.
+        Calculates artifact-based ROI and publishes to Langfuse.
 
         Args:
             results: List of IdeationPhaseResult objects
+            trace_id: Langfuse trace ID for linking ROI to session
         """
-        if not ROI_PUBLISHER_AVAILABLE:
-            debug_warning("ideation_runner", "ROI publisher not available, skipping ROI publish")
+        if not ROI_ENGINE_AVAILABLE:
+            debug_warning("ideation_runner", "ROI Engine not available, skipping ROI publish")
             return
 
         print_section("PHASE 6: PUBLISH ROI", Icons.CHART)
@@ -478,102 +569,52 @@ class IdeationOrchestrator:
                 total_tokens = len(self.enabled_types) * 2000  # ~2K tokens per type
                 total_cost = (total_tokens / 1000) * 0.003
 
-            # Publish ROI for the session
-            project_id = self.project_dir.name
+            # Extract artifacts from ALL ideas (use trace_id for Langfuse linking)
+            all_artifacts, all_langfuse_refs = self._extract_ideation_artifacts(ideas, trace_id=trace_id)
 
-            # Extract artifacts from ALL ideas (pass None for trace_id, will be set per-type)
-            all_artifacts, all_langfuse_refs = self._extract_ideation_artifacts(ideas, trace_id=None)
-
-            # Track totals for summary
-            total_roi_pct = 0
-            total_value = 0
-            successful_publishes = 0
-
-            for ideation_type, count in by_type.items():
-                # Count high impact ideas for this type
-                type_high_impact = sum(
-                    1 for idea in ideas
-                    if idea.get("type") == ideation_type and idea.get("priority", "").lower() == "high"
+            # Use ROI Engine to calculate and publish ROI
+            try:
+                squad_config = load_squad_config(project_dir=self.project_dir)
+                roi_result = calculate_roi_for_spec(
+                    spec_id=f"ideation-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                    project_dir=self.project_dir,
+                    token_cost=total_cost,
+                    squad_config=squad_config,
+                )
+                await publish_roi(
+                    roi_result,
+                    trace_id=trace_id,  # Link to Langfuse session trace
+                    project_dir=self.project_dir,
                 )
 
-                # Filter artifacts for this type
-                type_artifacts = [
-                    a for a in all_artifacts
-                    if a.get("metadata", {}).get("ideation_type") == ideation_type
-                ]
-                type_refs = [
-                    r for r in all_langfuse_refs
-                    if r.get("metadata", {}).get("ideation_type") == ideation_type
-                ]
+                total_artifact_value = sum(a.get("value_usd", 0) for a in all_artifacts)
+                print_status(
+                    f"ROI: {roi_result.roi_percentage:.0f}% "
+                    f"({roi_result.artifact_count} artifacts, ${roi_result.total_artifact_value:.2f} value)",
+                    "success",
+                )
 
-                # Calculate artifact value for this type
-                type_artifact_value = sum(a.get("value_usd", 0) for a in type_artifacts)
+                debug(
+                    "ideation_roi_summary",
+                    "Ideation ROI summary",
+                    total_ideas=len(ideas),
+                    total_artifacts=len(all_artifacts),
+                    total_artifact_value=total_artifact_value,
+                    roi_percentage=roi_result.roi_percentage,
+                    total_cost=total_cost,
+                )
 
-                # Estimate cost per type (distribute evenly)
-                type_cost = total_cost / len(by_type) if by_type else total_cost
-                type_tokens = total_tokens // len(by_type) if by_type else total_tokens
-                type_duration = total_duration / len(by_type) if by_type else 0.0
-
-                try:
-                    result = await publish_ideation_roi(
-                        project_id=project_id,
-                        ideation_type=ideation_type,
-                        ideas_generated=count,
-                        high_impact_ideas=type_high_impact,
-                        cost_usd=type_cost,
-                        tokens=type_tokens,
-                        model=self.model,
-                        duration_seconds=type_duration,
-                    )
-
-                    if result.get("success"):
-                        roi_pct = result.get("roi_percentage", 0)
-                        value = result.get("total_value_usd", 0)
-                        total_roi_pct += roi_pct
-                        total_value += value
-                        successful_publishes += 1
-                        print_status(
-                            f"{IDEATION_TYPE_LABELS.get(ideation_type, ideation_type)}: "
-                            f"ROI {roi_pct:.0f}% (${value:.2f} value, {len(type_artifacts)} artifacts)",
-                            "success",
-                        )
-                        debug(
-                            "ideation_roi",
-                            f"Published ROI for {ideation_type}",
-                            roi=roi_pct,
-                            value=value,
-                            cost=type_cost,
-                            artifacts=len(type_artifacts),
-                            artifact_value=type_artifact_value,
-                        )
-                    else:
-                        debug_warning(
-                            "ideation_roi",
-                            f"Failed to publish ROI for {ideation_type}: {result.get('error')}",
-                        )
-                except Exception as e:
-                    debug_warning("ideation_roi", f"Error publishing ROI for {ideation_type}: {e}")
+            except Exception as e:
+                debug_warning("ideation_roi", f"Failed to publish ROI via ROI Engine: {e}")
 
             # Summary
             total_ideas = len(ideas)
-            avg_roi = total_roi_pct / successful_publishes if successful_publishes > 0 else 0
             total_artifact_value = sum(a.get("value_usd", 0) for a in all_artifacts)
 
             print_status(
                 f"ROI published for {len(by_type)} ideation types ({total_ideas} ideas, "
                 f"{len(all_artifacts)} artifacts, ${total_artifact_value:.2f} artifact value)",
                 "success",
-            )
-
-            debug(
-                "ideation_roi_summary",
-                "Ideation ROI summary",
-                total_ideas=total_ideas,
-                total_artifacts=len(all_artifacts),
-                total_artifact_value=total_artifact_value,
-                avg_roi=avg_roi,
-                total_value=total_value,
-                total_cost=total_cost,
             )
 
         except Exception as e:

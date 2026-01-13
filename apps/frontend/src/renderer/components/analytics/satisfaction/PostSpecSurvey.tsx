@@ -1,3 +1,13 @@
+/**
+ * Post-Spec Survey
+ * =================
+ *
+ * Modal dialog for collecting user feedback after spec completion.
+ * Collects ratings for satisfaction, quality, time saved, and NPS.
+ *
+ * Now uses ROI Engine API via the API Bridge for survey submission.
+ */
+
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -12,7 +22,7 @@ import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import { Label } from '../../ui/label';
 import { Star } from 'lucide-react';
-import { analyticsApi } from '../../../services/analytics-api';
+import { apiBridge } from '../../../services/api-bridge';
 import { useProjectPath } from '../../../hooks/useProjectPath';
 
 interface StarRatingProps {
@@ -113,7 +123,9 @@ export function PostSpecSurvey({
     setError(null);
 
     try {
-      await analyticsApi.submitSatisfactionSurvey(projectPath, {
+      // Use API Bridge - routes to ROI Engine for survey submission
+      const context = apiBridge.createContext(projectPath);
+      await apiBridge.satisfaction.submitSurvey(context, {
         spec_id: specId,
         user_id: userId,
         overall_satisfaction: formData.overallSatisfaction,

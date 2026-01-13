@@ -201,7 +201,7 @@ def get_observations(
         return []
 
     try:
-        response = api.api.observations.list(trace_id=trace_id, limit=limit)
+        response = api.api.observations.get_many(trace_id=trace_id, limit=limit)
 
         return [
             {

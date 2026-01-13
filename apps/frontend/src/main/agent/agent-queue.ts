@@ -272,13 +272,19 @@ export class AgentQueueManager {
     // Get Python environment from pythonEnvManager (includes bundled site-packages)
     const pythonEnv = pythonEnvManager.getPythonEnv();
 
-    // Build PYTHONPATH: bundled site-packages (if any) + autoBuildSource for local imports
+    // Build PYTHONPATH: bundled site-packages (if any) + autoBuildSource + apps dir for local imports
+    // Note: We add the parent 'apps/' directory to allow importing sibling packages like roi_engine
     const pythonPathParts: string[] = [];
     if (pythonEnv.PYTHONPATH) {
       pythonPathParts.push(pythonEnv.PYTHONPATH);
     }
     if (autoBuildSource) {
       pythonPathParts.push(autoBuildSource);
+      // Add parent directory (apps/) so roi_engine and other sibling packages can be imported
+      const appsDir = path.dirname(autoBuildSource);
+      if (appsDir && appsDir !== autoBuildSource) {
+        pythonPathParts.push(appsDir);
+      }
     }
     const combinedPythonPath = pythonPathParts.join(process.platform === 'win32' ? ';' : ':');
 
@@ -607,13 +613,19 @@ export class AgentQueueManager {
     // Get Python environment from pythonEnvManager (includes bundled site-packages)
     const pythonEnv = pythonEnvManager.getPythonEnv();
 
-    // Build PYTHONPATH: bundled site-packages (if any) + autoBuildSource for local imports
+    // Build PYTHONPATH: bundled site-packages (if any) + autoBuildSource + apps dir for local imports
+    // Note: We add the parent 'apps/' directory to allow importing sibling packages like roi_engine
     const pythonPathParts: string[] = [];
     if (pythonEnv.PYTHONPATH) {
       pythonPathParts.push(pythonEnv.PYTHONPATH);
     }
     if (autoBuildSource) {
       pythonPathParts.push(autoBuildSource);
+      // Add parent directory (apps/) so roi_engine and other sibling packages can be imported
+      const appsDir = path.dirname(autoBuildSource);
+      if (appsDir && appsDir !== autoBuildSource) {
+        pythonPathParts.push(appsDir);
+      }
     }
     const combinedPythonPath = pythonPathParts.join(process.platform === 'win32' ? ';' : ':');
 

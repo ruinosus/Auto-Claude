@@ -2,7 +2,20 @@
 ROI Comparison Module
 =====================
 
-Provides comparative ROI analysis between projects and market benchmarks.
+.. deprecated::
+    This module is DEPRECATED. Use the ROI Engine instead:
+
+    from roi_engine.core import calculate_roi_for_project
+
+    The ROI Engine API provides comparison endpoints at:
+    - GET /api/benchmark/squad - Compare squad configurations
+    - GET /api/benchmark/project - Compare across projects
+    - GET /api/benchmark/efficiency - Efficiency metrics
+
+    See apps/roi_engine/ for the new implementation.
+    This module will be removed in a future release.
+
+LEGACY: Provides comparative ROI analysis between projects and market benchmarks.
 
 Market benchmarks are based on:
 - Forrester study: Average 370% ROI for AI coding tools

@@ -47,12 +47,15 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
-# ROI publisher (optional - graceful degradation if not available)
+# ROI Engine (optional - graceful degradation if not available)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, publish_roi, load_squad_config
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy ROI publisher fallback (deprecated - will be removed)
+ROI_PUBLISHER_AVAILABLE = False  # Force use of ROI Engine
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -213,6 +216,8 @@ async def publish_planner_roi(
     """
     Publish ROI metrics for a planner session.
 
+    Now uses ROI Engine for artifact-based ROI calculation.
+
     Args:
         project_dir: Project root directory
         spec_dir: Spec directory
@@ -226,8 +231,8 @@ async def publish_planner_roi(
     Returns:
         ROI result dictionary or None if publishing failed
     """
-    if not ROI_PUBLISHER_AVAILABLE:
-        logger.debug("ROI publisher not available, skipping ROI publish")
+    if not ROI_ENGINE_AVAILABLE:
+        logger.debug("ROI Engine not available, skipping ROI publish")
         return None
 
     try:
@@ -268,17 +273,35 @@ async def publish_planner_roi(
             "lines_removed": 0,
         }
 
-        # Publish ROI with Langfuse refs (truncated previews, not full content)
-        result = await publish_feature_roi(
-            feature_type="planner",  # Will map to BUILD_PLANNER
-            project_id=project_id,
-            cost_usd=0.0,  # Cost tracked separately in session
-            tokens=0,  # Tokens tracked separately in session
-            metrics=metrics,
+        # Calculate ROI using ROI Engine (artifact-based valuation)
+        # Artifacts were already saved above, ROI Engine reads from storage
+        squad_config = load_squad_config(project_dir)
+        roi_result = calculate_roi_for_spec(
             spec_id=spec_id,
-            trace_id=trace_id,
-            artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
+            project_dir=project_dir,
+            token_cost=0.0,  # Cost tracked separately in session
+            squad_config=squad_config,
         )
+
+        # Publish to Langfuse and save locally
+        publish_result = await publish_roi(
+            roi_result,
+            trace_id=trace_id,
+            project_dir=project_dir,
+        )
+
+        # Build result dict for compatibility
+        result = {
+            "roi_percentage": roi_result.roi_percentage,
+            "total_artifact_value": roi_result.total_artifact_value,
+            "token_cost": roi_result.token_cost,
+            "artifact_count": roi_result.artifact_count,
+            "net_value": roi_result.net_value,
+            "by_role": roi_result.by_role,
+            "by_type": roi_result.by_type,
+            "metrics": metrics,
+            "langfuse_published": publish_result.get("langfuse_published", False),
+        }
 
         # Save artifacts to file for traceability
         try:

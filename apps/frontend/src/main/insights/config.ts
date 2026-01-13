@@ -140,6 +140,21 @@ export class InsightsConfig {
       if (!hasAutoBuildSource) {
         pythonPathParts.push(normalizedAutoBuildSource);
       }
+
+      // Add parent directory (apps/) so roi_engine and other sibling packages can be imported
+      const appsDir = path.dirname(normalizedAutoBuildSource);
+      if (appsDir && appsDir !== normalizedAutoBuildSource) {
+        const appsDirComparator = process.platform === 'win32'
+          ? appsDir.toLowerCase()
+          : appsDir;
+        const hasAppsDir = pythonPathParts.some((entry) => {
+          const candidate = process.platform === 'win32' ? entry.toLowerCase() : entry;
+          return candidate === appsDirComparator;
+        });
+        if (!hasAppsDir) {
+          pythonPathParts.push(appsDir);
+        }
+      }
     }
 
     const combinedPythonPath = pythonPathParts.join(path.delimiter);

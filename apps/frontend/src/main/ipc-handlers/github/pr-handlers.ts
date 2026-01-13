@@ -854,7 +854,8 @@ async function runPRReview(
   const logCollector = new PRLogCollector(project, prNumber, repo, false);
 
   // Build environment with project settings
-  const subprocessEnv = await getRunnerEnv(getClaudeMdEnv(project));
+  // Pass backendPath so PYTHONPATH includes the parent (apps/) directory for roi_engine imports
+  const subprocessEnv = await getRunnerEnv(getClaudeMdEnv(project), backendPath);
 
   const { process: childProcess, promise } = runPythonSubprocess<PRReviewResult>({
     pythonPath: getPythonPath(backendPath),
@@ -1994,7 +1995,8 @@ export function registerPRHandlers(getMainWindow: () => BrowserWindow | null): v
           const logCollector = new PRLogCollector(project, prNumber, repo, true);
 
           // Build environment with project settings
-          const followupEnv = await getRunnerEnv(getClaudeMdEnv(project));
+          // Pass backendPath so PYTHONPATH includes the parent (apps/) directory for roi_engine imports
+          const followupEnv = await getRunnerEnv(getClaudeMdEnv(project), backendPath);
 
           const { process: childProcess, promise } = runPythonSubprocess<PRReviewResult>({
             pythonPath: getPythonPath(backendPath),

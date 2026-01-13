@@ -41,12 +41,15 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
-# Import ROI publisher
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -796,14 +799,13 @@ class PRReviewEngine:
             flush=True,
         )
 
-        # Publish ROI metrics (in try/except to not fail the review if ROI fails)
-        if ROI_PUBLISHER_AVAILABLE:
+        # Publish ROI metrics using ROI Engine (in try/except to not fail the review if ROI fails)
+        if ROI_ENGINE_AVAILABLE:
             try:
-                # Get project_id for ROI tracking
-                project_id = self.project_dir.name if self.project_dir else "unknown"
+                # Get spec_id for ROI tracking
                 spec_id = f"pr-{context.pr_number}"
 
-                # Extract artifacts from review results
+                # Extract artifacts from review results (for local storage)
                 # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
                 artifacts, langfuse_refs = extract_pr_review_artifacts(
                     unique_findings,
@@ -815,58 +817,27 @@ class PRReviewEngine:
                     trace_id=None,  # No trace_id available here
                 )
 
-                # Count specific issue types for metrics
-                security_issues = sum(
-                    1 for f in unique_findings
-                    if f.category.value == "security" or any(
-                        kw in f"{f.title} {f.description}".lower()
-                        for kw in ["security", "vulnerability", "injection", "xss"]
-                    )
-                )
-                bug_issues = sum(
-                    1 for f in unique_findings
-                    if any(
-                        kw in f"{f.title} {f.description}".lower()
-                        for kw in ["bug", "error", "fix", "issue", "broken"]
-                    )
-                )
+                # Estimate token cost for ROI calculation
+                # PR reviews typically use 2000-5000 tokens per pass
+                estimated_tokens = len(unique_findings) * 500 + len(structural_issues) * 300 + 2000
+                estimated_cost = (estimated_tokens / 1000) * 0.003 if estimated_tokens > 0 else 0.01
 
-                # Determine approval status from scan result
-                verdict = scan_result.get("verdict", "unknown")
-                approval = verdict in ["approved", "approve", "ready_to_merge", "ready"]
-
-                # Calculate total artifact value from full artifacts
-                total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
-
-                # Publish ROI with Langfuse refs (truncated previews, not full content)
-                roi_result = await publish_feature_roi(
-                    feature_type="github_pr_review",
-                    project_id=project_id,
-                    cost_usd=0.0,  # Cost is tracked in Langfuse traces
-                    tokens=0,  # Tokens are tracked in Langfuse traces
-                    metrics={
-                        "prs_reviewed": 1,
-                        "files_reviewed": len(context.changed_files),
-                        "comments_posted": len(unique_findings),
-                        "issues_found": len(unique_findings) + len(structural_issues),
-                        "security_issues": security_issues,
-                        "bug_issues": bug_issues,
-                        "structural_issues": len(structural_issues),
-                        "ai_triages": len(ai_triages),
-                        "approval": approval,
-                        "verdict": verdict,
-                        "artifacts_count": len(artifacts),
-                        "artifact_value_usd": total_artifact_value,
-                    },
+                # Calculate ROI using ROI Engine
+                squad_config = load_squad_config(project_dir=self.project_dir)
+                roi_result = calculate_roi_for_spec(
                     spec_id=spec_id,
-                    trace_id=None,  # Will create its own trace
-                    artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                    project_dir=self.project_dir,
+                    token_cost=estimated_cost,
+                    squad_config=squad_config,
                 )
+
+                # Publish to Langfuse
+                await publish_roi(roi_result, trace_id=None, project_dir=self.project_dir)
 
                 print(
-                    f"[AI] ROI published: {roi_result.get('roi_percentage', 0):.1f}% ROI, "
-                    f"${roi_result.get('total_value_usd', 0):.2f} value, "
-                    f"{len(artifacts)} artifacts extracted",
+                    f"[AI] ROI published: {roi_result.roi_percentage:.1f}% ROI, "
+                    f"${roi_result.total_artifact_value:.2f} value, "
+                    f"{roi_result.artifact_count} artifacts",
                     flush=True,
                 )
 

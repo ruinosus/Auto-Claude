@@ -1,0 +1,236 @@
+/**
+ * ROISummaryCard Styles
+ *
+ * Card component for displaying ROI calculation summary.
+ * Uses BEM naming convention.
+ */
+
+/* =============================================================================
+   Base
+   ============================================================================= */
+
+.roi-summary-card {
+  background: var(--roi-card-bg, #ffffff);
+  border: 1px solid var(--roi-card-border, #e5e7eb);
+  border-radius: var(--roi-card-radius, 0.75rem);
+  padding: var(--roi-card-padding, 1.5rem);
+  box-shadow: var(--roi-card-shadow, 0 1px 3px 0 rgb(0 0 0 / 0.1));
+}
+
+.roi-summary-card--loading {
+  opacity: 0.7;
+}
+
+.roi-summary-card--empty {
+  text-align: center;
+  color: var(--roi-text-muted, #6b7280);
+  padding: 2rem;
+}
+
+/* =============================================================================
+   Skeleton Loading
+   ============================================================================= */
+
+.roi-summary-card__skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--roi-skeleton-start, #f3f4f6) 0%,
+    var(--roi-skeleton-mid, #e5e7eb) 50%,
+    var(--roi-skeleton-start, #f3f4f6) 100%
+  );
+  background-size: 200% 100%;
+  animation: roi-skeleton-pulse 1.5s ease-in-out infinite;
+  height: 120px;
+  border-radius: 0.5rem;
+}
+
+@keyframes roi-skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* =============================================================================
+   Main ROI Display
+   ============================================================================= */
+
+.roi-summary-card__main {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.roi-summary-card__percentage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.roi-summary-card__value {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.roi-summary-card__value.positive {
+  color: var(--roi-positive, #10b981);
+}
+
+.roi-summary-card__value.negative {
+  color: var(--roi-negative, #ef4444);
+}
+
+.roi-summary-card__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--roi-text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* =============================================================================
+   Value Breakdown
+   ============================================================================= */
+
+.roi-summary-card__breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--roi-breakdown-bg, #f9fafb);
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.roi-summary-card__metric {
+  text-align: center;
+}
+
+.roi-summary-card__metric--highlight {
+  border-left: 2px solid var(--roi-card-border, #e5e7eb);
+  padding-left: 1rem;
+}
+
+.roi-summary-card__metric-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--roi-text-muted, #6b7280);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.roi-summary-card__metric-value {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.roi-summary-card__metric-value.positive {
+  color: var(--roi-positive, #10b981);
+}
+
+.roi-summary-card__metric-value.negative {
+  color: var(--roi-negative, #ef4444);
+}
+
+/* =============================================================================
+   Footer
+   ============================================================================= */
+
+.roi-summary-card__footer {
+  text-align: center;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--roi-card-border, #e5e7eb);
+}
+
+.roi-summary-card__artifact-count {
+  font-size: 0.875rem;
+  color: var(--roi-text-muted, #6b7280);
+}
+
+/* =============================================================================
+   Role Breakdown
+   ============================================================================= */
+
+.roi-summary-card__roles {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--roi-card-border, #e5e7eb);
+}
+
+.roi-summary-card__roles-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--roi-text, #374151);
+  margin: 0 0 0.75rem 0;
+}
+
+.roi-summary-card__roles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.roi-summary-card__role {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: var(--roi-breakdown-bg, #f9fafb);
+  border-radius: 0.25rem;
+}
+
+.roi-summary-card__role-name {
+  font-size: 0.875rem;
+  color: var(--roi-text, #374151);
+  text-transform: capitalize;
+}
+
+.roi-summary-card__role-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--roi-positive, #10b981);
+}
+
+/* =============================================================================
+   Dark Mode Support
+   ============================================================================= */
+
+@media (prefers-color-scheme: dark) {
+  .roi-summary-card {
+    --roi-card-bg: #1f2937;
+    --roi-card-border: #374151;
+    --roi-card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+    --roi-breakdown-bg: #111827;
+    --roi-text: #f9fafb;
+    --roi-text-muted: #9ca3af;
+    --roi-skeleton-start: #374151;
+    --roi-skeleton-mid: #4b5563;
+  }
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 480px) {
+  .roi-summary-card__breakdown {
+    grid-template-columns: 1fr;
+  }
+
+  .roi-summary-card__metric--highlight {
+    border-left: none;
+    border-top: 2px solid var(--roi-card-border, #e5e7eb);
+    padding-left: 0;
+    padding-top: 1rem;
+  }
+
+  .roi-summary-card__value {
+    font-size: 2.5rem;
+  }
+}

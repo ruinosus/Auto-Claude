@@ -89,9 +89,9 @@ load_dotenv = import_dotenv()
 env_file = Path(__file__).parent.parent / ".env"
 dev_env_file = Path(__file__).parent.parent.parent / "dev" / "auto-claude" / ".env"
 if env_file.exists():
-    load_dotenv(env_file)
+    load_dotenv(env_file, override=True)
 elif dev_env_file.exists():
-    load_dotenv(dev_env_file)
+    load_dotenv(dev_env_file, override=True)
 
 # Clean up conflicting env vars (Foundry vs standard mode)
 from core.auth import cleanup_conflicting_env_vars
@@ -102,6 +102,168 @@ from phase_config import resolve_model_id
 from review import ReviewState
 from spec import SpecOrchestrator
 from ui import Icons, highlight, muted, print_section, print_status
+
+# Observability imports (optional - graceful degradation if not available)
+try:
+    from analytics.langfuse_integration import (
+        trace_context,
+        is_langfuse_ready,
+        flush_langfuse,
+        init_langfuse,
+    )
+    from analytics.artifact_storage import save_artifact_safe
+
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    is_langfuse_ready = None
+    flush_langfuse = None
+    init_langfuse = None
+    save_artifact_safe = None
+
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
+try:
+    from roi_engine.core import (
+        calculate_roi_for_spec,
+        load_squad_config,
+        publish_roi,
+    )
+    ROI_ENGINE_AVAILABLE = True
+except ImportError:
+    ROI_ENGINE_AVAILABLE = False
+    calculate_roi_for_spec = None
+    load_squad_config = None
+    publish_roi = None
+
+
+async def run_spec_with_observability(
+    orchestrator,
+    interactive: bool,
+    auto_approve: bool,
+    project_dir: Path,
+    task_description: str | None,
+    complexity_override: str | None,
+) -> bool:
+    """
+    Run spec creation with observability instrumentation.
+
+    Wraps the orchestrator.run() with Langfuse tracing and ROI publishing.
+    Falls back to direct execution if Langfuse is not available.
+    """
+    import time
+
+    start_time = time.time()
+    spec_id = orchestrator.spec_dir.name if orchestrator.spec_dir else "unknown"
+    project_id = project_dir.name
+
+    # Check if observability is available and ready
+    use_observability = (
+        LANGFUSE_AVAILABLE
+        and init_langfuse is not None
+        and is_langfuse_ready is not None
+        and trace_context is not None
+    )
+
+    if use_observability:
+        try:
+            init_langfuse()
+        except Exception as e:
+            debug("spec_runner", f"Failed to initialize Langfuse: {e}")
+            use_observability = False
+
+    if use_observability and is_langfuse_ready():
+        debug("spec_runner", "Running with Langfuse observability enabled")
+
+        with trace_context(
+            name="spec-creation",
+            spec_id=spec_id,
+            project_id=project_id,
+            agent_type="spec_orchestrator",
+            metadata={
+                "task_description": task_description[:500] if task_description else None,
+                "complexity_override": complexity_override,
+                "interactive": interactive,
+                "auto_approve": auto_approve,
+            },
+            tags=["spec-creation", f"complexity:{complexity_override or 'auto'}"],
+        ) as trace:
+            try:
+                # Run the orchestrator
+                success = await orchestrator.run(
+                    interactive=interactive,
+                    auto_approve=auto_approve,
+                )
+
+                duration_seconds = time.time() - start_time
+
+                # Save spec.md as artifact if available
+                if success and save_artifact_safe is not None and orchestrator.spec_dir:
+                    try:
+                        spec_file = orchestrator.spec_dir / "spec.md"
+                        if spec_file.exists():
+                            spec_content = spec_file.read_text()
+                            save_artifact_safe(
+                                artifact_type="documentation",
+                                content=spec_content[:5000],  # Limit size
+                                description=f"Spec document for {spec_id}",
+                                value_usd=75.0,  # Documentation value
+                                trace_id=trace.trace_id if trace else None,
+                                spec_id=spec_id,
+                                agent_type="spec_orchestrator",
+                                tab="techlead",
+                                metadata={"filename": "spec.md"},
+                            )
+                            debug("spec_runner", "Spec artifact saved")
+                    except Exception as artifact_err:
+                        debug("spec_runner", f"Failed to save artifact: {artifact_err}")
+
+                # Publish ROI using ROI Engine (artifact-based valuation)
+                if success and ROI_ENGINE_AVAILABLE and calculate_roi_for_spec is not None:
+                    try:
+                        # Load squad configuration for role-based valuation
+                        squad_config = load_squad_config(project_dir=project_dir)
+
+                        # Calculate ROI based on artifacts created during spec
+                        roi_result = calculate_roi_for_spec(
+                            spec_id=spec_id,
+                            project_dir=project_dir,
+                            token_cost=0.0,  # Cost is tracked via Langfuse trace
+                            squad_config=squad_config,
+                        )
+
+                        # Publish to Langfuse and local storage
+                        await publish_roi(
+                            roi_result,
+                            trace_id=trace.trace_id if trace else None,
+                            project_dir=project_dir,
+                        )
+
+                        debug_success(
+                            "spec_runner",
+                            f"Artifact-based ROI: {roi_result.roi_percentage:.1f}% "
+                            f"(${roi_result.total_artifact_value:.2f} value, "
+                            f"{roi_result.artifact_count} artifacts)"
+                        )
+                    except Exception as roi_engine_err:
+                        debug("spec_runner", f"ROI Engine calculation failed: {roi_engine_err}")
+
+                return success
+
+            finally:
+                # Ensure traces are flushed
+                if flush_langfuse is not None:
+                    try:
+                        flush_langfuse()
+                    except Exception:
+                        pass
+    else:
+        # Run without observability
+        debug("spec_runner", "Running without Langfuse observability")
+        return await orchestrator.run(
+            interactive=interactive,
+            auto_approve=auto_approve,
+        )
 
 
 def main():
@@ -285,9 +447,13 @@ Examples:
     try:
         debug("spec_runner", "Starting spec orchestrator run...")
         success = asyncio.run(
-            orchestrator.run(
+            run_spec_with_observability(
+                orchestrator=orchestrator,
                 interactive=args.interactive or not task_description,
                 auto_approve=args.auto_approve,
+                project_dir=project_dir,
+                task_description=task_description,
+                complexity_override=args.complexity,
             )
         )
 

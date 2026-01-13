@@ -1,0 +1,52 @@
+{
+  "name": "@auto-claude/roi-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for Auto-Claude ROI Engine",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "style": "dist/components/index.css",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./styles": "./dist/components/index.css",
+    "./components/*.css": "./dist/components/*.css"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts && npm run build:css",
+    "build:css": "mkdir -p dist/components && cp src/components/*.css dist/components/",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "react": "^18.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "auto-claude",
+    "roi",
+    "analytics",
+    "artifacts",
+    "react",
+    "hooks"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndyMik90/Auto-Claude.git",
+    "directory": "apps/roi_engine/sdk"
+  }
+}

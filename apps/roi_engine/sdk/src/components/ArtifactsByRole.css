@@ -1,0 +1,222 @@
+/**
+ * ArtifactsByRole Styles
+ *
+ * Component for displaying artifacts grouped by their responsible role.
+ * Uses BEM naming convention.
+ */
+
+/* =============================================================================
+   Base
+   ============================================================================= */
+
+.artifacts-by-role {
+  background: var(--roi-card-bg, #ffffff);
+  border: 1px solid var(--roi-card-border, #e5e7eb);
+  border-radius: var(--roi-card-radius, 0.75rem);
+  overflow: hidden;
+}
+
+.artifacts-by-role--empty {
+  text-align: center;
+  color: var(--roi-text-muted, #6b7280);
+  padding: 2rem;
+}
+
+/* =============================================================================
+   Summary
+   ============================================================================= */
+
+.artifacts-by-role__summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: var(--roi-summary-bg, #f9fafb);
+  border-bottom: 1px solid var(--roi-card-border, #e5e7eb);
+}
+
+.artifacts-by-role__total-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--roi-text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.artifacts-by-role__total-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--roi-positive, #10b981);
+}
+
+/* =============================================================================
+   Sections Container
+   ============================================================================= */
+
+.artifacts-by-role__sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* =============================================================================
+   Role Section
+   ============================================================================= */
+
+.artifacts-by-role__section {
+  border-bottom: 1px solid var(--roi-card-border, #e5e7eb);
+}
+
+.artifacts-by-role__section:last-child {
+  border-bottom: none;
+}
+
+.artifacts-by-role__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: var(--roi-header-bg, #ffffff);
+  border-left: 4px solid var(--roi-role-color, #6b7280);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.artifacts-by-role__header:hover {
+  background: var(--roi-header-hover, #f9fafb);
+}
+
+.artifacts-by-role__role-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.artifacts-by-role__role-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background-color: var(--roi-role-color, #6b7280);
+}
+
+.artifacts-by-role__role-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--roi-text, #374151);
+}
+
+.artifacts-by-role__artifact-count {
+  font-size: 0.8125rem;
+  color: var(--roi-text-muted, #6b7280);
+}
+
+.artifacts-by-role__role-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--roi-positive, #10b981);
+}
+
+/* =============================================================================
+   Artifact List
+   ============================================================================= */
+
+.artifacts-by-role__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.artifacts-by-role__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.625rem 1.5rem 0.625rem 2.5rem;
+  border-top: 1px solid var(--roi-item-border, #f3f4f6);
+  cursor: default;
+  transition: background-color 0.15s ease;
+}
+
+.artifacts-by-role__item[role="button"] {
+  cursor: pointer;
+}
+
+.artifacts-by-role__item[role="button"]:hover {
+  background: var(--roi-item-hover, #f9fafb);
+}
+
+.artifacts-by-role__item[role="button"]:focus {
+  outline: 2px solid var(--roi-focus, #3b82f6);
+  outline-offset: -2px;
+}
+
+.artifacts-by-role__item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.artifacts-by-role__item-type {
+  font-size: 0.875rem;
+  color: var(--roi-text, #374151);
+  text-transform: capitalize;
+}
+
+.artifacts-by-role__item-hours {
+  font-size: 0.75rem;
+  color: var(--roi-text-muted, #9ca3af);
+}
+
+.artifacts-by-role__item-value {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--roi-positive, #10b981);
+}
+
+/* =============================================================================
+   Dark Mode Support
+   ============================================================================= */
+
+@media (prefers-color-scheme: dark) {
+  .artifacts-by-role {
+    --roi-card-bg: #1f2937;
+    --roi-card-border: #374151;
+    --roi-summary-bg: #111827;
+    --roi-header-bg: #1f2937;
+    --roi-header-hover: #374151;
+    --roi-item-border: #374151;
+    --roi-item-hover: #374151;
+    --roi-text: #f9fafb;
+    --roi-text-muted: #9ca3af;
+  }
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 480px) {
+  .artifacts-by-role__summary {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+
+  .artifacts-by-role__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .artifacts-by-role__role-value {
+    margin-left: 1.125rem;
+  }
+
+  .artifacts-by-role__item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.375rem;
+  }
+
+  .artifacts-by-role__item-value {
+    margin-left: auto;
+  }
+}

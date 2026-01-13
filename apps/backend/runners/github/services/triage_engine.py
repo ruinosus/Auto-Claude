@@ -22,12 +22,15 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
-# ROI publisher (optional - graceful degradation if not available)
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -334,10 +337,10 @@ class TriageEngine:
                 # Calculate duration
                 duration_seconds = time.time() - start_time
 
-                # Publish ROI and store artifacts (wrapped in try/except to not break triage)
-                if ROI_PUBLISHER_AVAILABLE:
+                # Publish ROI using ROI Engine (wrapped in try/except to not break triage)
+                if ROI_ENGINE_AVAILABLE:
                     try:
-                        # Extract artifacts from the triage result
+                        # Extract artifacts from the triage result (for local storage)
                         # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
                         artifacts, langfuse_refs = extract_triage_artifacts(
                             triage_result,
@@ -346,41 +349,28 @@ class TriageEngine:
                             trace_id=None,  # No Langfuse trace in this context
                         )
 
-                        # Count metrics from triage result
-                        labels_count = len(triage_result.labels_to_add)
-                        is_duplicate = 1 if triage_result.is_duplicate else 0
-                        is_spam = 1 if triage_result.is_spam else 0
-
                         # Estimate cost and tokens (simplified - actual tracking would come from SDK)
                         # Estimate ~4 chars per token, rough estimate for ROI calculation
                         estimated_tokens = len(response_text) // 4 + len(full_prompt) // 4
                         estimated_cost = (estimated_tokens / 1000) * 0.003  # Rough cost estimate
 
-                        # Calculate total artifact value
-                        total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
+                        # Calculate ROI using ROI Engine
+                        spec_id = f"github-triage-{issue['number']}"
+                        squad_config = load_squad_config(project_dir=self.project_dir)
+                        roi_result = calculate_roi_for_spec(
+                            spec_id=spec_id,
+                            project_dir=self.project_dir,
+                            token_cost=estimated_cost,
+                            squad_config=squad_config,
+                        )
 
-                        # Publish ROI with Langfuse refs (truncated previews, not full content)
-                        await publish_feature_roi(
-                            feature_type="github_issue_triage",
-                            project_id=project_id,
-                            cost_usd=estimated_cost,
-                            tokens=estimated_tokens,
-                            metrics={
-                                "issues_triaged": 1,
-                                "duplicates_detected": is_duplicate,
-                                "spam_detected": is_spam,
-                                "labels_suggested": labels_count,
-                                "priority": triage_result.priority,
-                                "category": triage_result.category.value if triage_result.category else "unknown",
-                                "confidence": triage_result.confidence,
-                                "artifacts_count": len(artifacts),
-                                "artifact_value_usd": total_artifact_value,
-                            },
-                            duration_seconds=duration_seconds,
-                            model=self.config.model,
-                            spec_id=f"github-triage-{issue['number']}",
-                            trace_id=None,
-                            artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                        # Publish to Langfuse
+                        await publish_roi(roi_result, trace_id=None, project_dir=self.project_dir)
+
+                        print(
+                            f"[AI] Triage ROI: {roi_result.roi_percentage:.1f}% ROI, "
+                            f"${roi_result.total_artifact_value:.2f} value",
+                            flush=True,
                         )
 
                     except Exception as e:

@@ -31,12 +31,15 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
-# ROI publisher integration (optional - graceful degradation if not available)
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -518,10 +521,10 @@ Provide your review in the following JSON format:
             # Parse the review result
             findings, verdict, summary, blockers = self._parse_review_result(result_text)
 
-            # Publish ROI metrics BEFORE closing trace (so scores attach to trace)
-            if ROI_PUBLISHER_AVAILABLE:
+            # Publish ROI metrics using ROI Engine BEFORE closing trace (so scores attach to trace)
+            if ROI_ENGINE_AVAILABLE:
                 try:
-                    # Extract artifacts from review results
+                    # Extract artifacts from review results (for local storage)
                     # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
                     artifacts, langfuse_refs = extract_mr_review_artifacts(
                         findings,
@@ -532,45 +535,28 @@ Provide your review in the following JSON format:
                         trace_id=langfuse_trace_id,
                     )
 
-                    # Count metrics for ROI calculation (use full artifacts for counts)
-                    security_count = sum(
-                        1 for f in findings
-                        if (hasattr(f, "category") and f.category.value == "security")
-                        or (isinstance(f, dict) and f.get("category") == "security")
+                    # Estimate token cost for ROI calculation
+                    estimated_tokens = len(findings) * 500 + len(context.changed_files) * 200 + 2000
+                    estimated_cost = (estimated_tokens / 1000) * 0.003 if estimated_tokens > 0 else 0.01
+
+                    # Calculate ROI using ROI Engine
+                    spec_id = f"mr-{context.mr_iid}"
+                    squad_config = load_squad_config(project_dir=project_root)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=spec_id,
+                        project_dir=project_root,
+                        token_cost=estimated_cost,
+                        squad_config=squad_config,
                     )
-                    code_suggestions_count = sum(
-                        1 for f in findings
-                        if (hasattr(f, "suggested_fix") and f.suggested_fix)
-                        or (isinstance(f, dict) and f.get("suggested_fix"))
-                    )
 
-                    # Estimate review time saved (roughly 5-10 min per file reviewed)
-                    review_time_saved_hours = len(context.changed_files) * 0.1  # ~6 min per file
-
-                    # Calculate total artifact value (use full artifacts for value)
-                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
-
-                    # Publish ROI with Langfuse refs (truncated previews, not full content)
+                    # Publish to Langfuse (as background task to not block review)
                     import asyncio
-                    asyncio.create_task(publish_feature_roi(
-                        feature_type="mr_review",
-                        project_id=project_id,
-                        trace_id=langfuse_trace_id,
-                        metrics={
-                            "files_reviewed": len(context.changed_files),
-                            "comments_posted": len(findings),
-                            "issues_found": len(findings),
-                            "security_issues": security_count,
-                            "code_suggestions": code_suggestions_count,
-                            "approval": verdict.value if hasattr(verdict, "value") else str(verdict),
-                            "review_time_saved_hours": review_time_saved_hours,
-                            "lines_changed": context.total_additions + context.total_deletions,
-                            "artifacts_count": len(artifacts),
-                            "artifact_value_usd": total_artifact_value,
-                        },
-                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
-                    ))
-                    logger.info(f"[GitLab MR] ROI published for MR !{context.mr_iid} with {len(artifacts)} artifacts")
+                    asyncio.create_task(publish_roi(roi_result, trace_id=langfuse_trace_id, project_dir=project_root))
+
+                    logger.info(
+                        f"[GitLab MR] ROI published for MR !{context.mr_iid}: "
+                        f"{roi_result.roi_percentage:.1f}% ROI, ${roi_result.total_artifact_value:.2f} value"
+                    )
                 except Exception as e:
                     logger.warning(f"[GitLab MR] Failed to publish ROI: {e}")
 

@@ -19,15 +19,12 @@ import {
 import { TrendingUp, Target, AlertCircle, CheckCircle, XCircle, Activity } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../ui/card';
 import { useChartColors } from '../utils/useChartColors';
-import {
-  getForecast,
-  getForecastComparison,
-  getForecastAccuracy,
-  predictROI,
-  type ImpactForecastResponse,
-  type ForecastComparisonResponse,
-  type ModelAccuracyResponse,
-  type ForecastPredictRequest,
+import { apiBridge } from '../../../services/api-bridge';
+import type {
+  ImpactForecastResponse,
+  ForecastComparisonResponse,
+  ModelAccuracyResponse,
+  ForecastPredictRequest,
 } from '../../../services/analytics-api';
 
 export type ForecastMode = 'pre-spec' | 'post-spec';
@@ -438,12 +435,12 @@ export function ImpactForecastCard({
       if (mode === 'pre-spec') {
         // Try to get existing forecast first
         try {
-          const existingForecast = await getForecast(specId);
+          const existingForecast = await apiBridge.forecasting.getForecast(specId);
           setForecast(existingForecast);
         } catch {
           // No existing forecast, create one if we have prediction params
           if (predictionParams) {
-            const newForecast = await predictROI({
+            const newForecast = await apiBridge.forecasting.predictROI({
               spec_id: specId,
               ...predictionParams,
             });
@@ -454,7 +451,7 @@ export function ImpactForecastCard({
 
         // Also load model accuracy
         try {
-          const accuracyData = await getForecastAccuracy();
+          const accuracyData = await apiBridge.forecasting.getAccuracy();
           setAccuracy(accuracyData);
         } catch {
           // Accuracy data is optional
@@ -462,12 +459,12 @@ export function ImpactForecastCard({
       } else {
         // Post-spec mode: load comparison
         try {
-          const comparisonData = await getForecastComparison(specId);
+          const comparisonData = await apiBridge.forecasting.getComparison(specId);
           setComparison(comparisonData);
         } catch {
           // Try to load just the forecast
           try {
-            const forecastData = await getForecast(specId);
+            const forecastData = await apiBridge.forecasting.getForecast(specId);
             setForecast(forecastData);
           } catch {
             // No data available

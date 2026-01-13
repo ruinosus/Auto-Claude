@@ -41,12 +41,15 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
-# ROI publisher (optional - graceful degradation if not available)
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -698,69 +701,34 @@ class AgentExecutor:
                     success, response_text = result
                     ctx.set_output({"success": success, "response": response_text})  # FULL CONTENT - no truncation
 
-                    # Publish ROI metrics (wrapped in try/except to not break roadmap)
-                    if ROI_PUBLISHER_AVAILABLE and success:
+                    # Publish ROI metrics using ROI Engine (wrapped in try/except to not break roadmap)
+                    if ROI_ENGINE_AVAILABLE and success:
                         try:
-                            # Try to load roadmap data for artifact extraction
-                            roadmap_data = None
-                            roadmap_file = self.output_dir / "roadmap.json"
-                            if roadmap_file.exists():
-                                try:
-                                    with open(roadmap_file) as f:
-                                        roadmap_data = json.load(f)
-                                except Exception as e:
-                                    debug_error("roadmap_executor", f"Failed to load roadmap.json: {e}")
-
-                            # Extract artifacts from the roadmap
-                            artifacts, langfuse_refs = extract_roadmap_artifacts(
-                                response_text,
-                                roadmap_data,
-                                project_dir=self.project_dir,
-                                trace_id=langfuse_trace_id,
-                                agent_type=f"roadmap_{agent_type}",
-                            )
-
-                            # Count metrics from roadmap data and artifacts
-                            features_count = len(roadmap_data.get("features", [])) if roadmap_data else 0
-                            phases_count = len(roadmap_data.get("phases", [])) if roadmap_data else 0
-                            priority_recs = len([a for a in artifacts if a["type"] == "priority_recommendation"])
-
                             # Estimate cost and tokens
                             estimated_tokens = len(response_text) // 4 + len(prompt) // 4
                             estimated_cost = (estimated_tokens / 1000) * 0.003
 
-                            # Calculate total artifact value
-                            total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
-
-                            # Publish ROI with Langfuse refs (truncated previews, not full content)
-                            roi_result = await publish_feature_roi(
-                                feature_type="roadmap_features",
-                                project_id=self.project_id,
-                                cost_usd=estimated_cost,
-                                tokens=estimated_tokens,
-                                metrics={
-                                    "features_identified": features_count,
-                                    "features_prioritized": features_count,
-                                    "features_rejected": 0,
-                                    "competitor_insights": 0,
-                                    "phases_count": phases_count,
-                                    "priority_recommendations": priority_recs,
-                                    "artifacts_count": len(artifacts),
-                                    "artifact_value_usd": total_artifact_value,
-                                },
-                                duration_seconds=duration_seconds,
-                                model=self.model,
+                            # Use ROI Engine to calculate and publish ROI
+                            squad_config = load_squad_config(project_dir=self.project_dir)
+                            roi_result = calculate_roi_for_spec(
+                                spec_id=f"roadmap-{agent_type}-{self.project_id}",
+                                project_dir=self.project_dir,
+                                token_cost=estimated_cost,
+                                squad_config=squad_config,
+                            )
+                            await publish_roi(
+                                roi_result,
                                 trace_id=langfuse_trace_id,
-                                artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                                project_dir=self.project_dir,
                             )
 
                             debug(
                                 "roadmap_executor",
                                 "ROI published",
                                 trace_id=langfuse_trace_id,
-                                artifacts_count=len(artifacts),
-                                artifact_value=total_artifact_value,
-                                roi_percentage=roi_result.get("roi_percentage", 0),
+                                artifacts_count=roi_result.artifact_count,
+                                artifact_value=roi_result.total_artifact_value,
+                                roi_percentage=roi_result.roi_percentage,
                             )
 
                         except Exception as e:
@@ -779,68 +747,34 @@ class AgentExecutor:
             result = await _execute_agent()
             duration_seconds = time.time() - start_time
 
-            # Still publish ROI even without Langfuse tracing
-            if ROI_PUBLISHER_AVAILABLE and result and result[0]:
+            # Still publish ROI even without Langfuse tracing using ROI Engine
+            if ROI_ENGINE_AVAILABLE and result and result[0]:
                 try:
                     success, response_text = result
-
-                    # Try to load roadmap data for artifact extraction
-                    roadmap_data = None
-                    roadmap_file = self.output_dir / "roadmap.json"
-                    if roadmap_file.exists():
-                        try:
-                            with open(roadmap_file) as f:
-                                roadmap_data = json.load(f)
-                        except Exception as e:
-                            debug_error("roadmap_executor", f"Failed to load roadmap.json: {e}")
-
-                    # Extract artifacts from the roadmap
-                    artifacts, langfuse_refs = extract_roadmap_artifacts(
-                        response_text,
-                        roadmap_data,
-                        project_dir=self.project_dir,
-                        trace_id=None,
-                        agent_type=f"roadmap_{agent_type}",
-                    )
-
-                    # Count metrics
-                    features_count = len(roadmap_data.get("features", [])) if roadmap_data else 0
-                    phases_count = len(roadmap_data.get("phases", [])) if roadmap_data else 0
-                    priority_recs = len([a for a in artifacts if a["type"] == "priority_recommendation"])
 
                     # Estimate cost and tokens
                     estimated_tokens = len(response_text) // 4 + len(prompt) // 4
                     estimated_cost = (estimated_tokens / 1000) * 0.003
 
-                    # Calculate total artifact value
-                    total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
-
-                    # Publish ROI
-                    await publish_feature_roi(
-                        feature_type="roadmap_features",
-                        project_id=self.project_id,
-                        cost_usd=estimated_cost,
-                        tokens=estimated_tokens,
-                        metrics={
-                            "features_identified": features_count,
-                            "features_prioritized": features_count,
-                            "features_rejected": 0,
-                            "competitor_insights": 0,
-                            "phases_count": phases_count,
-                            "priority_recommendations": priority_recs,
-                            "artifacts_count": len(artifacts),
-                            "artifact_value_usd": total_artifact_value,
-                        },
-                        duration_seconds=duration_seconds,
-                        model=self.model,
-                        artifacts=langfuse_refs,
+                    # Use ROI Engine to calculate and publish ROI
+                    squad_config = load_squad_config(project_dir=self.project_dir)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=f"roadmap-{agent_type}-{self.project_id}",
+                        project_dir=self.project_dir,
+                        token_cost=estimated_cost,
+                        squad_config=squad_config,
+                    )
+                    await publish_roi(
+                        roi_result,
+                        trace_id=None,
+                        project_dir=self.project_dir,
                     )
 
                     debug(
                         "roadmap_executor",
                         "ROI published (no Langfuse trace)",
-                        artifacts_count=len(artifacts),
-                        artifact_value=total_artifact_value,
+                        artifacts_count=roi_result.artifact_count,
+                        artifact_value=roi_result.total_artifact_value,
                     )
 
                 except Exception as e:

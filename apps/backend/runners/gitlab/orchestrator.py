@@ -36,200 +36,31 @@ except ImportError:
     )
     from services import MRReviewEngine
 
-# ROI Publishing
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_github_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
 
-# Artifact storage (optional - graceful degradation if not available)
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
+
+# Langfuse tracing
 try:
-    from analytics.artifact_storage import (
-        save_artifact_safe,
-        create_langfuse_reference,
-        _get_artifacts_dir,
+    from analytics.langfuse_integration import (
+        trace_context,
+        is_langfuse_ready,
+        flush_langfuse,
+        init_langfuse,
     )
-    ARTIFACT_STORAGE_AVAILABLE = True
+    LANGFUSE_AVAILABLE = True
+    _langfuse_init_result = init_langfuse()
 except ImportError:
-    ARTIFACT_STORAGE_AVAILABLE = False
-    save_artifact_safe = None
-    create_langfuse_reference = None
-    _get_artifacts_dir = None
-
-
-# =============================================================================
-# ARTIFACT EXTRACTION
-# =============================================================================
-
-
-def extract_mr_review_artifacts(
-    result: "MRReviewResult",
-    summary: str,
-    project_dir: Path | None = None,
-    trace_id: str | None = None,
-) -> tuple[list[dict], list[dict]]:
-    """
-    Extract MR review artifacts from review result.
-
-    Stores FULL artifact content locally, returns lightweight references for Langfuse.
-
-    Artifacts extracted:
-    - mr_verdict ($75) - READY_TO_MERGE/NEEDS_REVISION/BLOCKED decision
-    - mr_finding ($100 each) - each finding in the review
-    - security_finding ($200) - security-related findings
-    - blocker ($150) - blocking issues that must be resolved
-
-    Args:
-        result: The MRReviewResult object
-        summary: The review summary text
-        project_dir: Project root directory for local storage
-        trace_id: Langfuse trace ID for linking
-
-    Returns:
-        Tuple of (local_artifacts, langfuse_refs):
-        - local_artifacts: Full artifacts for local processing
-        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
-    """
-    artifacts = []
-
-    # Extract mr_verdict
-    if result.verdict:
-        verdict_content = f"{result.verdict.value.upper()}"
-        if result.verdict_reasoning:
-            verdict_content += f"\n\nReasoning: {result.verdict_reasoning}"
-
-        artifacts.append({
-            "type": "mr_verdict",
-            "format": "text",
-            "content": verdict_content,
-            "value_usd": 75,
-            "description": f"MR verdict: {result.verdict.value}",
-            "tab": "dev",
-            "metadata": {
-                "verdict": result.verdict.value,
-                "mr_iid": result.mr_iid,
-                "project": result.project,
-                "is_followup": result.is_followup_review,
-            },
-        })
-
-    # Extract blockers as high-value artifacts
-    for i, blocker in enumerate(result.blockers):
-        artifacts.append({
-            "type": "blocker",
-            "format": "text",
-            "content": blocker,
-            "value_usd": 150,
-            "description": f"Blocking issue #{i+1}",
-            "tab": "dev",
-            "metadata": {
-                "mr_iid": result.mr_iid,
-                "blocker_index": i,
-            },
-        })
-
-    # Extract findings as artifacts
-    for finding in result.findings:
-        # Determine value based on severity
-        value_usd = 100  # Default
-        if finding.severity.value == "critical":
-            value_usd = 200
-        elif finding.severity.value == "high":
-            value_usd = 150
-        elif finding.severity.value == "medium":
-            value_usd = 100
-        else:  # low
-            value_usd = 50
-
-        # Build content with full details
-        content = f"[{finding.severity.value.upper()}] {finding.title}"
-        content += f"\n\nCategory: {finding.category.value}"
-        content += f"\n\nFile: {finding.file}:{finding.line}"
-        if finding.end_line:
-            content += f"-{finding.end_line}"
-        content += f"\n\n{finding.description}"
-        if finding.suggested_fix:
-            content += f"\n\nSuggested Fix: {finding.suggested_fix}"
-
-        # Determine artifact type (security findings get special type)
-        artifact_type = "mr_finding"
-        tab = "dev"
-        if finding.category.value == "security":
-            artifact_type = "security_finding"
-            tab = "ops"
-            value_usd = max(value_usd, 200)  # Security findings are high value
-
-        artifacts.append({
-            "type": artifact_type,
-            "format": "text",
-            "content": content,
-            "value_usd": value_usd,
-            "description": f"MR finding: {finding.title}",
-            "severity": finding.severity.value,
-            "tab": tab,
-            "metadata": {
-                "finding_id": finding.id,
-                "severity": finding.severity.value,
-                "category": finding.category.value,
-                "file": finding.file,
-                "line": finding.line,
-                "end_line": finding.end_line,
-                "fixable": finding.fixable,
-                "mr_iid": result.mr_iid,
-            },
-        })
-
-    # Extract review summary as artifact
-    if summary:
-        artifacts.append({
-            "type": "mr_review_summary",
-            "format": "markdown",
-            "content": summary,
-            "value_usd": 100,
-            "description": f"MR !{result.mr_iid} review summary",
-            "tab": "dev",
-            "metadata": {
-                "mr_iid": result.mr_iid,
-                "project": result.project,
-                "findings_count": len(result.findings),
-                "overall_status": result.overall_status,
-            },
-        })
-
-    # Save artifacts locally and create Langfuse references
-    if ARTIFACT_STORAGE_AVAILABLE and project_dir and save_artifact_safe and create_langfuse_reference:
-        langfuse_refs = []
-        for artifact in artifacts:
-            # Save full artifact locally
-            artifact_id = save_artifact_safe(
-                artifact=artifact,
-                project_dir=project_dir,
-                spec_id=None,  # MR reviews don't have spec_id
-                trace_id=trace_id,
-                agent_type="gitlab_mr_reviewer",
-                session_num=None,
-            )
-
-            if artifact_id and _get_artifacts_dir:
-                # Create lightweight reference for Langfuse
-                artifacts_dir = _get_artifacts_dir(project_dir)
-                storage_path = str(
-                    (artifacts_dir / artifact_id).relative_to(project_dir)
-                    if artifacts_dir.exists()
-                    else f".auto-claude/artifacts/{artifact_id}.json"
-                )
-                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
-                langfuse_refs.append(ref)
-            else:
-                # Fallback: if storage fails, include full artifact as ref
-                langfuse_refs.append(artifact)
-
-        return artifacts, langfuse_refs
-    else:
-        # No local storage available - return artifacts as both
-        return artifacts, artifacts
-
+    LANGFUSE_AVAILABLE = False
+    trace_context = None
+    is_langfuse_ready = lambda: False
+    flush_langfuse = lambda: None
 
 # =============================================================================
 # PROGRESS CALLBACK
@@ -321,56 +152,50 @@ class GitLabOrchestrator:
     async def _publish_roi(
         self,
         mrs_reviewed: int = 0,
-        artifacts: list[dict] | None = None,
-        langfuse_refs: list[dict] | None = None,
         trace_id: str | None = None,
         findings_count: int = 0,
         blockers_count: int = 0,
         security_findings_count: int = 0,
     ) -> None:
         """
-        Publish ROI metrics for GitLab MR review operations.
+        Publish ROI metrics for GitLab MR review operations using ROI Engine.
+
+        Note: Artifacts are created by the review agent via MCP tools during execution
+        and captured by the observability layer. No manual extraction needed here.
 
         Args:
             mrs_reviewed: Number of MRs reviewed
-            artifacts: Full artifacts for local processing
-            langfuse_refs: Truncated references for Langfuse
             trace_id: Langfuse trace ID for linking
             findings_count: Number of findings discovered
             blockers_count: Number of blocking issues
             security_findings_count: Number of security findings
         """
-        if not ROI_PUBLISHER_AVAILABLE:
+        if not ROI_ENGINE_AVAILABLE:
             return
 
         try:
-            project_id = self.project_dir.name
+            # Estimate token cost for ROI calculation
+            # MR reviews typically use 2000-4000 tokens per review
+            estimated_tokens = (mrs_reviewed * 3000) + (findings_count * 200)
+            estimated_cost = (estimated_tokens / 1000) * 0.003 if estimated_tokens > 0 else 0.01
 
-            # Calculate artifact value
-            artifact_value_usd = 0
-            if artifacts:
-                artifact_value_usd = sum(a.get("value_usd", 0) for a in artifacts)
-
-            result = await publish_github_roi(
-                project_id=project_id,
-                prs_reviewed=mrs_reviewed,  # Reusing GitHub function, maps MRs to PRs
-                model=self.config.model,
-                trace_id=trace_id,
-                artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+            # Calculate ROI using ROI Engine
+            spec_id = f"gitlab-mr-review-{self.project_dir.name}"
+            squad_config = load_squad_config(project_dir=self.project_dir)
+            roi_result = calculate_roi_for_spec(
+                spec_id=spec_id,
+                project_dir=self.project_dir,
+                token_cost=estimated_cost,
+                squad_config=squad_config,
             )
 
-            if result.get("success"):
-                roi_pct = result.get("roi_percentage", 0)
-                value = result.get("total_value_usd", 0)
-                print(
-                    f"[ROI] GitLab MR review: {roi_pct:.0f}% ROI (${value:.2f} value)",
-                    flush=True,
-                )
-                if artifacts:
-                    print(
-                        f"[ROI] Artifacts: {len(artifacts)} items, ${artifact_value_usd:.2f} value",
-                        flush=True,
-                    )
+            # Publish to Langfuse
+            await publish_roi(roi_result, trace_id=trace_id, project_dir=self.project_dir)
+
+            print(
+                f"[ROI] GitLab MR review: {roi_result.roi_percentage:.0f}% ROI (${roi_result.total_artifact_value:.2f} value)",
+                flush=True,
+            )
         except Exception as e:
             print(f"[ROI] Failed to publish: {e}", flush=True)
 
@@ -444,6 +269,32 @@ class GitLabOrchestrator:
         """
         print(f"[GitLab] Starting review for MR !{mr_iid}", flush=True)
 
+        # Setup Langfuse tracing
+        use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+        project_id = self.project_dir.name
+        trace_name = f"gitlab-mr-review-{project_id}-{mr_iid}"
+        langfuse_trace_id = None
+        trace_ctx = None
+        langfuse_ctx_obj = None
+
+        # Create trace context if available
+        if use_langfuse and trace_context:
+            trace_ctx = trace_context(
+                name=trace_name,
+                project_id=project_id,
+                agent_type="gitlab_mr_reviewer",
+                metadata={
+                    "mr_iid": mr_iid,
+                    "gitlab_project": self.config.project,
+                    "model": self.config.model,
+                },
+                tags=["gitlab", "mr_review", f"mr:{mr_iid}"],
+                input_data={"mr_iid": mr_iid, "project": self.config.project},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            if langfuse_ctx_obj and hasattr(langfuse_ctx_obj, 'trace_id'):
+                langfuse_trace_id = langfuse_ctx_obj.trace_id
+
         self._report_progress(
             "gathering_context",
             10,
@@ -507,30 +358,34 @@ class GitLabOrchestrator:
 
             self._report_progress("complete", 100, "Review complete!", mr_iid=mr_iid)
 
-            # Extract artifacts and create Langfuse references
-            artifacts, langfuse_refs = extract_mr_review_artifacts(
-                result=result,
-                summary=full_summary,
-                project_dir=self.project_dir,
-                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
-            )
-
             # Count security findings for metrics
             security_findings_count = len([
                 f for f in findings
                 if f.category.value == "security"
             ])
 
-            # Publish ROI metrics with artifacts
+            # Publish ROI metrics (artifacts are created by agent via MCP tools)
             await self._publish_roi(
                 mrs_reviewed=1,
-                artifacts=artifacts,
-                langfuse_refs=langfuse_refs,
-                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
+                trace_id=langfuse_trace_id,
                 findings_count=len(findings),
                 blockers_count=len(blockers),
                 security_findings_count=security_findings_count,
             )
+
+            # Finalize Langfuse trace on success
+            if trace_ctx and langfuse_ctx_obj:
+                try:
+                    langfuse_ctx_obj.set_output({
+                        "verdict": verdict.value if verdict else None,
+                        "findings_count": len(findings),
+                        "blockers_count": len(blockers),
+                        "overall_status": overall_status,
+                    })
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
 
             return result
 
@@ -552,6 +407,13 @@ class GitLabOrchestrator:
                 error=error_msg,
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result
 
         except json.JSONDecodeError as e:
@@ -564,6 +426,13 @@ class GitLabOrchestrator:
                 error=error_msg,
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result
 
         except OSError as e:
@@ -576,6 +445,13 @@ class GitLabOrchestrator:
                 error=error_msg,
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result
 
         except Exception as e:
@@ -592,6 +468,13 @@ class GitLabOrchestrator:
                 error=f"{error_details}\n\nTraceback:\n{full_traceback}",
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result
 
     async def followup_review_mr(self, mr_iid: int) -> MRReviewResult:
@@ -608,15 +491,54 @@ class GitLabOrchestrator:
         """
         print(f"[GitLab] Starting follow-up review for MR !{mr_iid}", flush=True)
 
+        # Setup Langfuse tracing
+        use_langfuse = LANGFUSE_AVAILABLE and is_langfuse_ready()
+        project_id = self.project_dir.name
+        trace_name = f"gitlab-mr-followup-{project_id}-{mr_iid}"
+        langfuse_trace_id = None
+        trace_ctx = None
+        langfuse_ctx_obj = None
+
+        # Create trace context if available
+        if use_langfuse and trace_context:
+            trace_ctx = trace_context(
+                name=trace_name,
+                project_id=project_id,
+                agent_type="gitlab_mr_reviewer",
+                metadata={
+                    "mr_iid": mr_iid,
+                    "gitlab_project": self.config.project,
+                    "model": self.config.model,
+                    "is_followup": True,
+                },
+                tags=["gitlab", "mr_review", "followup", f"mr:{mr_iid}"],
+                input_data={"mr_iid": mr_iid, "project": self.config.project, "is_followup": True},
+            )
+            langfuse_ctx_obj = trace_ctx.__enter__()
+            if langfuse_ctx_obj and hasattr(langfuse_ctx_obj, 'trace_id'):
+                langfuse_trace_id = langfuse_ctx_obj.trace_id
+
         # Load previous review
         previous_review = MRReviewResult.load(self.gitlab_dir, mr_iid)
 
         if not previous_review:
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
             raise ValueError(
                 f"No previous review found for MR !{mr_iid}. Run initial review first."
             )
 
         if not previous_review.reviewed_commit_sha:
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
             raise ValueError(
                 f"Previous review for MR !{mr_iid} doesn't have commit SHA. "
                 "Re-run initial review."
@@ -727,30 +649,36 @@ class GitLabOrchestrator:
                 "complete", 100, "Follow-up review complete!", mr_iid=mr_iid
             )
 
-            # Extract artifacts and create Langfuse references
-            artifacts, langfuse_refs = extract_mr_review_artifacts(
-                result=result,
-                summary=full_summary,
-                project_dir=self.project_dir,
-                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
-            )
-
             # Count security findings for metrics
             security_findings_count = len([
                 f for f in findings
                 if f.category.value == "security"
             ])
 
-            # Publish ROI metrics for follow-up review with artifacts
+            # Publish ROI metrics (artifacts are created by agent via MCP tools)
             await self._publish_roi(
                 mrs_reviewed=1,
-                artifacts=artifacts,
-                langfuse_refs=langfuse_refs,
-                trace_id=None,  # TODO: Add Langfuse trace support for GitLab reviews
+                trace_id=langfuse_trace_id,
                 findings_count=len(findings),
                 blockers_count=len(blockers),
                 security_findings_count=security_findings_count,
             )
+
+            # Finalize Langfuse trace on success
+            if trace_ctx and langfuse_ctx_obj:
+                try:
+                    langfuse_ctx_obj.set_output({
+                        "verdict": verdict.value if verdict else None,
+                        "findings_count": len(findings),
+                        "resolved_count": len(resolved),
+                        "unresolved_count": len(unresolved),
+                        "new_findings_count": len(new_findings),
+                        "overall_status": overall_status,
+                    })
+                    trace_ctx.__exit__(None, None, None)
+                    flush_langfuse()
+                except Exception:
+                    pass
 
             return result
 
@@ -776,6 +704,13 @@ class GitLabOrchestrator:
                 is_followup_review=True,
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result
 
         except json.JSONDecodeError as e:
@@ -792,6 +727,13 @@ class GitLabOrchestrator:
                 is_followup_review=True,
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result
 
         except Exception as e:
@@ -809,4 +751,11 @@ class GitLabOrchestrator:
                 is_followup_review=True,
             )
             result.save(self.gitlab_dir)
+            # Close trace on error
+            if trace_ctx:
+                try:
+                    trace_ctx.__exit__(type(e), e, e.__traceback__)
+                    flush_langfuse()
+                except Exception:
+                    pass
             return result

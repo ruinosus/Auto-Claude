@@ -27,7 +27,10 @@
     "langfuse:start": "./infra/langfuse/setup.sh start",
     "langfuse:stop": "./infra/langfuse/setup.sh stop",
     "langfuse:status": "./infra/langfuse/setup.sh status",
-    "analytics:api": "./scripts/start-analytics-api.sh"
+    "analytics:api": "./scripts/start-analytics-api.sh",
+    "roi:start": "./scripts/start-roi-engine.sh",
+    "roi:test": "cd apps/roi_engine && ../backend/.venv/bin/python -m pytest tests/ -v",
+    "roi:docs": "echo 'ROI Engine API docs at http://localhost:8002/docs'"
   },
   "engines": {
     "node": ">=24.0.0",

@@ -4,6 +4,8 @@
  *
  * Visualizes developer time saved through AI assistance.
  * Features animated clock, side-by-side comparison, and task breakdown.
+ *
+ * Now uses ROI Engine API via the API Bridge for artifact-based time savings.
  */
 
 import { useEffect, useState, useMemo } from 'react';
@@ -25,10 +27,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { useChartColors, useChartColorArray } from '../utils/useChartColors';
 import { formatHours } from '../utils/formatters';
-import { getTimeSavedDashboard, type TimeSavedDashboardResponse } from '../../../services/analytics-api';
+import { apiBridge } from '../../../services/api-bridge';
+import type { TimeSavedDashboardResponse } from '../../../services/analytics-api';
 
 interface TimeSavedDashboardProps {
-  projectId?: string;
+  /** Path to the project directory (required for ROI Engine) */
+  projectPath: string;
+  /** Optional date range filter */
   fromDate?: string;
   toDate?: string;
 }
@@ -137,7 +142,7 @@ function ComparisonCard({
 /**
  * Main Time Saved Dashboard
  */
-export function TimeSavedDashboard({ projectId, fromDate, toDate }: TimeSavedDashboardProps) {
+export function TimeSavedDashboard({ projectPath, fromDate, toDate }: TimeSavedDashboardProps) {
   const { t } = useTranslation(['analytics']);
   const chartColors = useChartColors();
   const colorArray = useChartColorArray();
@@ -147,11 +152,18 @@ export function TimeSavedDashboard({ projectId, fromDate, toDate }: TimeSavedDas
 
   useEffect(() => {
     async function fetchData() {
+      if (!projectPath) {
+        setError('Project path is required');
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       try {
-        const result = await getTimeSavedDashboard({
-          project_id: projectId,
+        // Use API Bridge - routes to ROI Engine for time saved calculations
+        const context = apiBridge.createContext(projectPath);
+        const result = await apiBridge.timeSaved.getDashboard(context, {
           from_date: fromDate,
           to_date: toDate,
         });
@@ -163,7 +175,7 @@ export function TimeSavedDashboard({ projectId, fromDate, toDate }: TimeSavedDas
       }
     }
     fetchData();
-  }, [projectId, fromDate, toDate]);
+  }, [projectPath, fromDate, toDate]);
 
   // Format chart data
   const barChartData = useMemo(() => {

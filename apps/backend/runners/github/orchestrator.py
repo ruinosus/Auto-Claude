@@ -75,321 +75,15 @@ except (ImportError, ValueError, SystemError):
         TriageEngine,
     )
 
-# ROI Publishing
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_github_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
 
-# Artifact storage (optional - graceful degradation if not available)
-try:
-    from analytics.artifact_storage import (
-        save_artifact_safe,
-        create_langfuse_reference,
-        _get_artifacts_dir,
-    )
-    ARTIFACT_STORAGE_AVAILABLE = True
-except ImportError:
-    ARTIFACT_STORAGE_AVAILABLE = False
-
-
-# =============================================================================
-# ARTIFACT EXTRACTION FOR GITHUB AUTOMATION
-# =============================================================================
-
-
-def extract_github_review_artifacts(
-    result: "PRReviewResult",
-    project_dir: Path | None = None,
-    trace_id: str | None = None,
-) -> tuple[list[dict], list[dict]]:
-    """
-    Extract artifacts from GitHub PR review results.
-
-    Stores FULL artifact content locally, returns lightweight references for Langfuse.
-
-    Artifacts extracted:
-    - pr_finding ($100 each) - each finding in the review
-    - pr_verdict ($50) - APPROVE/REQUEST_CHANGES/COMMENT decision
-    - structural_issue ($75) - architecture/scope issues
-    - ai_triage ($50) - AI tool comment triages
-    - blocker ($150 each) - critical blocking issues
-
-    Args:
-        result: PRReviewResult from the review
-        project_dir: Project root directory for local storage
-        trace_id: Langfuse trace ID for linking
-
-    Returns:
-        Tuple of (local_artifacts, langfuse_refs):
-        - local_artifacts: Full artifacts for local processing
-        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
-    """
-    artifacts = []
-
-    # Extract pr_verdict
-    artifacts.append({
-        "type": "pr_verdict",
-        "format": "text",
-        "content": result.verdict.value.upper() if result.verdict else result.overall_status.upper(),
-        "value_usd": 50,
-        "description": f"PR #{result.pr_number} verdict: {result.verdict.value if result.verdict else result.overall_status}",
-        "tab": "ops",
-        "metadata": {
-            "pr_number": result.pr_number,
-            "repo": result.repo,
-            "verdict_reasoning": result.verdict_reasoning,  # FULL - no truncation
-            "risk_assessment": result.risk_assessment,
-        },
-    })
-
-    # Extract pr_findings - FULL CONTENT, no truncation
-    for finding in result.findings:
-        # Build FULL content - no truncation!
-        content = f"[{finding.severity.value.upper()}] [{finding.category.value}] {finding.title}"
-        content += f"\n\nFile: {finding.file}:{finding.line}"
-        if finding.end_line:
-            content += f"-{finding.end_line}"
-        content += f"\n\nDescription: {finding.description}"  # FULL description
-        if finding.suggested_fix:
-            content += f"\n\nSuggested Fix: {finding.suggested_fix}"  # FULL fix
-        if finding.verification_note:
-            content += f"\n\nVerification Note: {finding.verification_note}"
-        if finding.redundant_with:
-            content += f"\n\nRedundant With: {finding.redundant_with}"
-        if finding.validation_explanation:
-            content += f"\n\nValidation: {finding.validation_explanation}"
-
-        artifacts.append({
-            "type": "pr_finding",
-            "format": "text",
-            "content": content,  # FULL CONTENT - no truncation
-            "value_usd": 100,
-            "description": f"PR finding: {finding.severity.value} {finding.category.value}",
-            "severity": finding.severity.value,
-            "category": finding.category.value,
-            "tab": "ops",
-            "metadata": {
-                "finding_id": finding.id,
-                "file": finding.file,
-                "line": finding.line,
-                "end_line": finding.end_line,
-                "fixable": finding.fixable,
-                "validation_status": finding.validation_status,
-            },
-        })
-
-    # Extract structural_issues - FULL CONTENT
-    for issue in result.structural_issues:
-        content = f"[{issue.issue_type.upper()}] {issue.title}"
-        content += f"\n\nDescription: {issue.description}"  # FULL description
-        content += f"\n\nImpact: {issue.impact}"  # FULL impact
-        content += f"\n\nSuggestion: {issue.suggestion}"  # FULL suggestion
-
-        artifacts.append({
-            "type": "structural_issue",
-            "format": "text",
-            "content": content,  # FULL CONTENT - no truncation
-            "value_usd": 75,
-            "description": f"Structural issue: {issue.issue_type}",
-            "severity": issue.severity.value,
-            "tab": "ops",
-            "metadata": {
-                "issue_id": issue.id,
-                "issue_type": issue.issue_type,
-            },
-        })
-
-    # Extract ai_triages - FULL CONTENT
-    for triage in result.ai_comment_triages:
-        content = f"[{triage.verdict.value.upper()}] {triage.tool_name}"
-        content += f"\n\nOriginal Comment: {triage.original_comment}"  # FULL comment - no [:50] truncation
-        content += f"\n\nReasoning: {triage.reasoning}"  # FULL reasoning
-        if triage.response_comment:
-            content += f"\n\nResponse: {triage.response_comment}"  # FULL response
-
-        artifacts.append({
-            "type": "ai_triage",
-            "format": "text",
-            "content": content,  # FULL CONTENT - no truncation
-            "value_usd": 50,
-            "description": f"AI triage: {triage.tool_name} - {triage.verdict.value}",
-            "tab": "ops",
-            "metadata": {
-                "comment_id": triage.comment_id,
-                "tool_name": triage.tool_name,
-                "verdict": triage.verdict.value,
-            },
-        })
-
-    # Extract blockers - FULL CONTENT (high value)
-    for blocker in result.blockers:
-        artifacts.append({
-            "type": "blocker",
-            "format": "text",
-            "content": blocker,  # FULL blocker text - no truncation
-            "value_usd": 150,
-            "description": f"Blocking issue for PR #{result.pr_number}",
-            "tab": "ops",
-            "metadata": {
-                "pr_number": result.pr_number,
-            },
-        })
-
-    # Extract summary as artifact - FULL CONTENT
-    if result.summary:
-        artifacts.append({
-            "type": "pr_summary",
-            "format": "markdown",
-            "content": result.summary,  # FULL summary - no truncation
-            "value_usd": 75,
-            "description": f"PR #{result.pr_number} review summary",
-            "tab": "ops",
-            "metadata": {
-                "pr_number": result.pr_number,
-                "findings_count": len(result.findings),
-                "blockers_count": len(result.blockers),
-            },
-        })
-
-    # Save artifacts locally and create Langfuse references
-    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
-        langfuse_refs = []
-        for artifact in artifacts:
-            # Save full artifact locally
-            artifact_id = save_artifact_safe(
-                artifact=artifact,
-                project_dir=project_dir,
-                spec_id=None,  # GitHub reviews don't have spec IDs
-                trace_id=trace_id,
-                agent_type="github_reviewer",
-                session_num=None,
-            )
-
-            if artifact_id:
-                # Create lightweight reference for Langfuse
-                artifacts_dir = _get_artifacts_dir(project_dir)
-                storage_path = str(
-                    (artifacts_dir / artifact_id).relative_to(project_dir)
-                    if artifacts_dir.exists()
-                    else f".auto-claude/artifacts/{artifact_id}.json"
-                )
-                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
-                langfuse_refs.append(ref)
-            else:
-                # Fallback: if storage fails, include full artifact as ref
-                langfuse_refs.append(artifact)
-
-        return artifacts, langfuse_refs
-    else:
-        # No local storage available - return artifacts as both
-        return artifacts, artifacts
-
-
-def extract_triage_artifacts(
-    results: list["TriageResult"],
-    project_dir: Path | None = None,
-    trace_id: str | None = None,
-) -> tuple[list[dict], list[dict]]:
-    """
-    Extract artifacts from issue triage results.
-
-    Stores FULL artifact content locally, returns lightweight references for Langfuse.
-
-    Artifacts extracted:
-    - triage_result ($50 each) - each issue triage
-    - duplicate_detection ($100) - detected duplicates
-    - spam_detection ($75) - detected spam
-
-    Args:
-        results: List of TriageResult from triage operations
-        project_dir: Project root directory for local storage
-        trace_id: Langfuse trace ID for linking
-
-    Returns:
-        Tuple of (local_artifacts, langfuse_refs)
-    """
-    artifacts = []
-
-    for result in results:
-        # Build FULL content for triage result
-        category_value = result.category.value if hasattr(result.category, 'value') else str(result.category)
-        content = f"Issue #{result.issue_number}: {category_value}"
-        if result.priority:
-            content += f"\n\nPriority: {result.priority}"
-        if result.is_duplicate:
-            content += f"\n\nDuplicate: Yes (of #{result.duplicate_of})"
-        if result.is_spam:
-            content += "\n\nSpam: Yes"
-        if result.is_feature_creep:
-            content += "\n\nFeature Creep: Yes"
-        if result.suggested_breakdown:
-            content += f"\n\nSuggested Breakdown: {', '.join(result.suggested_breakdown)}"
-        if result.comment:
-            content += f"\n\nComment: {result.comment}"  # FULL comment
-        if result.labels_to_add:
-            content += f"\n\nLabels to Add: {', '.join(result.labels_to_add)}"
-        if result.labels_to_remove:
-            content += f"\n\nLabels to Remove: {', '.join(result.labels_to_remove)}"
-
-        artifact = {
-            "type": "triage_result",
-            "format": "text",
-            "content": content,  # FULL CONTENT - no truncation
-            "value_usd": 50,
-            "description": f"Issue #{result.issue_number} triage: {category_value}",
-            "tab": "ops",
-            "metadata": {
-                "issue_number": result.issue_number,
-                "category": category_value,
-                "priority": result.priority,
-                "confidence": result.confidence,
-                "is_duplicate": result.is_duplicate,
-                "is_spam": result.is_spam,
-                "is_feature_creep": result.is_feature_creep,
-            },
-        }
-
-        # Increase value for duplicate/spam detection
-        if result.is_duplicate:
-            artifact["value_usd"] = 100
-            artifact["type"] = "duplicate_detection"
-        elif result.is_spam:
-            artifact["value_usd"] = 75
-            artifact["type"] = "spam_detection"
-
-        artifacts.append(artifact)
-
-    # Save artifacts locally and create Langfuse references
-    if ARTIFACT_STORAGE_AVAILABLE and project_dir:
-        langfuse_refs = []
-        for artifact in artifacts:
-            artifact_id = save_artifact_safe(
-                artifact=artifact,
-                project_dir=project_dir,
-                spec_id=None,
-                trace_id=trace_id,
-                agent_type="github_triage",
-                session_num=None,
-            )
-
-            if artifact_id:
-                artifacts_dir = _get_artifacts_dir(project_dir)
-                storage_path = str(
-                    (artifacts_dir / artifact_id).relative_to(project_dir)
-                    if artifacts_dir.exists()
-                    else f".auto-claude/artifacts/{artifact_id}.json"
-                )
-                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
-                langfuse_refs.append(ref)
-            else:
-                langfuse_refs.append(artifact)
-
-        return artifacts, langfuse_refs
-    else:
-        return artifacts, artifacts
-
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 @dataclass
 class ProgressCallback:
@@ -525,10 +219,12 @@ class GitHubOrchestrator:
         issues_auto_fixed: int = 0,
         duplicates_detected: int = 0,
         spam_detected: int = 0,
-        artifact_refs: list[dict] | None = None,
         trace_id: str | None = None,
     ) -> None:
-        """Publish ROI metrics for GitHub automation operations.
+        """Publish ROI metrics for GitHub automation operations using ROI Engine.
+
+        Note: Artifacts are created by the review/triage agents via MCP tools during
+        execution and captured by the observability layer. No manual extraction needed here.
 
         Args:
             prs_reviewed: Number of PRs reviewed
@@ -536,62 +232,36 @@ class GitHubOrchestrator:
             issues_auto_fixed: Number of issues auto-fixed
             duplicates_detected: Number of duplicate issues detected
             spam_detected: Number of spam issues detected
-            artifact_refs: Langfuse artifact references (with storage_path for local retrieval)
             trace_id: Langfuse trace ID for linking
         """
-        if not ROI_PUBLISHER_AVAILABLE:
+        if not ROI_ENGINE_AVAILABLE:
             return
 
         try:
-            project_id = self.project_dir.name
+            # Estimate cost based on operations
+            # Rough estimate: $0.003 per 1000 tokens, ~2000 tokens per PR review, ~500 per triage
+            estimated_tokens = (prs_reviewed * 2000) + (issues_triaged * 500)
+            estimated_cost = (estimated_tokens / 1000) * 0.003 if estimated_tokens > 0 else 0.01
 
-            # Use publish_feature_roi directly to include artifacts
-            try:
-                from analytics.roi_publisher import publish_feature_roi
-            except ImportError:
-                # Fall back to publish_github_roi without artifacts
-                result = await publish_github_roi(
-                    project_id=project_id,
-                    prs_reviewed=prs_reviewed,
-                    issues_triaged=issues_triaged,
-                    issues_auto_fixed=issues_auto_fixed,
-                    model=self.config.model,
-                )
-                if result.get("success"):
-                    roi_pct = result.get("roi_percentage", 0)
-                    value = result.get("total_value_usd", 0)
-                    print(
-                        f"[ROI] GitHub automation: {roi_pct:.0f}% ROI (${value:.2f} value)",
-                        flush=True,
-                    )
-                return
-
-            # Determine feature type based on what was done
-            feature_type = "github_pr_review" if prs_reviewed > 0 else "github_issue_triage"
-
-            result = await publish_feature_roi(
-                feature_type=feature_type,
-                project_id=project_id,
-                cost_usd=0.0,  # Cost tracked elsewhere
-                tokens=0,  # Tokens tracked elsewhere
-                metrics={
-                    "prs_reviewed": prs_reviewed,
-                    "issues_triaged": issues_triaged,
-                    "issues_auto_fixed": issues_auto_fixed,
-                    "duplicates_detected": duplicates_detected,
-                    "spam_detected": spam_detected,
-                },
-                model=self.config.model,
-                trace_id=trace_id,
-                artifacts=artifact_refs,  # Pass artifact refs for Langfuse
+            # Use ROI Engine for calculation
+            squad_config = load_squad_config(project_dir=self.project_dir)
+            roi_result = calculate_roi_for_spec(
+                spec_id=f"github-automation-{self.project_dir.name}",
+                project_dir=self.project_dir,
+                token_cost=estimated_cost,
+                squad_config=squad_config,
             )
 
-            if result.get("success"):
-                roi_pct = result.get("roi_percentage", 0)
-                value = result.get("total_value_usd", 0)
-                artifacts_count = result.get("artifacts_stored", 0)
+            # Publish to Langfuse if trace_id is provided
+            await publish_roi(
+                roi_result,
+                trace_id=trace_id,
+                project_dir=self.project_dir,
+            )
+
+            if roi_result:
                 print(
-                    f"[ROI] GitHub automation: {roi_pct:.0f}% ROI (${value:.2f} value, {artifacts_count} artifacts)",
+                    f"[ROI] GitHub automation: {roi_result.roi_percentage:.0f}% ROI (${roi_result.total_artifact_value:.2f} value)",
                     flush=True,
                 )
         except Exception as e:
@@ -931,18 +601,8 @@ class GitHubOrchestrator:
                 "complete", 100, "Review complete!", pr_number=pr_number
             )
 
-            # Extract artifacts and publish ROI metrics
-            # Store full artifacts locally, get refs for Langfuse
-            artifacts, artifact_refs = extract_github_review_artifacts(
-                result=result,
-                project_dir=self.project_dir,
-                trace_id=None,  # No trace_id available in this context
-            )
-
-            await self._publish_roi(
-                prs_reviewed=1,
-                artifact_refs=artifact_refs,
-            )
+            # Publish ROI metrics (artifacts are created by agent via MCP tools)
+            await self._publish_roi(prs_reviewed=1)
 
             return result
 
@@ -1674,21 +1334,13 @@ class GitHubOrchestrator:
 
         self._report_progress("complete", 100, f"Triaged {len(results)} issues")
 
-        # Extract artifacts and publish ROI metrics
-        # Store full artifacts locally, get refs for Langfuse
-        artifacts, artifact_refs = extract_triage_artifacts(
-            results=results,
-            project_dir=self.project_dir,
-            trace_id=None,  # No trace_id available in this context
-        )
-
+        # Publish ROI metrics (artifacts are created by agent via MCP tools)
         duplicates = sum(1 for r in results if r.is_duplicate)
         spam = sum(1 for r in results if r.is_spam)
         await self._publish_roi(
             issues_triaged=len(results),
             duplicates_detected=duplicates,
             spam_detected=spam,
-            artifact_refs=artifact_refs,
         )
 
         return results

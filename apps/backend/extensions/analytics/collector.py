@@ -86,9 +86,7 @@ async def publish_session_roi(
     metrics: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     """
-    Publish ROI for a session.
-
-    Uses the existing roi_publisher module.
+    Publish ROI for a session using ROI Engine.
 
     Args:
         trace_id: The trace ID
@@ -102,42 +100,41 @@ async def publish_session_roi(
         return None
 
     try:
-        from analytics.roi_publisher import publish_feature_roi
+        from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
 
         # Get collected artifacts
         artifacts = get_collected_artifacts(trace_id)
 
-        # Map agent_type to feature_type
-        feature_type_map = {
-            "coder": "build_coder",
-            "planner": "build_planner",
-            "qa_reviewer": "build_qa_reviewer",
-            "qa_fixer": "build_qa_fixer",
-            "insights": "insights_chat",
-            "spec_gatherer": "spec_gatherer",
-            "spec_writer": "spec_writer",
-        }
-        feature_type = feature_type_map.get(agent_type, agent_type)
-
-        # Get project ID
+        # Get project directory
         import os
-        project_id = os.environ.get("PROJECT_ID", os.path.basename(os.getcwd()))
+        from pathlib import Path
+        project_dir = Path(os.environ.get("PROJECT_DIR", os.getcwd()))
+        project_id = project_dir.name
 
-        result = await publish_feature_roi(
-            feature_type=feature_type,
-            project_id=project_id,
-            cost_usd=metrics.get("cost_usd", 0),
-            tokens=metrics.get("tokens", 0),
+        # Use ROI Engine to calculate and publish ROI
+        squad_config = load_squad_config(project_dir=project_dir)
+        roi_result = calculate_roi_for_spec(
+            spec_id=f"{agent_type}-{trace_id[:8]}",
+            project_dir=project_dir,
+            token_cost=metrics.get("cost_usd", 0),
+            squad_config=squad_config,
+        )
+        await publish_roi(
+            roi_result,
             trace_id=trace_id,
-            metrics=metrics,
-            artifacts=[_to_langfuse_ref(a) for a in artifacts],
+            project_dir=project_dir,
         )
 
-        logger.info(f"Published ROI for {agent_type}: {result}")
-        return result
+        logger.info(f"Published ROI for {agent_type}: {roi_result.roi_percentage:.1f}%")
+        return {
+            "success": True,
+            "roi_percentage": roi_result.roi_percentage,
+            "total_value_usd": roi_result.total_artifact_value,
+            "artifact_count": roi_result.artifact_count,
+        }
 
     except ImportError as e:
-        logger.warning(f"Could not import roi_publisher: {e}")
+        logger.warning(f"Could not import ROI Engine: {e}")
         return None
     except Exception as e:
         logger.error(f"Failed to publish ROI: {e}")

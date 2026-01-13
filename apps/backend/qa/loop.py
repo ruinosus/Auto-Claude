@@ -53,12 +53,15 @@ try:
 except ImportError:
     ROI_TRACKING_AVAILABLE = False
 
-# Langfuse ROI score publishing (optional - graceful degradation)
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_score_publisher)
 try:
-    from analytics.roi_score_publisher import publish_roi_scores
-    LANGFUSE_ROI_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    LANGFUSE_ROI_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+LANGFUSE_ROI_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Langfuse categorical/boolean scores (optional - graceful degradation)
 try:
@@ -153,29 +156,30 @@ async def _update_qa_roi(
             # Don't fail QA loop if ROI tracking fails
             debug("qa_loop", f"Failed to update local ROI tracking: {e}")
 
-    # 2. Publish ROI scores to Langfuse (if available)
-    if LANGFUSE_ROI_AVAILABLE:
+    # 2. Publish ROI scores using ROI Engine (if available)
+    if ROI_ENGINE_AVAILABLE:
         try:
-            result = await publish_roi_scores(
+            squad_config = load_squad_config(project_dir=effective_dir)
+            roi_result = calculate_roi_for_spec(
                 spec_id=spec_id,
                 project_dir=effective_dir,
-                qa_attempts=qa_attempts,
-                qa_passed=qa_passed,
-                trace_id=trace_id,  # Pass trace_id directly to avoid search
+                token_cost=0.0,  # Cost tracked at trace level
+                squad_config=squad_config,
             )
-            if result.get('success'):
-                debug(
-                    "qa_loop",
-                    f"Published ROI scores to Langfuse",
-                    trace_id=result.get('trace_id'),
-                    roi_percentage=result.get('roi_percentage'),
-                    business_value=result.get('business_value_usd'),
-                )
-            else:
-                debug("qa_loop", f"Failed to publish ROI scores: {result.get('error')}")
+            await publish_roi(
+                roi_result,
+                trace_id=trace_id,
+                project_dir=effective_dir,
+            )
+            debug(
+                "qa_loop",
+                f"Published ROI: {roi_result.roi_percentage:.1f}% "
+                f"({roi_result.artifact_count} artifacts, ${roi_result.total_artifact_value:.2f} value)",
+                trace_id=trace_id,
+            )
         except Exception as e:
-            # Don't fail QA loop if Langfuse publishing fails
-            debug("qa_loop", f"Failed to publish ROI scores to Langfuse: {e}")
+            # Don't fail QA loop if ROI publishing fails
+            debug("qa_loop", f"Failed to publish ROI to Langfuse: {e}")
 
 
 # =============================================================================

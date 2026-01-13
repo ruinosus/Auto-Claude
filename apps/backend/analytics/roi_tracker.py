@@ -1,6 +1,13 @@
 # apps/backend/analytics/roi_tracker.py
 """
 ROI Tracker - captures git diff stats and QA results for ROI calculation.
+
+.. deprecated::
+    This module is DEPRECATED. Use the ROI Engine instead.
+    The ROI Engine tracks value through artifacts, not git diffs.
+
+    See apps/roi_engine/ for the new implementation.
+    This module will be removed in a future release.
 """
 
 import logging

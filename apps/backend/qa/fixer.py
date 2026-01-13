@@ -44,12 +44,25 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
-# ROI publisher (optional - graceful degradation if not available)
+# ROI Engine (optional - graceful degradation if not available)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    import sys as _sys
+    from pathlib import Path as _Path
+    _roi_engine_path = _Path(__file__).parent.parent.parent / "roi_engine"
+    if str(_roi_engine_path) not in _sys.path:
+        _sys.path.insert(0, str(_roi_engine_path))
+
+    from core import (
+        calculate_roi_for_spec,
+        load_squad_config,
+        publish_roi,
+    )
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+    calculate_roi_for_spec = None
+    load_squad_config = None
+    publish_roi = None
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -592,7 +605,9 @@ async def run_qa_fixer_session(
         # Extract artifacts and publish ROI metrics
         # Use effective_project_dir for analytics (original project, not worktree)
         effective_project_dir = analytics_project_dir or project_dir
-        if ROI_PUBLISHER_AVAILABLE and response_text:
+
+        # Extract artifacts (for metrics, even if ROI Engine not available)
+        if response_text:
             try:
                 # Extract artifacts from the response
                 # Returns (full_artifacts, metrics, langfuse_refs)
@@ -614,35 +629,41 @@ async def run_qa_fixer_session(
                     issues_resolved=roi_metrics.get("issues_resolved", 0),
                     tests_fixed=roi_metrics.get("tests_fixed", 0),
                 )
+            except Exception as e:
+                debug_error("qa_fixer", f"Failed to extract artifacts (non-fatal): {e}")
+                artifacts, roi_metrics, langfuse_refs = [], {}, []
 
-                # Estimate token usage (rough estimate if not available)
-                # ~4 characters per token is a common approximation
-                estimated_tokens = (len(prompt) + len(response_text)) // 4
+        # Publish artifact-based ROI using ROI Engine
+        if ROI_ENGINE_AVAILABLE and calculate_roi_for_spec is not None and response_text:
+            try:
+                # Load squad configuration for role-based valuation
+                squad_config = load_squad_config(project_dir=effective_project_dir)
 
-                # Publish ROI to Langfuse with refs (truncated previews, not full content)
-                import asyncio
-                asyncio.create_task(
-                    publish_feature_roi(
-                        feature_type="qa_fixer",
-                        project_id=project_id or "unknown",
-                        cost_usd=0.0,  # Cost is tracked at trace level
-                        tokens=estimated_tokens,
-                        trace_id=langfuse_trace_id,
-                        metrics={
-                            "fixes_applied": roi_metrics.get("fixes_applied", 0),
-                            "issues_resolved": roi_metrics.get("issues_resolved", 0),
-                            "tests_fixed": roi_metrics.get("tests_fixed", 0),
-                            "files_modified": roi_metrics.get("files_modified", 0),
-                            "qa_attempts": fix_session,
-                            "qa_passed": bool(status and status.get("ready_for_qa_revalidation")),
-                        },
-                        artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
-                    )
+                # Calculate ROI based on artifacts created during QA fixer session
+                roi_result = calculate_roi_for_spec(
+                    spec_id=spec_id,
+                    project_dir=effective_project_dir,
+                    token_cost=0.0,  # Cost is tracked via Langfuse trace
+                    squad_config=squad_config,
                 )
-                debug("qa_fixer", "ROI publish task created")
+
+                # Publish to Langfuse and local storage
+                await publish_roi(
+                    roi_result,
+                    trace_id=langfuse_trace_id,
+                    project_dir=effective_project_dir,
+                )
+
+                debug(
+                    "qa_fixer",
+                    "ROI Engine publish completed",
+                    total_value=roi_result.total_artifact_value,
+                    artifact_count=roi_result.artifact_count,
+                    roi_percentage=roi_result.roi_percentage,
+                )
 
             except Exception as e:
-                # ROI extraction/publishing should not fail the fix session
+                # ROI publishing should not fail the fix session
                 debug_error("qa_fixer", f"Failed to publish ROI (non-fatal): {e}")
 
         # Save fixer session insights to memory
@@ -703,7 +724,7 @@ async def run_qa_fixer_session(
                     output_data = {"response": response_text, "tool_count": tool_count}
 
                     # Include ROI metrics if they were extracted
-                    if ROI_PUBLISHER_AVAILABLE and response_text:
+                    if ARTIFACT_STORAGE_AVAILABLE and response_text:
                         try:
                             # Don't save artifacts again - just get metrics for output
                             _, roi_metrics, _ = extract_qa_fix_artifacts(

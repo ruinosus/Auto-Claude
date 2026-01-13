@@ -50,12 +50,15 @@ except ImportError:
     trace_context = None
     _langfuse_init_result = False
 
-# Import ROI publisher
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -561,7 +564,7 @@ class AIResolver:
         spec_id: Optional[str] = None,
     ) -> None:
         """
-        Publish ROI metrics synchronously (wraps async call).
+        Publish ROI metrics using ROI Engine (synchronous wrapper).
 
         Args:
             results: List of merge results
@@ -570,34 +573,17 @@ class AIResolver:
             project_dir: Project root directory for artifact storage
             spec_id: Spec identifier for artifact grouping
         """
-        if not ROI_PUBLISHER_AVAILABLE:
+        if not ROI_ENGINE_AVAILABLE:
             return
 
         try:
             import asyncio
+            from pathlib import Path
 
             # Calculate metrics from results
             conflicts_resolved = sum(len(r.conflicts_resolved) for r in results)
             files_merged = len(set(r.file_path for r in results if r.conflicts_resolved))
             total_tokens = sum(r.tokens_used for r in results)
-
-            # Count decisions and code choices
-            merge_decisions = sum(
-                1 for r in results
-                if r.decision in [MergeDecision.AI_MERGED, MergeDecision.KEEP_OURS,
-                                  MergeDecision.KEEP_THEIRS, MergeDecision.COMBINED]
-            )
-            code_choices = sum(
-                len(re.findall(r'```(\w+)?\n', r.merged_content or ''))
-                for r in results
-            )
-
-            # Count manual interventions avoided (conflicts that didn't need human review)
-            manual_intervention_avoided = sum(
-                1 for r in results
-                if r.decision != MergeDecision.NEEDS_HUMAN_REVIEW
-                and r.decision != MergeDecision.FAILED
-            )
 
             # Estimate cost (rough estimate based on tokens)
             estimated_cost = (total_tokens / 1000) * 0.003  # ~$0.003 per 1K tokens
@@ -614,31 +600,25 @@ class AIResolver:
             # Calculate total artifact value (use full artifacts for value)
             total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
-            # Publish ROI with Langfuse refs (truncated previews, not full content)
+            # Publish ROI using ROI Engine
             async def _publish():
                 try:
-                    roi_result = await publish_feature_roi(
-                        feature_type="merge_resolver",
-                        project_id=project_id or "unknown",
-                        cost_usd=estimated_cost,
-                        tokens=total_tokens,
+                    project_path = Path(project_dir) if project_dir else Path.cwd()
+                    squad_config = load_squad_config(project_dir=project_path)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=spec_id or f"merge-{trace_id[:8] if trace_id else 'unknown'}",
+                        project_dir=project_path,
+                        token_cost=estimated_cost,
+                        squad_config=squad_config,
+                    )
+                    await publish_roi(
+                        roi_result,
                         trace_id=trace_id,
-                        metrics={
-                            "conflicts_resolved": conflicts_resolved,
-                            "files_merged": files_merged,
-                            "manual_intervention_avoided": manual_intervention_avoided,
-                            "merge_decisions": merge_decisions,
-                            "code_choices": code_choices,
-                            "artifacts_count": len(artifacts),
-                            "artifact_value_usd": total_artifact_value,
-                        },
-                        spec_id=spec_id,
-                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                        project_dir=project_path,
                     )
                     logger.info(
                         f"ROI published for merge resolver: "
                         f"resolved={conflicts_resolved}, files={files_merged}, "
-                        f"decisions={merge_decisions}, choices={code_choices}, "
                         f"artifacts={len(artifacts)}, value=${total_artifact_value}"
                     )
                     return roi_result

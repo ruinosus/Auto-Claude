@@ -63,7 +63,7 @@ load_dotenv = import_dotenv()
 
 env_file = Path(__file__).parent.parent.parent / ".env"
 if env_file.exists():
-    load_dotenv(env_file)
+    load_dotenv(env_file, override=True)
 
 # Clean up conflicting env vars (Foundry vs standard mode)
 from core.auth import cleanup_conflicting_env_vars
@@ -74,12 +74,15 @@ from phase_config import resolve_model_id
 
 from debug import debug_error
 
-# ROI publisher (optional - graceful degradation if not available)
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -489,7 +492,7 @@ async def publish_github_roi_with_artifacts(
     trace_id: str | None = None,
 ) -> dict:
     """
-    Publish ROI metrics with artifact references.
+    Publish ROI metrics with artifact references using ROI Engine.
 
     Args:
         project_dir: Project directory
@@ -504,12 +507,10 @@ async def publish_github_roi_with_artifacts(
     Returns:
         Dict with ROI calculation results
     """
-    if not ROI_PUBLISHER_AVAILABLE:
-        return {"success": False, "error": "ROI publisher not available"}
+    if not ROI_ENGINE_AVAILABLE:
+        return {"success": False, "error": "ROI Engine not available"}
 
     try:
-        project_id = project_dir.name
-
         # Calculate total artifact value
         total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
@@ -517,23 +518,29 @@ async def publish_github_roi_with_artifacts(
         estimated_tokens = metrics.get("estimated_tokens", 1000)
         estimated_cost = (estimated_tokens / 1000) * 0.003
 
-        result = await publish_feature_roi(
-            feature_type=feature_type,
-            project_id=project_id,
-            cost_usd=estimated_cost,
-            tokens=estimated_tokens,
-            metrics={
-                **metrics,
-                "artifacts_count": len(artifacts),
-                "artifact_value_usd": total_artifact_value,
-            },
-            duration_seconds=duration_seconds,
-            model=model,
-            trace_id=trace_id,
-            artifacts=langfuse_refs,  # Pass refs for Langfuse
+        # Use ROI Engine for calculation
+        squad_config = load_squad_config(project_dir=project_dir)
+        roi_result = calculate_roi_for_spec(
+            spec_id=f"{feature_type}-{project_dir.name}",
+            project_dir=project_dir,
+            token_cost=estimated_cost,
+            squad_config=squad_config,
         )
 
-        return result
+        # Publish to Langfuse if trace_id is provided
+        await publish_roi(
+            roi_result,
+            trace_id=trace_id,
+            project_dir=project_dir,
+        )
+
+        return {
+            "success": True,
+            "roi_percentage": roi_result.roi_percentage if roi_result else 0,
+            "total_value_usd": total_artifact_value,
+            "net_value_usd": roi_result.net_value if roi_result else 0,
+            "artifacts_count": len(artifacts),
+        }
 
     except Exception as e:
         return {"success": False, "error": str(e)}

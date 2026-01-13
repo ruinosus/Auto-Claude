@@ -49,12 +49,15 @@ from .models import (
     rename_spec_dir_from_requirements,
 )
 
-# ROI Publishing
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Langfuse integration for tracing
 try:
@@ -866,25 +869,18 @@ class SpecOrchestrator:
         )
 
     async def _publish_roi(self, phases_executed: list[str]) -> None:
-        """Publish ROI metrics for spec creation with artifact extraction.
+        """Publish ROI metrics for spec creation using ROI Engine.
 
         Extracts artifacts from the spec directory and publishes comprehensive
-        ROI metrics including:
-        - phases_completed: Number of phases executed
-        - requirements_count: Number of requirements captured
-        - complexity_level: Assessed complexity (simple/standard/complex)
-        - context_files_found: Number of relevant files discovered
+        ROI metrics using the artifact-based ROI Engine.
 
         Args:
             phases_executed: List of phases that were executed
         """
-        if not ROI_PUBLISHER_AVAILABLE:
+        if not ROI_ENGINE_AVAILABLE:
             return
 
         try:
-            project_id = self.project_dir.name
-            complexity_level = self.assessment.complexity.value if self.assessment else "standard"
-
             # Use the last collected trace_id for ROI attachment
             trace_id = self._trace_ids[-1] if self._trace_ids else None
 
@@ -897,49 +893,33 @@ class SpecOrchestrator:
                 trace_id=trace_id,
             )
 
-            # Count metrics from artifacts
-            requirements_count = sum(
-                1 for a in artifacts if a.get("type") in ("requirement_captured", "acceptance_criterion")
-            )
-            context_files_found = 0
-            for a in artifacts:
-                if a.get("type") == "context_discovered":
-                    context_files_found = a.get("files_count", 0)
-                    break
-
             # Calculate total artifact value
             total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
-            result = await publish_feature_roi(
-                feature_type="spec_creation",  # Use specific feature type for spec creation pipeline
-                project_id=project_id,
-                cost_usd=0.0,  # Will be calculated from traces
-                tokens=0,
-                metrics={
-                    "phases_completed": len(phases_executed),
-                    "complexity_level": complexity_level,
-                    "requirements_count": requirements_count,
-                    "context_files_found": context_files_found,
-                    "requirements_gathered": requirements_count,  # For ROI calculator compatibility
-                    "artifacts_count": len(artifacts),
-                    "artifacts_value_usd": total_artifact_value,
-                },
+            # Use ROI Engine to calculate and publish ROI
+            squad_config = load_squad_config(project_dir=self.project_dir)
+            roi_result = calculate_roi_for_spec(
                 spec_id=self.spec_dir.name,
-                trace_id=trace_id,  # Pass trace_id for Langfuse score attachment
+                project_dir=self.project_dir,
+                token_cost=0.0,  # Cost tracked at trace level
+                squad_config=squad_config,
+            )
+            await publish_roi(
+                roi_result,
+                trace_id=trace_id,
+                project_dir=self.project_dir,
             )
 
-            if result.get("success"):
-                roi_pct = result.get("roi_percentage", 0)
-                value = result.get("total_value_usd", 0)
+            print_status(
+                f"Spec ROI: {roi_result.roi_percentage:.0f}% "
+                f"(${roi_result.total_artifact_value:.2f} value from {len(phases_executed)} phases)",
+                "success",
+            )
+            if artifacts:
                 print_status(
-                    f"Spec ROI: {roi_pct:.0f}% (${value:.2f} value from {len(phases_executed)} phases)",
-                    "success",
+                    f"Artifacts: {len(artifacts)} extracted (${total_artifact_value:.0f} value)",
+                    "info",
                 )
-                if artifacts:
-                    print_status(
-                        f"Artifacts: {len(artifacts)} extracted (${total_artifact_value:.0f} value)",
-                        "info",
-                    )
 
             # Save artifacts to file for traceability
             await self._save_artifacts_report(artifacts, phases_executed, trace_id)

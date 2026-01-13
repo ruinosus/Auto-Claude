@@ -27,7 +27,9 @@ load_dotenv = import_dotenv()
 
 env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
-    load_dotenv(env_file)
+    # Use override=True to ensure .env values take precedence over empty/default values
+    # passed from parent process (e.g., Electron)
+    load_dotenv(env_file, override=True)
 
 # Clean up conflicting env vars (Foundry vs standard mode)
 from core.auth import cleanup_conflicting_env_vars

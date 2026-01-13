@@ -15,12 +15,15 @@ from init import init_auto_claude_dir
 from phase_config import get_thinking_budget, resolve_model_id
 from ui import Icons, box, icon, muted, print_section, print_status
 
-# ROI Publishing
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_roadmap_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_project, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -758,13 +761,12 @@ class RoadmapOrchestrator:
         return True
 
     async def _publish_roi(self) -> None:
-        """Publish ROI metrics for roadmap generation.
+        """Publish ROI metrics for roadmap generation using ROI Engine.
 
-        Calculates the value of strategic planning and prioritization.
-        Extracts artifacts and stores them locally, passes refs to Langfuse.
+        Calculates artifact-based ROI and publishes to Langfuse.
         """
-        if not ROI_PUBLISHER_AVAILABLE:
-            debug_warning("roadmap_orchestrator", "ROI publisher not available")
+        if not ROI_ENGINE_AVAILABLE:
+            debug_warning("roadmap_orchestrator", "ROI Engine not available")
             return
 
         print_section("PHASE 4: PUBLISH ROI", Icons.CHART)
@@ -783,21 +785,14 @@ class RoadmapOrchestrator:
 
             # Count features by status
             features_identified = len(features)
-            features_rejected = sum(
-                1 for f in features
-                if f.get("status", "").lower() in ["rejected", "deferred", "wont_do"]
-            )
 
             # Estimate cost (typical roadmap generation uses ~10K tokens)
             estimated_tokens = 10000
             estimated_cost = (estimated_tokens / 1000) * 0.003  # $0.003 per 1K tokens
 
-            project_id = self.project_dir.name
-
             # Extract roadmap artifacts - stores full content locally
             # Returns (full_artifacts, langfuse_refs)
             all_artifacts = []
-            all_refs = []
 
             # Extract roadmap artifacts (vision, phases, features)
             roadmap_artifacts, roadmap_refs = extract_roadmap_artifacts(
@@ -806,7 +801,6 @@ class RoadmapOrchestrator:
                 trace_id=None,  # No trace context in orchestrator
             )
             all_artifacts.extend(roadmap_artifacts)
-            all_refs.extend(roadmap_refs)
 
             # Extract competitor artifacts if available
             competitor_file = self.output_dir / "competitor_analysis.json"
@@ -820,7 +814,6 @@ class RoadmapOrchestrator:
                         trace_id=None,
                     )
                     all_artifacts.extend(competitor_artifacts)
-                    all_refs.extend(competitor_refs)
                 except Exception as e:
                     debug_warning(
                         "roadmap_orchestrator",
@@ -830,49 +823,44 @@ class RoadmapOrchestrator:
             # Calculate total artifact value (use full artifacts for value)
             total_artifact_value = sum(a.get("value_usd", 0) for a in all_artifacts)
 
-            # Publish ROI with Langfuse refs (truncated previews, not full content)
-            result = await publish_roadmap_roi(
-                project_id=project_id,
-                features_identified=features_identified,
-                features_rejected=features_rejected,
-                cost_usd=estimated_cost,
-                tokens=estimated_tokens,
-                model=self.model,
-                artifacts=all_refs,  # Pass refs for Langfuse
+            # Use ROI Engine to calculate and publish ROI
+            # Use calculate_roi_for_project since roadmap artifacts are project-level (spec_id=None)
+            squad_config = load_squad_config(project_dir=self.project_dir)
+            roi_result = calculate_roi_for_project(
+                project_dir=self.project_dir,
+                token_cost=estimated_cost,
+                squad_config=squad_config,
+            )
+            await publish_roi(
+                roi_result,
+                trace_id=None,
+                project_dir=self.project_dir,
             )
 
-            if result.get("success"):
-                roi_pct = result.get("roi_percentage", 0)
-                value = result.get("total_value_usd", 0)
-                print_status(
-                    f"Roadmap ROI: {roi_pct:.0f}% (${value:.2f} value from {features_identified} features)",
-                    "success",
-                )
+            print_status(
+                f"Roadmap ROI: {roi_result.roi_percentage:.0f}% "
+                f"(${roi_result.total_artifact_value:.2f} value from {features_identified} features)",
+                "success",
+            )
+            debug(
+                "roadmap_roi",
+                "Published roadmap ROI",
+                roi=roi_result.roi_percentage,
+                value=roi_result.total_artifact_value,
+                features=features_identified,
+                artifacts_count=len(all_artifacts),
+                artifact_value=total_artifact_value,
+                phases_count=len(phases),
+            )
+
+            # Log artifact storage info if available
+            if ARTIFACT_STORAGE_AVAILABLE and all_artifacts:
                 debug(
                     "roadmap_roi",
-                    "Published roadmap ROI",
-                    roi=roi_pct,
-                    value=value,
-                    features=features_identified,
-                    rejected=features_rejected,
-                    artifacts_count=len(all_artifacts),
-                    artifact_value=total_artifact_value,
-                    phases_count=len(phases),
-                )
-
-                # Log artifact storage info if available
-                if ARTIFACT_STORAGE_AVAILABLE and all_artifacts:
-                    debug(
-                        "roadmap_roi",
-                        "Artifacts stored locally",
-                        roadmap_artifacts=len(roadmap_artifacts),
-                        competitor_artifacts=len(all_artifacts) - len(roadmap_artifacts),
-                        storage_dir=str(self.project_dir / ".auto-claude" / "artifacts"),
-                    )
-            else:
-                debug_warning(
-                    "roadmap_roi",
-                    f"Failed to publish ROI: {result.get('error')}",
+                    "Artifacts stored locally",
+                    roadmap_artifacts=len(roadmap_artifacts),
+                    competitor_artifacts=len(all_artifacts) - len(roadmap_artifacts),
+                    storage_dir=str(self.project_dir / ".auto-claude" / "artifacts"),
                 )
 
         except Exception as e:

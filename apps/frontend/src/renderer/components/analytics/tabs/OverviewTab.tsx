@@ -222,31 +222,33 @@ export function OverviewTab({ data, loading, projectId, projectPath }: OverviewT
               <p>No hourly data available yet</p>
             </div>
           ) : (
-            <div className="flex gap-1" style={{ height: '128px' }}>
-              {data.hourlyData.map((h, idx) => {
-                const heightPercent = Math.max(4, (h.cost / maxHourlyCost) * 100);
-                const barHeight = Math.round((heightPercent / 100) * 100); // 100px max for bars
-                const hourLabel = new Date(h.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center group relative justify-end">
-                    {/* Bar container with fixed height */}
-                    <div className="w-full flex items-end justify-center" style={{ height: '100px' }}>
-                      <div
-                        className="w-full max-w-[40px] bg-purple-500 rounded-t transition-all hover:bg-purple-600 cursor-pointer"
-                        style={{ height: `${barHeight}px` }}
-                        title={`${hourLabel}: ${formatCurrency(h.cost)}`}
-                      />
-                    </div>
-                    <span className="text-[10px] text-gray-400 mt-1 truncate w-full text-center">{hourLabel}</span>
-                    {/* Tooltip */}
-                    <div className="absolute bottom-full mb-2 hidden group-hover:block z-10">
-                      <div className="bg-gray-900 text-white text-xs rounded px-2 py-1 whitespace-nowrap">
-                        {formatCurrency(h.cost)} | {h.requests} requests
+            <div className="overflow-x-auto" style={{ height: '148px' }}>
+              <div className="flex gap-1 min-w-fit" style={{ height: '128px' }}>
+                {data.hourlyData.map((h, idx) => {
+                  const heightPercent = Math.max(4, (h.cost / maxHourlyCost) * 100);
+                  const barHeight = Math.round((heightPercent / 100) * 100); // 100px max for bars
+                  const hourLabel = new Date(h.hour).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <div key={idx} className="flex flex-col items-center group relative justify-end" style={{ minWidth: '32px' }}>
+                      {/* Bar container with fixed height */}
+                      <div className="w-full flex items-end justify-center" style={{ height: '100px' }}>
+                        <div
+                          className="w-6 bg-purple-500 rounded-t transition-all hover:bg-purple-600 cursor-pointer"
+                          style={{ height: `${barHeight}px` }}
+                          title={`${hourLabel}: ${formatCurrency(h.cost)}`}
+                        />
+                      </div>
+                      <span className="text-[10px] text-gray-400 mt-1 whitespace-nowrap">{hourLabel}</span>
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full mb-2 hidden group-hover:block z-10">
+                        <div className="bg-gray-900 text-white text-xs rounded px-2 py-1 whitespace-nowrap">
+                          {formatCurrency(h.cost)} | {h.requests} requests
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

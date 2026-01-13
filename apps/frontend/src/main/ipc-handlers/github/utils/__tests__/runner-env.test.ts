@@ -119,4 +119,35 @@ describe('getRunnerEnv', () => {
     // extraEnv has highest precedence
     expect(result.SHARED_VAR).toBe('from-extra');
   });
+
+  it('includes autoBuildSource and parent dir in PYTHONPATH when provided', async () => {
+    mockGetAPIProfileEnv.mockResolvedValue({});
+    mockGetOAuthModeClearVars.mockReturnValue({});
+    mockGetPythonEnv.mockReturnValue({
+      PYTHONPATH: '/bundled/site-packages',
+    });
+
+    const result = await getRunnerEnv(undefined, '/path/to/apps/backend');
+
+    // PYTHONPATH should include bundled packages + autoBuildSource + parent (apps/)
+    const pathSep = process.platform === 'win32' ? ';' : ':';
+    const paths = result.PYTHONPATH?.split(pathSep) || [];
+    expect(paths).toContain('/bundled/site-packages');
+    expect(paths).toContain('/path/to/apps/backend');
+    expect(paths).toContain('/path/to/apps');
+  });
+
+  it('keeps only bundled PYTHONPATH when autoBuildSource is not provided', async () => {
+    mockGetAPIProfileEnv.mockResolvedValue({});
+    mockGetOAuthModeClearVars.mockReturnValue({});
+    mockGetPythonEnv.mockReturnValue({
+      PYTHONPATH: '/bundled/site-packages',
+    });
+
+    const result = await getRunnerEnv();
+
+    // PYTHONPATH should be empty since pythonEnv.PYTHONPATH is included but no autoBuildSource
+    // Actually, with the new implementation, if pythonEnv.PYTHONPATH exists, it will be included
+    expect(result.PYTHONPATH).toBe('/bundled/site-packages');
+  });
 });

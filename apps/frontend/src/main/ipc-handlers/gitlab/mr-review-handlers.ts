@@ -218,7 +218,8 @@ async function runMRReview(
   debugLog('Spawning MR review process', { args, model, thinkingLevel });
 
   // Get runner environment with PYTHONPATH for bundled packages (fixes #139)
-  const subprocessEnv = await getRunnerEnv();
+  // Pass backendPath so PYTHONPATH includes the parent (apps/) directory for roi_engine imports
+  const subprocessEnv = await getRunnerEnv(undefined, backendPath);
 
   const { process: childProcess, promise } = runPythonSubprocess<MRReviewResult>({
     pythonPath: getPythonPath(backendPath),
@@ -827,7 +828,8 @@ export function registerMRReviewHandlers(
           debugLog('Spawning follow-up review process', { args, model, thinkingLevel });
 
           // Get runner environment with PYTHONPATH for bundled packages (fixes #139)
-          const followupSubprocessEnv = await getRunnerEnv();
+          // Pass backendPath so PYTHONPATH includes the parent (apps/) directory for roi_engine imports
+          const followupSubprocessEnv = await getRunnerEnv(undefined, backendPath);
 
           const { process: childProcess, promise } = runPythonSubprocess<MRReviewResult>({
             pythonPath: getPythonPath(backendPath),

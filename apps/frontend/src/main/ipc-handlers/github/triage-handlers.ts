@@ -256,7 +256,8 @@ async function runTriage(
 
   debugLog('Spawning triage process', { args, model, thinkingLevel });
 
-  const subprocessEnv = await getRunnerEnv();
+  // Pass backendPath so PYTHONPATH includes the parent (apps/) directory for roi_engine imports
+  const subprocessEnv = await getRunnerEnv(undefined, backendPath);
 
   const { promise } = runPythonSubprocess<TriageResult[]>({
     pythonPath: getPythonPath(backendPath),

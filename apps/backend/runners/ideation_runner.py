@@ -33,7 +33,7 @@ load_dotenv = import_dotenv()
 
 env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
-    load_dotenv(env_file)
+    load_dotenv(env_file, override=True)
 
 # Clean up conflicting env vars (Foundry vs standard mode)
 from core.auth import cleanup_conflicting_env_vars
@@ -47,163 +47,8 @@ from ideation import (
 )
 from ideation.generator import IDEATION_TYPE_LABELS, IDEATION_TYPES
 
-# Graceful imports for artifact storage
-try:
-    from analytics.artifact_storage import (
-        save_artifact_safe,
-        create_langfuse_reference,
-        _get_artifacts_dir,
-    )
-    ARTIFACT_STORAGE_AVAILABLE = True
-except ImportError:
-    ARTIFACT_STORAGE_AVAILABLE = False
-    save_artifact_safe = None
-    create_langfuse_reference = None
-    _get_artifacts_dir = None
-
-# Graceful imports for ROI publishing
-try:
-    from analytics.roi_publisher import publish_ideation_roi
-    ROI_PUBLISHER_AVAILABLE = True
-except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
-    publish_ideation_roi = None
-
-# =============================================================================
-# ARTIFACT EXTRACTION
-# =============================================================================
-
-
-def extract_ideation_artifacts(
-    ideas: list[dict],
-    project_dir: Path | None = None,
-    trace_id: str | None = None,
-) -> tuple[list[dict], list[dict]]:
-    """
-    Extract artifacts from generated ideation ideas.
-
-    Stores FULL artifact content locally, returns lightweight references for Langfuse.
-
-    Artifacts extracted:
-    - idea ($50 each) - each generated idea
-    - recommendation ($75 each) - ideas with actionable recommendations
-    - analysis_insight ($100 each) - ideas with deep analysis/strategic value
-
-    Args:
-        ideas: List of idea dictionaries from ideation.json
-        project_dir: Project root directory for local storage
-        trace_id: Langfuse trace ID for linking
-
-    Returns:
-        Tuple of (local_artifacts, langfuse_refs):
-        - local_artifacts: Full artifacts for local processing
-        - langfuse_refs: Truncated references for Langfuse (or full artifacts if storage unavailable)
-    """
-    from datetime import datetime
-
-    artifacts = []
-
-    for idea in ideas:
-        idea_type = idea.get("ideation_type", idea.get("type", "unknown"))
-        title = idea.get("title", "Untitled")
-        description = idea.get("description", "")
-        priority = idea.get("priority", "medium").lower()
-        complexity = idea.get("complexity", "medium")
-        rationale = idea.get("rationale", "")
-
-        # Build FULL content - no truncation
-        content = f"# {title}\n\n"
-        content += f"**Type**: {IDEATION_TYPE_LABELS.get(idea_type, idea_type)}\n"
-        content += f"**Priority**: {priority.upper()}\n"
-        content += f"**Complexity**: {complexity}\n\n"
-        content += f"## Description\n{description}\n"
-
-        if rationale:
-            content += f"\n## Rationale\n{rationale}\n"
-
-        # Include implementation hints if present
-        implementation = idea.get("implementation_hints", idea.get("implementation", ""))
-        if implementation:
-            content += f"\n## Implementation\n{implementation}\n"
-
-        # Include dependencies if present
-        dependencies = idea.get("dependencies", [])
-        if dependencies:
-            content += f"\n## Dependencies\n"
-            for dep in dependencies:
-                content += f"- {dep}\n"
-
-        # Determine artifact type and value based on idea characteristics
-        if priority == "high" and len(description) > 200:
-            # High priority with substantial description = analysis insight
-            artifact_type = "analysis_insight"
-            value_usd = 100
-            tab = "business"
-        elif any(kw in description.lower() for kw in ["recommend", "should", "consider", "improve", "enhance"]):
-            # Contains recommendation language
-            artifact_type = "recommendation"
-            value_usd = 75
-            tab = "business"
-        else:
-            # Standard idea
-            artifact_type = "idea"
-            value_usd = 50
-            # Tab based on ideation type
-            if idea_type in ["security_hardening"]:
-                tab = "ops"
-            elif idea_type in ["ui_ux_improvements"]:
-                tab = "techlead"
-            elif idea_type in ["code_improvements", "code_quality", "performance_optimizations"]:
-                tab = "dev"
-            else:
-                tab = "business"
-
-        artifacts.append({
-            "type": artifact_type,
-            "format": "markdown",
-            "content": content,
-            "value_usd": value_usd,
-            "description": f"{IDEATION_TYPE_LABELS.get(idea_type, idea_type)}: {title}",
-            "tab": tab,
-            "metadata": {
-                "ideation_type": idea_type,
-                "title": title,
-                "priority": priority,
-                "complexity": complexity,
-            },
-        })
-
-    # Save artifacts locally and create Langfuse references
-    if ARTIFACT_STORAGE_AVAILABLE and project_dir and save_artifact_safe and create_langfuse_reference and _get_artifacts_dir:
-        langfuse_refs = []
-        for artifact in artifacts:
-            # Save full artifact locally
-            artifact_id = save_artifact_safe(
-                artifact=artifact,
-                project_dir=project_dir,
-                spec_id=None,  # Ideation doesn't have spec_id
-                trace_id=trace_id,
-                agent_type="ideation",
-                session_num=None,
-            )
-
-            if artifact_id:
-                # Create lightweight reference for Langfuse
-                artifacts_dir = _get_artifacts_dir(project_dir)
-                storage_path = str(
-                    (artifacts_dir / datetime.now().strftime("%Y-%m-%d") / f"{artifact_id}.json")
-                )
-                ref = create_langfuse_reference(artifact, artifact_id, storage_path)
-                langfuse_refs.append(ref)
-            else:
-                # Fallback: if storage fails, include full artifact as ref
-                langfuse_refs.append(artifact)
-
-        return artifacts, langfuse_refs
-    else:
-        # No local storage available - return artifacts as both
-        return artifacts, artifacts
-
+# Note: Artifacts are created by the ideation agent via MCP tools during execution
+# and captured by the observability layer. No manual extraction needed in orchestrator.
 
 # Re-export for backward compatibility
 __all__ = [
@@ -212,9 +57,6 @@ __all__ = [
     "IdeationPhaseResult",
     "IDEATION_TYPES",
     "IDEATION_TYPE_LABELS",
-    "extract_ideation_artifacts",
-    "ARTIFACT_STORAGE_AVAILABLE",
-    "ROI_PUBLISHER_AVAILABLE",
 ]
 
 

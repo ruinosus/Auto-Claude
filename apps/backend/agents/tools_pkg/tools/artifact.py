@@ -29,6 +29,23 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # =============================================================================
+# ROI Engine Integration (optional - graceful degradation if not available)
+# =============================================================================
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _roi_engine_path = _Path(__file__).parent.parent.parent.parent.parent / "roi_engine"
+    if str(_roi_engine_path) not in _sys.path:
+        _sys.path.insert(0, str(_roi_engine_path))
+
+    from core import calculate_artifact_value, load_squad_config
+    ROI_ENGINE_AVAILABLE = True
+except ImportError:
+    ROI_ENGINE_AVAILABLE = False
+    calculate_artifact_value = None
+    load_squad_config = None
+
+# =============================================================================
 # Artifact Type Definitions
 # =============================================================================
 # Each artifact type has predefined base value and tab assignment
@@ -198,6 +215,57 @@ def calculate_artifact_value(
 
     total_value = int((base_value + content_bonus) * multiplier)
     return total_value
+
+
+def _notify_roi_engine(
+    artifact: dict,
+    project_dir: Path,
+) -> dict | None:
+    """
+    Notify ROI Engine of artifact creation for role-based valuation.
+
+    This calculates the artifact's value using the ROI Engine's role-based
+    system (hourly_rate × estimated_hours) instead of fixed base values.
+
+    Args:
+        artifact: The artifact dictionary
+        project_dir: Project root directory for squad config
+
+    Returns:
+        Role-based valuation info or None if ROI Engine unavailable
+    """
+    if not ROI_ENGINE_AVAILABLE or calculate_artifact_value is None:
+        return None
+
+    try:
+        # Load squad configuration for role-based valuation
+        squad_config = load_squad_config(project_dir=project_dir)
+
+        # Calculate role-based value
+        artifact_value = calculate_artifact_value(artifact, squad_config)
+
+        # Log the role-based valuation
+        logger.info(
+            f"ROI Engine valuation: {artifact.get('type', 'unknown')} → "
+            f"Role: {artifact_value.role.value}, "
+            f"Seniority: {artifact_value.seniority.value}, "
+            f"Value: ${artifact_value.calculated_value:.2f} "
+            f"(original: ${artifact.get('value_usd', 0)})"
+        )
+
+        return {
+            "role": artifact_value.role.value,
+            "seniority": artifact_value.seniority.value,
+            "hourly_rate": artifact_value.hourly_rate,
+            "estimated_hours": artifact_value.estimated_hours,
+            "calculated_value": artifact_value.calculated_value,
+            "original_value": artifact.get("value_usd", 0),
+            "value_source": artifact_value.value_source,
+        }
+
+    except Exception as e:
+        logger.debug(f"ROI Engine notification failed (non-fatal): {e}")
+        return None
 
 
 async def _publish_artifact_roi(
@@ -487,6 +555,15 @@ Example usage:
                     result_info["saved_locally"] = True
                     result_info["artifact_id"] = artifact_id
 
+                    # Notify ROI Engine for role-based valuation
+                    roi_engine_result = _notify_roi_engine(
+                        artifact=artifact,
+                        project_dir=project_dir,
+                    )
+                    if roi_engine_result:
+                        result_info["roi_engine_value"] = roi_engine_result["calculated_value"]
+                        result_info["roi_engine_role"] = roi_engine_result["role"]
+
                     # Create Langfuse reference
                     storage_path = str(
                         _get_artifacts_dir(project_dir)
@@ -528,6 +605,9 @@ Format: {format_type}
         if result_info.get("artifact_id"):
             response_text += f"ID: {result_info['artifact_id']}\n"
 
+        if result_info.get("roi_engine_value"):
+            response_text += f"Role-based value: ${result_info['roi_engine_value']:.2f} ({result_info.get('roi_engine_role', 'unknown')})\n"
+
         if result_info.get("roi_published"):
             response_text += f"ROI: {result_info.get('roi_status', 'Published')}\n"
 
@@ -544,6 +624,9 @@ Format: {format_type}
             "value_usd": value_usd,
             "format": format_type,
             "description": description,
+            # ROI Engine role-based valuation (if available)
+            "roi_engine_value": result_info.get("roi_engine_value"),
+            "roi_engine_role": result_info.get("roi_engine_role"),
         }
 
     tools.append(create_artifact)

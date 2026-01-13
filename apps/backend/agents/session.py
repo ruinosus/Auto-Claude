@@ -53,13 +53,18 @@ try:
 except ImportError:
     ANALYTICS_AVAILABLE = False
 
-# ROI Publisher for feature-level ROI tracking
+# ROI Engine for feature-level ROI tracking
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    from analytics.roi_score_publisher import get_git_diff_stats
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, publish_roi, load_squad_config
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Git diff utility (moved from legacy roi_score_publisher to agents.utils)
+from agents.utils import get_git_diff_stats
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Langfuse integration (optional - graceful degradation if not available)
 try:
@@ -281,25 +286,33 @@ async def publish_coder_roi(
         # Get project_id from spec_dir parent or project_dir
         project_id = project_dir.name
 
-        # Publish ROI with Langfuse refs (truncated previews, not full content)
-        await publish_feature_roi(
-            feature_type="coder",
-            project_id=project_id,
-            cost_usd=0.0,  # Cost is tracked at trace level, we just track metrics here
-            tokens=0,  # Tokens tracked at trace level
-            metrics={
-                "files_changed": diff_stats.get("files_changed", 0),
-                "lines_added": diff_stats.get("lines_added", 0),
-                "lines_removed": diff_stats.get("lines_removed", 0),
-                "commits_made": commits_made,
-                "tests_written": tests_written,
-                "subtasks_completed": 1 if success else 0,
-                "subtasks_total": 1,
-            },
+        # Calculate ROI using ROI Engine (artifact-based valuation)
+        # Artifacts were already saved above, ROI Engine reads from storage
+        squad_config = load_squad_config(project_dir)
+        roi_result = calculate_roi_for_spec(
             spec_id=spec_id,
-            trace_id=trace_id,
-            artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
+            project_dir=project_dir,
+            token_cost=0.0,  # Cost tracked at trace level
+            squad_config=squad_config,
         )
+
+        # Publish to Langfuse and save locally
+        await publish_roi(
+            roi_result,
+            trace_id=trace_id,
+            project_dir=project_dir,
+        )
+
+        # Log metrics for debugging
+        metrics = {
+            "files_changed": diff_stats.get("files_changed", 0),
+            "lines_added": diff_stats.get("lines_added", 0),
+            "lines_removed": diff_stats.get("lines_removed", 0),
+            "commits_made": commits_made,
+            "tests_written": tests_written,
+            "subtasks_completed": 1 if success else 0,
+            "subtasks_total": 1,
+        }
 
         logger.info(
             f"Coder ROI published: +{diff_stats.get('lines_added', 0)} -{diff_stats.get('lines_removed', 0)} "

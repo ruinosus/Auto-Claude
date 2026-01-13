@@ -1,0 +1,206 @@
+/**
+ * ValueBreakdown Styles
+ *
+ * Component for displaying value breakdown by role and artifact type.
+ * Uses BEM naming convention.
+ */
+
+/* =============================================================================
+   Base
+   ============================================================================= */
+
+.value-breakdown {
+  background: var(--roi-card-bg, #ffffff);
+  border: 1px solid var(--roi-card-border, #e5e7eb);
+  border-radius: var(--roi-card-radius, 0.75rem);
+  padding: var(--roi-card-padding, 1.5rem);
+  box-shadow: var(--roi-card-shadow, 0 1px 3px 0 rgb(0 0 0 / 0.1));
+}
+
+.value-breakdown--empty {
+  text-align: center;
+  color: var(--roi-text-muted, #6b7280);
+  padding: 2rem;
+}
+
+/* =============================================================================
+   Summary
+   ============================================================================= */
+
+.value-breakdown__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--roi-summary-bg, #f9fafb);
+  border-radius: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.value-breakdown__summary-item {
+  flex: 1;
+  min-width: 100px;
+  text-align: center;
+}
+
+.value-breakdown__summary-item--highlight {
+  border-left: 2px solid var(--roi-card-border, #e5e7eb);
+  padding-left: 1rem;
+}
+
+.value-breakdown__summary-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--roi-text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.25rem;
+}
+
+.value-breakdown__summary-value {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.value-breakdown__summary-value.positive {
+  color: var(--roi-positive, #10b981);
+}
+
+.value-breakdown__summary-value.negative {
+  color: var(--roi-negative, #ef4444);
+}
+
+/* =============================================================================
+   Section
+   ============================================================================= */
+
+.value-breakdown__section {
+  margin-bottom: 1.5rem;
+}
+
+.value-breakdown__section:last-child {
+  margin-bottom: 0;
+}
+
+.value-breakdown__section-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--roi-text, #374151);
+  margin: 0 0 1rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* =============================================================================
+   Bar Chart
+   ============================================================================= */
+
+.value-breakdown__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.value-breakdown__bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.value-breakdown__bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.value-breakdown__bar-label {
+  font-size: 0.875rem;
+  color: var(--roi-text, #374151);
+  text-transform: capitalize;
+}
+
+.value-breakdown__bar-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--roi-positive, #10b981);
+}
+
+.value-breakdown__bar-track {
+  height: 0.5rem;
+  background: var(--roi-bar-track, #e5e7eb);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.value-breakdown__bar-fill {
+  height: 100%;
+  border-radius: 0.25rem;
+  transition: width 0.3s ease;
+}
+
+.value-breakdown__bar-percentage {
+  font-size: 0.75rem;
+  color: var(--roi-text-muted, #6b7280);
+  text-align: right;
+}
+
+/* =============================================================================
+   More Indicator
+   ============================================================================= */
+
+.value-breakdown__more {
+  font-size: 0.8125rem;
+  color: var(--roi-text-muted, #6b7280);
+  text-align: center;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--roi-card-border, #e5e7eb);
+}
+
+/* =============================================================================
+   Dark Mode Support
+   ============================================================================= */
+
+@media (prefers-color-scheme: dark) {
+  .value-breakdown {
+    --roi-card-bg: #1f2937;
+    --roi-card-border: #374151;
+    --roi-card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+    --roi-summary-bg: #111827;
+    --roi-bar-track: #374151;
+    --roi-text: #f9fafb;
+    --roi-text-muted: #9ca3af;
+  }
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 480px) {
+  .value-breakdown__summary {
+    flex-direction: column;
+  }
+
+  .value-breakdown__summary-item {
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .value-breakdown__summary-item--highlight {
+    border-left: none;
+    border-top: 2px solid var(--roi-card-border, #e5e7eb);
+    padding-left: 0;
+    padding-top: 1rem;
+    margin-top: 0.5rem;
+  }
+
+  .value-breakdown__bar-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+  }
+}

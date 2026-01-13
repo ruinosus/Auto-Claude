@@ -23,7 +23,7 @@ load_dotenv = import_dotenv()
 
 env_file = Path(__file__).parent.parent / ".env"
 if env_file.exists():
-    load_dotenv(env_file)
+    load_dotenv(env_file, override=True)
 
 # Clean up conflicting env vars (Foundry vs standard mode)
 from core.auth import cleanup_conflicting_env_vars
@@ -79,12 +79,15 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
-# Import ROI publisher
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_insights_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Import artifact storage for local full content storage
 try:
@@ -802,28 +805,20 @@ Current question: {message}"""
                     except Exception as e:
                         debug_error("insights_runner", f"Failed to save activity file: {e}")
 
-                    # Use publish_feature_roi for richer metrics
-                    from analytics.roi_publisher import publish_feature_roi
-
-                    await publish_feature_roi(
-                        feature_type="insights_chat",
-                        project_id=project_id,
-                        cost_usd=total_cost,
-                        tokens=total_tokens,
-                        model=model,
-                        trace_id=langfuse_trace_id,  # Pass trace_id to attach scores to same trace
-                        metrics={
-                            "messages_exchanged": 1,
-                            "tasks_suggested": tasks_suggested,
-                            "tasks_accepted": 0,
-                            "files_explored": files_explored,
-                            # Additional value metrics (detected from response)
-                            "diagrams_generated": diagrams_generated,
-                            "security_insights": security_insights,
-                            "recommendations_count": recommendations_count,
-                            "code_explanations": code_explanations,
-                        },
-                    )
+                    # Use ROI Engine for artifact-based ROI calculation
+                    if ROI_ENGINE_AVAILABLE:
+                        squad_config = load_squad_config(project_dir=project_path)
+                        roi_result = calculate_roi_for_spec(
+                            spec_id=f"insights-{langfuse_trace_id[:8] if langfuse_trace_id else 'unknown'}",
+                            project_dir=project_path,
+                            token_cost=total_cost,
+                            squad_config=squad_config,
+                        )
+                        await publish_roi(
+                            roi_result,
+                            trace_id=langfuse_trace_id,
+                            project_dir=project_path,
+                        )
 
                     debug(
                         "insights_runner",

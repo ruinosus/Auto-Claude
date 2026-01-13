@@ -47,12 +47,22 @@ except ImportError:
     LANGFUSE_AVAILABLE = False
     _langfuse_init_result = False
 
-# ROI publisher (optional - graceful degradation if not available)
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import (
+        calculate_roi_for_spec,
+        load_squad_config,
+        publish_roi,
+    )
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+    calculate_roi_for_spec = None
+    load_squad_config = None
+    publish_roi = None
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -641,38 +651,28 @@ This is attempt {previous_error.get("consecutive_errors", 1) + 1}. If you fail t
                 # Calculate total artifact value (use full artifacts for value)
                 total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
-                # Publish ROI with Langfuse refs (truncated previews, not full content)
-                roi_result = await publish_feature_roi(
-                    feature_type="qa_reviewer",
-                    project_id=project_id,
-                    cost_usd=estimated_cost,
-                    tokens=estimated_tokens,
-                    metrics={
-                        "qa_attempts": qa_session,
-                        "qa_passed": qa_passed,
-                        "findings_count": findings_count,
-                        "criteria_checked": criteria_checked,
-                        "suggestions_count": suggestions_count,
-                        "verdict": verdict,
-                        "tool_count": tool_count,
-                        "artifacts_count": len(artifacts),
-                        "artifact_value_usd": total_artifact_value,
-                    },
-                    duration_seconds=duration_seconds,
-                    model=getattr(client, "model", None) or resolve_model_id("sonnet"),
-                    spec_id=spec_id,
-                    trace_id=langfuse_trace_id,
-                    artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
-                )
-
-                debug(
-                    "qa_reviewer",
-                    "ROI published",
-                    trace_id=langfuse_trace_id,
-                    artifacts_count=len(artifacts),
-                    artifact_value=total_artifact_value,
-                    roi_percentage=roi_result.get("roi_percentage", 0),
-                )
+                # Publish ROI using ROI Engine (artifact-based valuation)
+                if ROI_ENGINE_AVAILABLE and calculate_roi_for_spec is not None:
+                    squad_config = load_squad_config(project_dir=effective_project_dir)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=spec_id,
+                        project_dir=effective_project_dir,
+                        token_cost=estimated_cost,
+                        squad_config=squad_config,
+                    )
+                    await publish_roi(
+                        roi_result,
+                        trace_id=langfuse_trace_id,
+                        project_dir=effective_project_dir,
+                    )
+                    debug(
+                        "qa_reviewer",
+                        f"ROI published: {roi_result.roi_percentage:.1f}% "
+                        f"({roi_result.artifact_count} artifacts, ${roi_result.total_artifact_value:.2f} value)",
+                        trace_id=langfuse_trace_id,
+                    )
+                else:
+                    debug("qa_reviewer", "ROI Engine not available, skipping ROI publish")
 
             except Exception as e:
                 # ROI publishing should never break QA

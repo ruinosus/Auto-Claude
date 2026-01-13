@@ -2,16 +2,16 @@
  * Langfuse ROI Dashboard
  * ======================
  *
- * ROI Dashboard that fetches data from the FastAPI analytics service,
- * which gets data from Langfuse as the source of truth.
+ * ROI Dashboard that fetches data from the ROI Engine API (port 8002).
+ * Uses artifact-based valuation with role-based hourly rates.
  *
  * Settings are loaded from Electron IPC (user preferences).
  */
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, RefreshCw, Settings } from 'lucide-react';
-import { useROISummary, useAnalyticsHealth } from '../../../hooks/useAnalyticsQuery';
+import { AlertCircle, RefreshCw, Settings, TrendingUp } from 'lucide-react';
+import { useROIEngineHealth, useROIEngineUnified, useROIEngineValueBreakdown } from '../../../hooks/useROIEngineQuery';
 import { ROIOverviewCards } from './ROIOverviewCards';
 import { ROIChart } from './ROIChart';
 import { CostValueChart } from './CostValueChart';
@@ -20,74 +20,106 @@ import { Button } from '../../ui/button';
 import { Card, CardContent } from '../../ui/card';
 import type { ROIAggregateMetrics, ROISettings, SpecROIWithMetrics } from '../../../../shared/types/roi';
 import { DEFAULT_ROI_SETTINGS } from '../../../../shared/types/roi';
-import type { ROISummaryResponse, ROIResponse } from '../../../services/analytics-api';
+import type { UnifiedROIResponse, ValueBreakdownResponse } from '../../../services/roi-engine-api';
 
 /**
- * Transform Langfuse ROI data to the expected component format
+ * Transform ROI Engine unified data to the expected component format
  */
-function transformToAggregate(data: ROISummaryResponse | undefined): ROIAggregateMetrics | null {
+function transformToAggregate(data: UnifiedROIResponse | undefined): ROIAggregateMetrics | null {
   if (!data) return null;
 
+  // Estimate hours saved based on total artifact value and average hourly rate
+  // Using default senior developer rate of $125/hr for estimation
+  const avgHourlyRate = 125;
+  const estimatedHoursSaved = data.total_artifact_value / avgHourlyRate;
+
+  // Calculate success rate based on positive ROI
+  const specCount = Object.keys(data.by_spec || {}).length;
+  const successRate = data.roi_percentage > 0 ? 100 : 0; // Simplified for now
+
   return {
-    totalROI: data.total_roi_percentage,
-    totalSavings: data.total_business_value_usd - data.total_actual_cost_usd,
-    totalHoursSaved: data.total_dev_hours_saved,
-    totalCost: data.total_actual_cost_usd,
-    successRate: data.spec_count > 0 ? (data.specs_with_positive_roi / data.spec_count) * 100 : 0,
-    specsCount: data.spec_count,
+    totalROI: data.roi_percentage,
+    totalSavings: data.net_value,
+    totalHoursSaved: estimatedHoursSaved,
+    totalCost: data.total_token_cost,
+    successRate: successRate,
+    specsCount: specCount,
   };
 }
 
 /**
- * Transform Langfuse ROI response to SpecROIWithMetrics
- * @param data - ROI summary response from API
+ * Transform ROI Engine unified response to SpecROIWithMetrics
+ * Uses by_spec breakdown to create per-spec entries
+ * @param data - Unified ROI response from ROI Engine
+ * @param valueBreakdown - Value breakdown response for detailed per-spec info
  * @param hourlyRate - Developer hourly rate from settings
  */
 function transformToSpecs(
-  data: ROISummaryResponse | undefined,
+  data: UnifiedROIResponse | undefined,
+  valueBreakdown: ValueBreakdownResponse | undefined,
   hourlyRate: number
 ): SpecROIWithMetrics[] {
   if (!data || !data.by_spec) return [];
 
-  return data.by_spec.map((spec: ROIResponse) => ({
-    specId: spec.spec_id,
-    projectId: spec.spec_id.split('-')[0] || '', // Extract project from spec ID if available
-    estimatedBusinessValue: spec.metrics.business_value_usd,
-    estimatedHoursManual: spec.metrics.dev_hours_saved,
-    developerRateOverride: null,
-    actualCost: spec.metrics.actual_cost_usd,
-    totalTokens: 0, // Not available from Langfuse ROI endpoint
-    linesAdded: spec.metrics.lines_added,
-    linesRemoved: spec.metrics.lines_removed,
-    filesChanged: spec.metrics.files_changed,
-    executionTimeSeconds: 0, // Not available from Langfuse ROI endpoint
-    qaAttempts: spec.metrics.qa_attempts,
-    qaPassed: spec.metrics.qa_passed,
-    createdAt: spec.calculated_at,
-    completedAt: spec.metrics.qa_passed ? spec.calculated_at : null,
-    metrics: {
-      effectiveHourlyRate: hourlyRate,
-      estimatedManualCost: spec.metrics.dev_hours_saved * hourlyRate,
-      costSavings: spec.metrics.business_value_usd - spec.metrics.actual_cost_usd,
-      roiPercentage: spec.metrics.roi_percentage,
-      costPerLine: spec.metrics.lines_added > 0
-        ? spec.metrics.actual_cost_usd / spec.metrics.lines_added
-        : 0,
-      efficiencyScore: spec.metrics.confidence_score * 100,
-    },
-  }));
+  const now = new Date().toISOString();
+
+  // Create spec entries from the by_spec breakdown
+  return Object.entries(data.by_spec).map(([specId, specValue]) => {
+    // Get additional spec info from value breakdown if available
+    const specBreakdown = valueBreakdown?.by_spec?.find(
+      (item) => item.category === specId
+    );
+
+    // Estimate token cost per spec proportionally
+    const totalValue = data.total_artifact_value || 1;
+    const specCostRatio = specValue / totalValue;
+    const specCost = data.total_token_cost * specCostRatio;
+
+    // Calculate ROI for this spec
+    const specNetValue = specValue - specCost;
+    const specROI = specCost > 0 ? (specNetValue / specCost) * 100 : 0;
+
+    // Estimate hours saved for this spec
+    const estimatedHours = specValue / hourlyRate;
+
+    return {
+      specId: specId,
+      projectId: specId.split('-')[0] || '',
+      estimatedBusinessValue: specValue,
+      estimatedHoursManual: estimatedHours,
+      developerRateOverride: null,
+      actualCost: specCost,
+      totalTokens: 0, // Not available per-spec
+      linesAdded: 0, // Not tracked by ROI Engine
+      linesRemoved: 0,
+      filesChanged: 0,
+      executionTimeSeconds: 0,
+      qaAttempts: 0,
+      qaPassed: true, // Assume passed if artifact exists
+      createdAt: now,
+      completedAt: now,
+      metrics: {
+        effectiveHourlyRate: hourlyRate,
+        estimatedManualCost: estimatedHours * hourlyRate,
+        costSavings: specNetValue,
+        roiPercentage: specROI,
+        costPerLine: 0, // Not tracked
+        efficiencyScore: specBreakdown?.percentage || (specValue / totalValue) * 100,
+      },
+    };
+  });
 }
 
 interface LangfuseROIDashboardProps {
-  /** Project name (directory name) - used for Langfuse data isolation */
+  /** Project directory path - used for data isolation */
   projectName?: string;
 }
 
 /**
  * Langfuse ROI Dashboard component
  *
- * IMPORTANT: projectName is the directory name, NOT the UUID.
- * The backend stores project_id as directory name in Langfuse metadata.
+ * Now powered by ROI Engine API (port 8002) for artifact-based ROI calculation.
+ * Uses role-based valuation: Value = Hourly Rate × Estimated Hours
  */
 export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps) {
   const { t } = useTranslation(['analytics']);
@@ -110,25 +142,43 @@ export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps)
       });
   }, []);
 
-  // Check if Langfuse is configured
-  const health = useAnalyticsHealth();
+  // Check if ROI Engine is healthy and connected
+  const health = useROIEngineHealth({ enabled: settingsLoaded });
 
-  // Fetch ROI summary with project_id filter for data isolation
-  // NOTE: project_id is the directory name (projectName), not UUID
+  // Fetch unified ROI data from ROI Engine
   const {
-    data: roiSummary,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = useROISummary(
-    { project_id: projectName },
+    data: unifiedROI,
+    isLoading: isUnifiedLoading,
+    isError: isUnifiedError,
+    error: unifiedError,
+    refetch: refetchUnified,
+  } = useROIEngineUnified(
+    { project_dir: projectName || '' },
     {
-      enabled: health.data?.langfuse_configured === true && settingsLoaded && !!projectName,
+      enabled: health.data?.status === 'healthy' && settingsLoaded && !!projectName,
     }
   );
 
-  // Show configuration needed message
+  // Fetch value breakdown for detailed spec information
+  const {
+    data: valueBreakdown,
+    isLoading: isBreakdownLoading,
+    refetch: refetchBreakdown,
+  } = useROIEngineValueBreakdown(
+    { project_dir: projectName || '' },
+    {
+      enabled: health.data?.status === 'healthy' && settingsLoaded && !!projectName,
+    }
+  );
+
+  const isLoading = isUnifiedLoading || isBreakdownLoading;
+
+  const refetch = () => {
+    refetchUnified();
+    refetchBreakdown();
+  };
+
+  // Show loading state while checking health
   if (health.isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -138,24 +188,26 @@ export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps)
     );
   }
 
-  if (!health.data?.langfuse_configured) {
+  // Show configuration needed if ROI Engine is not available
+  if (!health.data || health.data.status !== 'healthy') {
     return (
       <Card className="mx-auto max-w-lg">
         <CardContent className="p-6 text-center">
           <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-semibold mb-2">
-            {t('analytics:roi.dashboard.notConfigured')}
+            ROI Engine Not Available
           </h3>
           <p className="text-muted-foreground mb-4">
-            {t('analytics:roi.dashboard.configureMessage')}
+            The ROI Engine API is not running. Start it to see artifact-based ROI metrics.
           </p>
           <div className="text-sm text-muted-foreground bg-muted p-3 rounded-md font-mono">
-            LANGFUSE_PUBLIC_KEY=pk-lf-xxx
-            <br />
-            LANGFUSE_SECRET_KEY=sk-lf-xxx
-            <br />
-            LANGFUSE_HOST=http://localhost:3001
+            cd apps/roi-engine && python -m api.app
           </div>
+          {health.isError && (
+            <p className="text-xs text-destructive mt-2">
+              Error: {health.error instanceof Error ? health.error.message : 'Connection failed'}
+            </p>
+          )}
         </CardContent>
       </Card>
     );
@@ -172,12 +224,12 @@ export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps)
     );
   }
 
-  if (isError) {
+  if (isUnifiedError) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <AlertCircle className="h-8 w-8 text-destructive mb-4" />
         <p className="text-destructive mb-4">
-          {error instanceof Error ? error.message : t('analytics:roi.dashboard.error')}
+          {unifiedError instanceof Error ? unifiedError.message : t('analytics:roi.dashboard.error')}
         </p>
         <Button onClick={() => refetch()} variant="outline">
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -188,8 +240,8 @@ export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps)
   }
 
   // Transform data for existing components using user settings
-  const aggregate = transformToAggregate(roiSummary);
-  const specs = transformToSpecs(roiSummary, settings.developerHourlyRate);
+  const aggregate = transformToAggregate(unifiedROI);
+  const specs = transformToSpecs(unifiedROI, valueBreakdown, settings.developerHourlyRate);
 
   return (
     <div className="space-y-6">
@@ -198,7 +250,10 @@ export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps)
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span>{t('analytics:roi.dashboard.dataSource')}: Langfuse</span>
+            <span>
+              <TrendingUp className="h-3 w-3 inline mr-1" />
+              ROI Engine (Artifact-Based)
+            </span>
           </div>
           <div className="flex items-center gap-1 text-xs">
             <Settings className="h-3 w-3" />
@@ -206,6 +261,11 @@ export function LangfuseROIDashboard({ projectName }: LangfuseROIDashboardProps)
               {t('analytics:roi.dashboard.hourlyRate', { rate: settings.developerHourlyRate })}
             </span>
           </div>
+          {unifiedROI && (
+            <div className="text-xs">
+              {unifiedROI.artifact_count} artifacts valued
+            </div>
+          )}
         </div>
         <Button
           variant="ghost"

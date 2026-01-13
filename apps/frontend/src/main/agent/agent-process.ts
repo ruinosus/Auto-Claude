@@ -447,6 +447,21 @@ export class AgentProcessManager {
     // Get Python environment (PYTHONPATH for bundled packages, etc.)
     const pythonEnv = pythonEnvManager.getPythonEnv();
 
+    // Build combined PYTHONPATH: bundled site-packages + cwd + parent dir (for roi_engine)
+    const pythonPathParts: string[] = [];
+    if (pythonEnv.PYTHONPATH) {
+      pythonPathParts.push(pythonEnv.PYTHONPATH);
+    }
+    if (cwd) {
+      pythonPathParts.push(cwd);
+      // Add parent directory (apps/) so roi_engine and other sibling packages can be imported
+      const appsDir = path.dirname(cwd);
+      if (appsDir && appsDir !== cwd) {
+        pythonPathParts.push(appsDir);
+      }
+    }
+    const combinedPythonPath = pythonPathParts.join(process.platform === 'win32' ? ';' : ':');
+
     // Get active API profile environment variables
     let apiProfileEnv: Record<string, string> = {};
     try {
@@ -465,9 +480,10 @@ export class AgentProcessManager {
       cwd,
       env: {
         ...env, // Already includes process.env, extraEnv, profileEnv, PYTHONUNBUFFERED, PYTHONUTF8
-        ...pythonEnv, // Include Python environment (PYTHONPATH for bundled packages)
+        ...pythonEnv, // Include Python environment (base PYTHONPATH for bundled packages)
         ...oauthModeClearVars, // Clear stale ANTHROPIC_* vars when in OAuth mode
-        ...apiProfileEnv // Include active API profile config (highest priority for ANTHROPIC_* vars)
+        ...apiProfileEnv, // Include active API profile config (highest priority for ANTHROPIC_* vars)
+        PYTHONPATH: combinedPythonPath // Override with combined PYTHONPATH including apps/ dir
       }
     });
 

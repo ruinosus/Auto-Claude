@@ -1,3 +1,13 @@
+/**
+ * Satisfaction Dashboard
+ * ======================
+ *
+ * Displays user satisfaction metrics including NPS score, response breakdown,
+ * and feedback themes.
+ *
+ * Now uses ROI Engine API via the API Bridge for satisfaction data.
+ */
+
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../ui/card';
@@ -12,7 +22,8 @@ import {
   RefreshCcw,
 } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { analyticsApi, type SatisfactionMetrics } from '../../../services/analytics-api';
+import { apiBridge } from '../../../services/api-bridge';
+import type { SatisfactionMetrics } from '../../../services/analytics-api';
 import { useProjectPath } from '../../../hooks/useProjectPath';
 
 interface NPSGaugeProps {
@@ -283,7 +294,9 @@ export function SatisfactionDashboard({ days = 30 }: SatisfactionDashboardProps)
     setError(null);
 
     try {
-      const data = await analyticsApi.getSatisfactionMetrics(projectPath, { days });
+      // Use API Bridge - routes to ROI Engine for satisfaction metrics
+      const context = apiBridge.createContext(projectPath);
+      const data = await apiBridge.satisfaction.getMetrics(context, { days });
       setMetrics(data);
     } catch (err) {
       console.error('Failed to fetch satisfaction metrics:', err);

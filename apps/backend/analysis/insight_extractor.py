@@ -57,12 +57,15 @@ try:
 except ImportError:
     TRACKING_AVAILABLE = False
 
-# Import ROI publisher
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -933,8 +936,8 @@ async def extract_session_insights(
                 f"{len(extracted.get('gotchas_discovered', []))} gotchas"
             )
 
-            # Publish ROI with extracted artifacts
-            if ROI_PUBLISHER_AVAILABLE:
+            # Publish ROI with extracted artifacts using ROI Engine
+            if ROI_ENGINE_AVAILABLE:
                 try:
                     # Extract artifacts for ROI calculation
                     # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
@@ -947,34 +950,21 @@ async def extract_session_insights(
                         session_num=session_num,
                     )
 
-                    # Calculate metrics from extracted insights
-                    metrics = {
-                        "patterns_discovered": len(extracted.get("patterns_discovered", [])),
-                        "gotchas_identified": len(extracted.get("gotchas_discovered", [])),
-                        "best_practices": len(extracted.get("recommendations", [])),
-                        "file_insights": len(extracted.get("file_insights", [])),
-                        "files_changed": len(inputs.get("changed_files", [])),
-                        "session_success": 1 if success else 0,
-                        "artifacts_extracted": len(artifacts),
-                    }
-
-                    # Get project_id from project_dir
-                    project_id = project_dir.name if project_dir else "unknown"
-
                     # Calculate total artifact value
                     total_artifact_value = sum(a.get("value_usd", 0) for a in artifacts)
 
-                    # Publish ROI with Langfuse refs (truncated previews, not full content)
-                    await publish_feature_roi(
-                        feature_type="insight_extractor",
-                        project_id=project_id,
-                        cost_usd=0.0,  # Cost tracked in run_insight_extraction via tracker
-                        tokens=0,  # Tokens tracked separately
-                        metrics=metrics,
-                        model=get_extraction_model(),
+                    # Use ROI Engine to calculate and publish ROI
+                    squad_config = load_squad_config(project_dir=project_dir)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=spec_id_for_extraction or "insight-extraction",
+                        project_dir=project_dir,
+                        token_cost=0.0,  # Cost tracked in run_insight_extraction via tracker
+                        squad_config=squad_config,
+                    )
+                    await publish_roi(
+                        roi_result,
                         trace_id=_trace_id,
-                        spec_id=spec_id_for_extraction,
-                        artifacts=langfuse_refs,  # Pass refs with storage_path for Langfuse
+                        project_dir=project_dir,
                     )
 
                     logger.info(

@@ -2,12 +2,33 @@
  * Analytics Query Hooks
  * =====================
  *
- * React Query hooks for fetching analytics data from the FastAPI service.
- * Replaces IPC-based data fetching with HTTP calls to Langfuse-backed API.
+ * React Query hooks for fetching analytics data.
+ * Routes to ROI Engine API (port 8002) by default with fallback to Analytics API (port 8100).
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as analyticsApi from '../services/analytics-api';
+import { apiBridge, type BridgeContext } from '../services/api-bridge';
+import { useProjectStore } from '../stores/project-store';
+
+// Helper hook to get bridge context from current project
+function useBridgeContext(): BridgeContext | undefined {
+  const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
+  const activeProjectId = useProjectStore((state) => state.activeProjectId);
+  const projects = useProjectStore((state) => state.projects);
+
+  const projectId = activeProjectId || selectedProjectId;
+  const project = projects.find((p) => p.id === projectId);
+
+  if (!project?.path) {
+    return undefined;
+  }
+
+  return {
+    projectDir: project.path,
+    projectId: project.id,
+  };
+}
 import type {
   TraceQueryParams,
   DateRangeParams,
@@ -100,7 +121,7 @@ export const analyticsKeys = {
 export function useAnalyticsHealth() {
   return useQuery({
     queryKey: analyticsKeys.health(),
-    queryFn: analyticsApi.checkHealth,
+    queryFn: () => apiBridge.health.check(),
     // Check health every 30 seconds
     refetchInterval: 30 * 1000,
     // Don't retry health checks too aggressively
@@ -118,7 +139,7 @@ export function useAnalyticsHealth() {
 export function useTraceList(params?: TraceQueryParams, options?: { enabled?: boolean }) {
   return useQuery<TraceListResponse>({
     queryKey: analyticsKeys.traceList(params),
-    queryFn: () => analyticsApi.listTraces(params),
+    queryFn: () => apiBridge.traces.list(params),
     enabled: options?.enabled !== false,
   });
 }
@@ -129,7 +150,7 @@ export function useTraceList(params?: TraceQueryParams, options?: { enabled?: bo
 export function useTraceDetail(traceId: string | null, options?: { enabled?: boolean }) {
   return useQuery<TraceDetailResponse>({
     queryKey: analyticsKeys.traceDetail(traceId || ''),
-    queryFn: () => analyticsApi.getTrace(traceId!),
+    queryFn: () => apiBridge.traces.get(traceId!),
     enabled: !!traceId && options?.enabled !== false,
   });
 }
@@ -144,7 +165,7 @@ export function useTraceDetail(traceId: string | null, options?: { enabled?: boo
 export function useSessionsForSpec(specId: string | null, options?: { enabled?: boolean }) {
   return useQuery<SessionListResponse>({
     queryKey: analyticsKeys.sessionDetail(specId || ''),
-    queryFn: () => analyticsApi.getSessionsForSpec(specId!),
+    queryFn: () => apiBridge.sessions.getForSpec(specId!),
     enabled: !!specId && options?.enabled !== false,
   });
 }
@@ -156,13 +177,13 @@ export function useSessionsForSpec(specId: string | null, options?: { enabled?: 
 /**
  * Hook to get aggregated ROI summary for a specific project
  *
- * IMPORTANT: Always pass project_id to get accurate data for your project only.
- * Without project_id, data from ALL projects will be aggregated.
+ * Uses ROI Engine API when project context is available.
  */
 export function useROISummary(params?: ROISummaryParams, options?: { enabled?: boolean }) {
+  const context = useBridgeContext();
   return useQuery<ROISummaryResponse>({
     queryKey: analyticsKeys.roiSummary(params),
-    queryFn: () => analyticsApi.getROISummary(params),
+    queryFn: () => apiBridge.roi.getSummary(params, context),
     enabled: options?.enabled !== false,
     // ROI data changes less frequently
     staleTime: 60 * 1000,
@@ -173,9 +194,10 @@ export function useROISummary(params?: ROISummaryParams, options?: { enabled?: b
  * Hook to get ROI metrics for a specific spec
  */
 export function useROIForSpec(specId: string | null, options?: { enabled?: boolean }) {
+  const context = useBridgeContext();
   return useQuery<ROIResponse>({
     queryKey: analyticsKeys.roiSpec(specId || ''),
-    queryFn: () => analyticsApi.getROIForSpec(specId!),
+    queryFn: () => apiBridge.roi.getForSpec(specId!, context),
     enabled: !!specId && options?.enabled !== false,
   });
 }
@@ -189,9 +211,10 @@ export function useROIForSpec(specId: string | null, options?: { enabled?: boole
  * - Breakdown by feature type (ideation, roadmap, spec, build, github, insights)
  */
 export function useUnifiedROI(params?: UnifiedROIParams, options?: { enabled?: boolean }) {
+  const context = useBridgeContext();
   return useQuery<UnifiedROIResponse>({
     queryKey: analyticsKeys.roiUnified(params),
-    queryFn: () => analyticsApi.getUnifiedROI(params),
+    queryFn: () => apiBridge.roi.getUnified(params, context),
     enabled: options?.enabled !== false,
     // Unified ROI data changes less frequently
     staleTime: 60 * 1000,
@@ -208,7 +231,7 @@ export function useUnifiedROI(params?: UnifiedROIParams, options?: { enabled?: b
 export function useCostSummary(params?: DateRangeParams, options?: { enabled?: boolean }) {
   return useQuery<CostSummaryResponse>({
     queryKey: analyticsKeys.costSummary(params),
-    queryFn: () => analyticsApi.getCostSummary(params),
+    queryFn: () => apiBridge.costs.getSummary(params),
     enabled: options?.enabled !== false,
   });
 }
@@ -226,7 +249,7 @@ export function useScoreList(
 ) {
   return useQuery<ScoreResponse[]>({
     queryKey: analyticsKeys.scoreList(params),
-    queryFn: () => analyticsApi.listScores(params),
+    queryFn: () => apiBridge.scores.list(params),
     enabled: options?.enabled !== false,
   });
 }
@@ -249,9 +272,10 @@ export function useScoreList(
  * @param options - React Query options
  */
 export function useUsageSummary(params?: UsageSummaryParams, options?: { enabled?: boolean }) {
+  const context = useBridgeContext();
   return useQuery<UsageSummaryResponse>({
     queryKey: analyticsKeys.usageSummary(params),
-    queryFn: () => analyticsApi.getUsageSummary(params),
+    queryFn: () => apiBridge.usage.getSummary(params, context),
     enabled: options?.enabled !== false,
     // Usage data changes less frequently, cache for 60 seconds
     staleTime: 60 * 1000,
@@ -377,7 +401,7 @@ export function useDashboardData(projectId?: string, dateRange?: DateRangeParams
 export function useHealthStatus(options?: { enabled?: boolean }) {
   return useQuery<HealthStatusResponse, Error>({
     queryKey: analyticsKeys.healthStatus(),
-    queryFn: analyticsApi.getHealthStatus,
+    queryFn: () => apiBridge.health.getStatus(),
     staleTime: 30 * 1000, // 30 seconds
     refetchInterval: 60 * 1000, // 1 minute
     ...options,
@@ -397,7 +421,7 @@ export function useHealthStatus(options?: { enabled?: boolean }) {
 export function useHourlyMetrics(hours: number = 24, project_id?: string, options?: { enabled?: boolean }) {
   return useQuery<HourlyMetricsResponse, Error>({
     queryKey: analyticsKeys.hourlyMetrics(hours, project_id),
-    queryFn: () => analyticsApi.getHourlyMetrics(hours, project_id),
+    queryFn: () => apiBridge.metrics.getHourly(hours, project_id),
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
   });
@@ -416,7 +440,7 @@ export function useHourlyMetrics(hours: number = 24, project_id?: string, option
 export function useErrorMetrics(hours: number = 24, project_id?: string, options?: { enabled?: boolean }) {
   return useQuery<ErrorMetricsResponse, Error>({
     queryKey: analyticsKeys.errorMetrics(hours, project_id),
-    queryFn: () => analyticsApi.getErrorMetrics(hours, project_id),
+    queryFn: () => apiBridge.metrics.getErrors(hours, project_id),
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,
   });
@@ -430,9 +454,10 @@ export function useErrorMetrics(hours: number = 24, project_id?: string, options
  * Hook to get recent spec activity events
  */
 export function useRecentActivity(limit: number = 10, options?: { enabled?: boolean }) {
+  const context = useBridgeContext();
   return useQuery<RecentActivityResponse, Error>({
     queryKey: analyticsKeys.recentActivity(limit),
-    queryFn: () => analyticsApi.getRecentActivity(limit),
+    queryFn: () => apiBridge.activity.getRecent(limit, context),
     staleTime: 30 * 1000, // 30 seconds
     ...options,
   });
@@ -465,7 +490,7 @@ export function useArtifactSearch(
 ) {
   return useQuery<LocalArtifactsResponse, Error>({
     queryKey: analyticsKeys.artifactSearch(projectPath || '', params),
-    queryFn: () => analyticsApi.searchArtifacts(projectPath!, params),
+    queryFn: () => apiBridge.artifacts.searchByPath(projectPath!, params),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 30 * 1000, // 30 seconds
   });
@@ -494,7 +519,7 @@ export function useArtifactStatistics(
 ) {
   return useQuery<ArtifactStatistics, Error>({
     queryKey: analyticsKeys.artifactStatistics(projectPath || '', fromDate, toDate),
-    queryFn: () => analyticsApi.getArtifactStatistics(projectPath!, fromDate, toDate),
+    queryFn: () => apiBridge.artifacts.getStatisticsByPath(projectPath!, fromDate, toDate),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 60 * 1000, // 1 minute (stats change less frequently)
   });
@@ -523,7 +548,7 @@ export function useArtifactTimeline(
 ) {
   return useQuery<ArtifactTimelineResponse, Error>({
     queryKey: analyticsKeys.artifactTimeline(projectPath || '', granularity, fromDate, toDate),
-    queryFn: () => analyticsApi.getArtifactTimeline(projectPath!, granularity, fromDate, toDate),
+    queryFn: () => apiBridge.artifacts.getTimeline(projectPath!, granularity, fromDate, toDate),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 60 * 1000, // 1 minute
   });
@@ -554,7 +579,7 @@ export function useCostAvoidanceSummary(
 ) {
   return useQuery<analyticsApi.CostAvoidanceSummary, Error>({
     queryKey: analyticsKeys.costAvoidanceSummary(projectPath || '', params?.days, params?.spec_id),
-    queryFn: () => analyticsApi.getCostAvoidanceSummary(projectPath!, params),
+    queryFn: () => apiBridge.costAvoidance.getSummaryByPath(projectPath!, params),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 60 * 1000, // 1 minute
   });
@@ -580,7 +605,7 @@ export function useCostAvoidanceEvents(
 ) {
   return useQuery<analyticsApi.CostAvoidanceEventsListResponse, Error>({
     queryKey: analyticsKeys.costAvoidanceEvents(projectPath || '', params),
-    queryFn: () => analyticsApi.getCostAvoidanceEvents(projectPath!, params),
+    queryFn: () => apiBridge.costAvoidance.getEventsByPath(projectPath!, params),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 30 * 1000, // 30 seconds
   });
@@ -605,7 +630,7 @@ export function useCostAvoidanceTrend(
 ) {
   return useQuery<analyticsApi.CostAvoidanceTrendResponse, Error>({
     queryKey: analyticsKeys.costAvoidanceTrend(projectPath || '', params),
-    queryFn: () => analyticsApi.getCostAvoidanceTrend(projectPath!, params),
+    queryFn: () => apiBridge.costAvoidance.getTrendByPath(projectPath!, params),
     enabled: !!projectPath && options?.enabled !== false,
     staleTime: 60 * 1000, // 1 minute
   });
@@ -624,7 +649,7 @@ export function useRecordCostAvoidanceEvent(projectPath: string) {
 
   return useMutation({
     mutationFn: (request: analyticsApi.RecordCostAvoidanceEventRequest) =>
-      analyticsApi.recordCostAvoidanceEvent(projectPath, request),
+      apiBridge.costAvoidance.recordEvent(projectPath, request),
     onSuccess: () => {
       // Invalidate cost avoidance queries to refresh data
       queryClient.invalidateQueries({ queryKey: analyticsKeys.costAvoidance() });
@@ -653,7 +678,7 @@ export function useProjectRankings(
 ) {
   return useQuery<analyticsApi.ProjectRankingsResponse, Error>({
     queryKey: analyticsKeys.projectRankings(params),
-    queryFn: () => analyticsApi.getProjectRankings(params),
+    queryFn: () => apiBridge.benchmarks.getRankings(params),
     enabled: options?.enabled !== false,
     staleTime: 5 * 60 * 1000, // 5 minutes (rankings change less frequently)
   });
@@ -678,7 +703,7 @@ export function useBestPractices(
 ) {
   return useQuery<analyticsApi.BestPracticesResponse, Error>({
     queryKey: analyticsKeys.bestPractices(params),
-    queryFn: () => analyticsApi.getBestPractices(params),
+    queryFn: () => apiBridge.benchmarks.getBestPractices(params),
     enabled: options?.enabled !== false,
     staleTime: 10 * 60 * 1000, // 10 minutes (practices change infrequently)
   });
@@ -699,7 +724,7 @@ export function useImprovementSuggestions(
 ) {
   return useQuery<analyticsApi.ImprovementSuggestionsResponse, Error>({
     queryKey: analyticsKeys.improvementSuggestions(projectId || ''),
-    queryFn: () => analyticsApi.getImprovementSuggestions(projectId!),
+    queryFn: () => apiBridge.benchmarks.getImprovementSuggestions(projectId!),
     enabled: !!projectId && options?.enabled !== false,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
@@ -727,7 +752,7 @@ export function usePercentileComparison(
 ) {
   return useQuery<analyticsApi.PercentileComparisonResponse, Error>({
     queryKey: analyticsKeys.percentileComparison(projectId || '', params),
-    queryFn: () => analyticsApi.getPercentileComparison(projectId!, params),
+    queryFn: () => apiBridge.benchmarks.getPercentileComparison(projectId!, params),
     enabled: !!projectId && options?.enabled !== false,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });

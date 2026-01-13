@@ -42,6 +42,71 @@ def get_commit_count(project_dir: Path) -> int:
     return 0
 
 
+def get_git_diff_stats(project_dir: Path, initial_commit: str | None = None) -> dict[str, int]:
+    """
+    Get git diff statistics for a project.
+
+    Args:
+        project_dir: Path to the project directory
+        initial_commit: Optional initial commit to diff from (defaults to HEAD~1)
+
+    Returns:
+        Dict with lines_added, lines_removed, files_changed
+    """
+    try:
+        # If no initial commit, try to get the parent of HEAD
+        if not initial_commit:
+            result = run_git(
+                ["rev-parse", "HEAD~1"],
+                cwd=project_dir,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                initial_commit = result.stdout.strip()
+            else:
+                # Fallback: compare with empty tree for first commit
+                initial_commit = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # Empty tree SHA
+
+        # Get diff stats
+        result = run_git(
+            ["diff", "--numstat", initial_commit, "HEAD"],
+            cwd=project_dir,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"git diff failed: {result.stderr}")
+            return {"lines_added": 0, "lines_removed": 0, "files_changed": 0}
+
+        lines_added = 0
+        lines_removed = 0
+        files_changed = 0
+
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                try:
+                    added = int(parts[0]) if parts[0] != "-" else 0
+                    removed = int(parts[1]) if parts[1] != "-" else 0
+                    lines_added += added
+                    lines_removed += removed
+                    files_changed += 1
+                except ValueError:
+                    continue
+
+        return {
+            "lines_added": lines_added,
+            "lines_removed": lines_removed,
+            "files_changed": files_changed,
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get git diff stats: {e}")
+        return {"lines_added": 0, "lines_removed": 0, "files_changed": 0}
+
+
 def load_implementation_plan(spec_dir: Path) -> dict | None:
     """Load the implementation plan JSON."""
     plan_file = spec_dir / "implementation_plan.json"

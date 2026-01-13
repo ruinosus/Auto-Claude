@@ -54,12 +54,15 @@ try:
 except ImportError as e:
     TRACKING_AVAILABLE = False
 
-# Import ROI publisher
+# ROI Engine for artifact-based ROI calculation (replaces legacy roi_publisher)
 try:
-    from analytics.roi_publisher import publish_feature_roi
-    ROI_PUBLISHER_AVAILABLE = True
+    from roi_engine.core import calculate_roi_for_spec, load_squad_config, publish_roi
+    ROI_ENGINE_AVAILABLE = True
 except ImportError:
-    ROI_PUBLISHER_AVAILABLE = False
+    ROI_ENGINE_AVAILABLE = False
+
+# Legacy flag for backwards compatibility
+ROI_PUBLISHER_AVAILABLE = ROI_ENGINE_AVAILABLE
 
 # Artifact storage (optional - graceful degradation if not available)
 try:
@@ -514,8 +517,8 @@ Respond with JSON only:
                 except Exception as e:
                     logger.error(f"[BATCH_ANALYZER] Failed to finalize tracking: {e}")
 
-            # Publish ROI metrics BEFORE closing Langfuse trace
-            if ROI_PUBLISHER_AVAILABLE:
+            # Publish ROI metrics BEFORE closing Langfuse trace using ROI Engine
+            if ROI_ENGINE_AVAILABLE:
                 try:
                     # Extract artifacts from triage results
                     # Returns (full_artifacts, langfuse_refs) - full stored locally, refs for Langfuse
@@ -540,24 +543,22 @@ Respond with JSON only:
                     # Sonnet pricing: $3/M input, $15/M output
                     cost_usd = (total_input_tokens * 0.003 / 1000) + (total_output_tokens * 0.015 / 1000)
 
-                    await publish_feature_roi(
-                        feature_type="github_issue_triage",
-                        project_id=self.project_id,
-                        cost_usd=cost_usd,
-                        tokens=total_tokens,
-                        model=resolve_model_id("sonnet"),
-                        trace_id=langfuse_trace_id,
-                        metrics={
-                            "issues_triaged": issues_triaged,
-                            "labels_assigned": labels_assigned,
-                            "priorities_set": priorities_set,
-                            "duplicates_found": duplicates_found,
-                            "batches_created": len(batches),
-                            "artifacts_count": len(artifacts),
-                            "artifact_value_usd": total_artifact_value,
-                        },
-                        artifacts=langfuse_refs,  # Pass refs (with storage_path) for Langfuse
+                    # Use ROI Engine for calculation
+                    squad_config = load_squad_config(project_dir=self.project_dir)
+                    roi_result = calculate_roi_for_spec(
+                        spec_id=f"github-issue-triage-{self.project_id}",
+                        project_dir=self.project_dir,
+                        token_cost=cost_usd,
+                        squad_config=squad_config,
                     )
+
+                    # Publish to Langfuse
+                    await publish_roi(
+                        roi_result,
+                        trace_id=langfuse_trace_id,
+                        project_dir=self.project_dir,
+                    )
+
                     logger.info(
                         f"[BATCH_ANALYZER] ROI published: "
                         f"issues={issues_triaged}, labels={labels_assigned}, "
